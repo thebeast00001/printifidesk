@@ -253,18 +253,7 @@ function LiveOrder({
         </motion.button>
       )}
 
-      <motion.span
-        layout="position"
-        className="mt-[11px] block h-[3px] overflow-hidden rounded-sm bg-shell-line"
-      >
-        <span
-          ref={barRef}
-          className={cn(
-            "block h-[3px] w-0 rounded-sm transition-colors duration-500",
-            failed ? "bg-clay" : done ? "bg-sage" : "bg-shell-ink",
-          )}
-        />
-      </motion.span>
+      <StageTrack order={order} fillRef={barRef} done={done} failed={failed} />
 
       <AnimatePresence initial={false}>
         {open && (
@@ -366,28 +355,119 @@ function readyBy(order: OrderRow, queue: QueueStatus): string | null {
  * Progress is a real fraction where one exists — pages ahead vs pages
  * remaining — and a fixed step otherwise. It never animates on its own.
  */
+/**
+ * Where the fill sits along the five-stage track, as a percentage of the
+ * distance between the first dot and the last. The dots are at 0, 25, 50, 75
+ * and 100, so a stage's number lands exactly on its dot and the space between
+ * two dots is real progress within a stage — queue position, mostly.
+ */
 function progressFor(order: OrderRow, queue: QueueStatus | null): number {
   switch (order.status) {
     case "placed":
-      return 6;
+      return 3;
     case "queued": {
-      if (!queue || queue.pages_ahead + order.pages === 0) return 20;
+      if (!queue || queue.pages_ahead + order.pages === 0) return 25;
       const share = queue.pages_ahead / (queue.pages_ahead + order.pages);
-      return Math.round(15 + (1 - share) * 25);
+      return Math.round(25 + (1 - share) * 20);
     }
     case "printing":
-      return 65;
+      return 50;
     case "finishing":
-      return 85;
+      return 62;
     case "ready":
+      return 75;
     case "collected":
       return 100;
     case "failed":
     case "cancelled":
-      return 100;
+      return stageReached(order) * 25;
     default:
       return 0;
   }
+}
+
+const STAGES = ["Placed", "Queued", "Printing", "Ready", "Collected"] as const;
+
+/** The furthest stage this order got to — the timestamps say, not the status. */
+function stageReached(order: OrderRow): number {
+  if (order.status === "collected") return 4;
+  if (order.status === "ready" || order.ready_at) return 3;
+  if (order.status === "printing" || order.status === "finishing" || order.started_at) return 2;
+  if (order.status === "queued" || order.queued_at) return 1;
+  return 0;
+}
+
+/**
+ * Five dots on a line, filled as far as the job has come.
+ *
+ * Replaces a bare 3px bar. The dots are the stages a student actually cares
+ * about, so the same line now says both "how far" and "what's next". No
+ * halo on the current dot: a solid dot with a knockout ring in the shell
+ * colour separates it from the line without lighting it up.
+ */
+function StageTrack({
+  order,
+  fillRef,
+  done,
+  failed,
+}: {
+  order: OrderRow;
+  fillRef: React.RefObject<HTMLSpanElement | null>;
+  done: boolean;
+  failed: boolean;
+}) {
+  const reached = stageReached(order);
+  const tone = failed ? "bg-clay" : done ? "bg-sage" : "bg-shell-ink";
+
+  return (
+    <motion.div layout="position" className="mt-3.5">
+      {/* The line runs from the first dot's centre to the last's. Each dot is
+          centred in a fifth of the width, so labels line up beneath by
+          sharing the same grid. */}
+      <div className="relative mx-[10%] h-[7px]">
+        <span className="absolute inset-x-0 top-1/2 h-[2px] -translate-y-1/2 rounded-full bg-shell-line" />
+        <span
+          ref={fillRef}
+          className={cn(
+            "absolute top-1/2 left-0 h-[2px] w-0 -translate-y-1/2 rounded-full transition-colors duration-500",
+            tone,
+          )}
+        />
+        {STAGES.map((stage, i) => {
+          const passed = i < reached || (i === reached && (done || failed));
+          const current = i === reached && !done && !failed;
+          return (
+            <span
+              key={stage}
+              style={{ left: `${i * 25}%` }}
+              className={cn(
+                "absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-500",
+                current
+                  ? cn("size-[9px] ring-2 ring-shell", tone)
+                  : passed
+                    ? cn("size-[7px]", tone)
+                    : "size-[7px] border-[1.5px] border-shell-line bg-shell",
+              )}
+            />
+          );
+        })}
+      </div>
+
+      <div className="mt-1.5 grid grid-cols-5">
+        {STAGES.map((stage, i) => (
+          <span
+            key={stage}
+            className={cn(
+              "text-center font-mono text-[9.5px] tracking-[0.02em] transition-colors duration-500",
+              i === reached ? "text-shell-ink" : i < reached ? "text-shell-faint" : "text-shell-faint/60",
+            )}
+          >
+            {stage}
+          </span>
+        ))}
+      </div>
+    </motion.div>
+  );
 }
 
 /* ---------- pieces ---------- */
@@ -503,8 +583,8 @@ function Timeline({ events, order }: { events: OrderEventRow[]; order: OrderRow 
           >
             <span
               className={cn(
-                "z-10 mt-[5px] size-[7px] shrink-0 rounded-full",
-                current ? "bg-shell-ink ring-3 ring-shell-ink/25" : "bg-sage",
+                "z-10 mt-[5px] shrink-0 rounded-full",
+                current ? "size-[7px] bg-shell-ink ring-2 ring-shell" : "size-[7px] bg-sage",
               )}
             />
             {i < events.length - 1 && (

@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { SignInButton, useAuth, useUser } from "@clerk/nextjs";
-import { motion, useMotionValueEvent, useScroll } from "motion/react";
+import { AnimatePresence, motion, useMotionValueEvent, useScroll } from "motion/react";
 import { LogIn, MapPin, Search, User } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Container } from "./container";
 import { useOperatorWait } from "@/hooks/use-tracking";
 import { useApp } from "@/lib/store";
+import { perPage, rateCardOf } from "@/lib/pricing";
+import type { Operator, OperatorWait } from "@/lib/orders";
 import { cn } from "@/lib/utils";
 
 export function TopBar() {
@@ -37,7 +39,7 @@ export function TopBar() {
                   )}
                 />
               )}
-              {!ready ? "Checking…" : wait?.open ? "Printify open" : "Printify closed"}
+              {!ready ? "Checking…" : <Status open={Boolean(wait?.open)} operator={operator} />}
             </p>
 
             <div className="flex items-start justify-between gap-3">
@@ -105,13 +107,102 @@ function Headline({
   operator,
 }: {
   ready: boolean;
-  wait: { open: boolean; pending_orders: number; wait_minutes: number } | null;
-  operator: { status_note: string | null } | null;
+  wait: OperatorWait | null;
+  operator: Operator | null;
 }) {
   if (!ready) return <>Checking…</>;
   if (!wait?.open) return <>{operator?.status_note?.trim() || "Not taking orders"}</>;
-  if (wait.pending_orders === 0) return <>No queue right now</>;
+  if (wait.pending_orders === 0 && operator) return <IdleHeadline wait={wait} operator={operator} />;
   return <>About {wait.wait_minutes} min</>;
+}
+
+/**
+ * "Open now · till 8 PM" rather than "Printify open" — what a sign on the
+ * door says. Hours are the operator's advertised ones; the switch still
+ * decides whether the desk is open, and this only ever reports the switch.
+ */
+function Status({ open, operator }: { open: boolean; operator: Operator | null }) {
+  if (open) {
+    const till = operator?.closes_at ? clock(operator.closes_at) : null;
+    return <>Open now{till ? ` · till ${till}` : ""}</>;
+  }
+  const opens = operator?.opens_at ? clock(operator.opens_at) : null;
+  return <>Closed{opens ? ` · opens ${opens}` : ""}</>;
+}
+
+/** "20:00:00" → "8 PM"; "09:30:00" → "9:30 AM". */
+function clock(time: string): string {
+  const [h, m] = time.split(":").map(Number);
+  if (!Number.isFinite(h)) return time;
+  const d = new Date();
+  d.setHours(h, m || 0, 0, 0);
+  return d.toLocaleTimeString([], { hour: "numeric", minute: m ? "2-digit" : undefined });
+}
+
+/**
+ * With nothing in the queue there is no wait to quote, and "No queue right
+ * now" said the same thing all afternoon. So the headline turns over every
+ * few seconds through a handful of lines — each one a fact read from the
+ * operator's own row, never a slogan. Stops turning when the tab is hidden,
+ * and lands on the next line rather than restarting, so a glance always
+ * catches something new.
+ */
+function IdleHeadline({ wait, operator }: { wait: OperatorWait; operator: Operator }) {
+  const card = useMemo(() => rateCardOf(operator), [operator]);
+
+  const lines = useMemo(() => {
+    const out = ["No queue right now"];
+    // An empty queue still takes the handling time; that is the honest "ready in".
+    if (wait.wait_minutes > 0) out.push(`Ready in about ${wait.wait_minutes} min`);
+    out.push(`B&W from ${perPage(card.bwPerPage, card.currency)}`);
+    if (card.colourPerPage > card.bwPerPage) out.push("Colour where needed");
+    if (operator.closes_at) out.push(`Open till ${clock(operator.closes_at)}`);
+    out.push("Print from your phone");
+    return out;
+  }, [wait.wait_minutes, card, operator.closes_at]);
+
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    let id: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (id) return;
+      id = setInterval(() => setIndex((i) => (i + 1) % lines.length), 3600);
+    };
+    const stop = () => {
+      if (id) clearInterval(id);
+      id = null;
+    };
+    const onVisibility = () => (document.visibilityState === "visible" ? start() : stop());
+    start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [lines.length]);
+
+  const line = lines[index % lines.length];
+
+  return (
+    // popLayout, not wait: the leaving line is lifted out of flow while the
+    // next one is already in it, so the heading never has an empty frame and
+    // nothing below it jumps.
+    <span className="relative inline-block">
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.span
+          key={line}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.32, ease: [0.32, 0.72, 0, 1] }}
+          className="inline-block"
+        >
+          {line}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
 }
 
 /**
