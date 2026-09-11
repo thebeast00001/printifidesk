@@ -254,12 +254,12 @@ on conflict (user_id) do nothing;`}
         {state === "claimed" ? (
           <p className="m-0 flex items-center gap-2 text-[13.5px] font-semibold">
             <CircleCheck size={15} strokeWidth={2.4} />
-            You&apos;re an admin. Open /admin to review operator applications.
+            You&apos;re an admin. Open /admin to create desks and hand out owner codes.
           </p>
         ) : (
           <>
             <p className="m-0 mb-3 max-w-[60ch] text-[12.5px] leading-relaxed text-muted">
-              Admins approve operator applications. Nobody holds it yet.
+              Admins create desks and hand their owners a join code. Nobody holds it yet.
             </p>
             <button
               disabled={busy}

@@ -134,6 +134,91 @@ export async function removeStaff(operatorId: string, userId: string): Promise<v
   if (error) throw new Error(explain(error.message));
 }
 
+/* ---------- join codes ---------- */
+
+export interface StaffInvite {
+  id: string;
+  operator_id: string;
+  code: string;
+  label: string | null;
+  created_by: string;
+  created_at: string;
+  expires_at: string;
+  claimed_by: string | null;
+  claimed_at: string | null;
+  revoked_at: string | null;
+}
+
+/** `XK7P2Q4M` → `XK7P-2Q4M`. The dash is for eyes; the database ignores it. */
+export function formatJoinCode(code: string): string {
+  return `${code.slice(0, 4)}-${code.slice(4)}`;
+}
+
+export function joinLink(code: string): string {
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  return `${origin}/join/${code}`;
+}
+
+/** Makes a code for this desk. Staff of the desk, or an admin. */
+export async function createInvite(
+  operatorId: string,
+  label: string,
+): Promise<{ code: string; expires_at: string }> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { data, error } = await supabase.rpc("create_invite", {
+    p_operator: operatorId,
+    p_label: label.trim() || null,
+  });
+  if (error) throw new Error(explain(error.message));
+  const row = data?.[0] as { code: string; expires_at: string } | undefined;
+  if (!row) throw new Error("The database made no code.");
+  return row;
+}
+
+/** Codes that could still be used: not claimed, not revoked, not expired. */
+export async function openInvites(operatorId: string): Promise<StaffInvite[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data } = await supabase
+    .from("staff_invites")
+    .select("*")
+    .eq("operator_id", operatorId)
+    .is("claimed_at", null)
+    .is("revoked_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false });
+  return (data ?? []) as StaffInvite[];
+}
+
+export async function revokeInvite(inviteId: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { error } = await supabase.rpc("revoke_invite", { p_invite: inviteId });
+  if (error) throw new Error(explain(error.message));
+}
+
+/**
+ * Joins the desk a code belongs to. The verdict comes back as a row, not an
+ * error — see `claim_invite` in 0019 for why — so a refusal is a thrown
+ * Error here with the database's own words.
+ */
+export async function claimInvite(code: string): Promise<{ operatorId: string; operatorName: string }> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const session = await ensureSession();
+  if (session.status !== "ready") throw new Error("Sign in first.");
+
+  const { data, error } = await supabase.rpc("claim_invite", { p_code: code });
+  if (error) throw new Error(explain(error.message));
+  const row = data?.[0] as
+    | { ok: boolean; operator_id: string | null; operator_name: string | null; message: string | null }
+    | undefined;
+  if (!row) throw new Error("The database gave no answer.");
+  if (!row.ok || !row.operator_id) throw new Error(row.message ?? "That code didn't work.");
+  return { operatorId: row.operator_id, operatorName: row.operator_name ?? "" };
+}
+
 /* ---------- close-out ---------- */
 
 export interface Closeout {
@@ -180,6 +265,9 @@ export async function recentCloseouts(operatorId: string, limit = 7): Promise<Cl
 function explain(message: string): string {
   const m = message.toLowerCase();
   if (m.includes("does not exist") || m.includes("schema cache")) {
+    if (m.includes("invite")) {
+      return "This needs migration 0019 — run supabase/migrations/0019_join_codes.sql.";
+    }
     return "This needs migration 0015 — run supabase/migrations/0015_desk_tools.sql.";
   }
   if (m.includes("row-level security")) {

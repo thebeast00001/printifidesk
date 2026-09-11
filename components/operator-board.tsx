@@ -7,7 +7,7 @@ import { useOperatorQueue } from "@/hooks/use-tracking";
 import { setOperatorOpen, type Operator } from "@/lib/orders";
 import { SignedOutNotice } from "./signed-out-notice";
 import { useConnectionVerdict } from "./connection-banner";
-import { OperatorApplication } from "./operator-application";
+import { JoinDesk } from "./join-desk";
 import { OperatorPortal } from "./operator-portal";
 import { OperatorPricing } from "./operator-pricing";
 import { OperatorDay } from "./operator-day";
@@ -81,16 +81,17 @@ export function OperatorBoard() {
     return <Notice tone="clay" title="Can't reach the database" body={backend.message} />;
   }
 
-  // Not staff anywhere. That's the normal case for almost everybody, so it gets
-  // an application form rather than an error.
+  // Not staff anywhere. That's the normal case for almost everybody, so it
+  // gets the join-code box rather than an error: the only way onto a desk is
+  // a code from whoever runs it.
   if (!operatorId || !operator) {
     // A rejected token also produces "no operator"; the banner above already
-    // explains that, so don't ask them to apply on top of it.
+    // explains that, so don't ask for a code on top of it.
     if (verdict.kind === "blocked") return null;
     if (verdict.kind === "checking") {
       return <Notice icon={<Loader2 size={16} className="animate-spin" />} title="Checking access…" />;
     }
-    return <OperatorApplication />;
+    return <JoinDesk onJoined={() => void reload()} />;
   }
 
   return (

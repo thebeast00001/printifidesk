@@ -32,8 +32,9 @@ truncate table
   public.desk_closeouts,
   public.desk_devices,
   public.staff_pins,
+  public.staff_invites,
+  public.invite_attempts,
   public.staff,
-  public.operator_applications,
   public.operators,
   public.admins,
   public.profiles

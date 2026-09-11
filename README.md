@@ -74,7 +74,8 @@ factual-teal-4113.clerk.accounts.dev
 [`0015_desk_tools.sql`](supabase/migrations/0015_desk_tools.sql),
 [`0016_handover_code.sql`](supabase/migrations/0016_handover_code.sql),
 [`0017_paise_and_rate_snapshot.sql`](supabase/migrations/0017_paise_and_rate_snapshot.sql),
-then [`0018_desk_devices.sql`](supabase/migrations/0018_desk_devices.sql).
+[`0018_desk_devices.sql`](supabase/migrations/0018_desk_devices.sql),
+then [`0019_join_codes.sql`](supabase/migrations/0019_join_codes.sql).
 
 These are **SQL** — they go in the Supabase dashboard's SQL editor
 (`Project → SQL Editor → New query`), not a terminal.
@@ -85,7 +86,8 @@ names each table rather than looping, and `check:sql` asserts the list matches
 what the migrations create. Files live in Storage and accounts live in Clerk,
 so those are emptied from their own dashboards; the script's header says how.
 The first sign-in afterwards is a plain student: `/diagnostics` → *Claim
-admin*, `/operator` → apply, `/admin` → approve, and the desk exists again.
+admin*, `/admin` → *New desk* → an owner code, `/join` with that code, and
+the desk exists again with you on it.
 
 Run them **in order** — 0003 renames things 0002 created, and 0004 rewrites a
 function 0003 defines. With Docker running you can execute the whole set against
@@ -154,7 +156,7 @@ instead:
 insert into public.admins (user_id) values ('user_...');
 ```
 
-Everyone after you applies at `/operator` and is approved by you at `/admin`.
+Every desk after that is created by you at `/admin`; its owner joins with the code you hand them.
 
 Credentials live in `.env.local` (gitignored; `.env.example` documents the
 shape). The Supabase key and Clerk publishable key are safe in the browser;
@@ -236,17 +238,30 @@ Finishing is only what a desk does while you wait — **staple or loose**. Spira
 and soft binding are a separate job with a separate turnaround, so they're out
 until that's modelled.
 
-### Becoming an operator
+### Becoming an operator — a code, not a form
 
-`/operator` shows one of three things: a sign-in prompt, an **application form**,
-or the portal. Applying is a real form — display name, campus, location, phone,
-machine — reviewed at `/admin`. Approval calls `approve_application()`, which
-creates the `operators` row and the `staff` row **in one transaction**, so a
-half-approved application can't exist. Only admins can call it, enforced inside
-the function rather than in the UI.
+Nobody applies. A desk is created by an admin at `/admin` (name and campus;
+the owner sets everything else), and creating it hands you an **owner code**
+— eight characters, a QR, a link — to pass on over WhatsApp or across a
+counter. The owner opens it, signs in once, and the desk is theirs. From then
+on they bring in their own staff the same way from *Settings → Staff*.
 
-New operators start **closed and unlisted-to-nobody** (`is_open = false`), so
-nothing goes live until the person opens their own desk.
+`/operator` therefore shows one of three things: a sign-in prompt, the
+**join-code box**, or the portal. Since `0019` the application form and its
+review queue are gone — a queue nobody used was a place for mistakes.
+
+New desks start **closed** (`is_open = false`) with nobody on staff, so
+nothing goes live until the owner has joined and opened it.
+
+**Join codes** (`staff_invites`, `0019`): made by staff of the desk or an
+admin; eight characters from an alphabet without 0/O or 1/I, typed in any
+case with or without the dash; one use; 24 hours; revocable; ten open per
+desk at most. Claiming is a tap, never a page load — a code can be burned by
+the wrong person. Twenty wrong guesses in an hour and that account waits an
+hour; the guess limiter is a row per attempt that survives the refusal, which
+is why `claim_invite` returns a verdict instead of raising. After joining, the
+page offers the PIN straight away, because the next stop is the counter
+device.
 
 ### The operator portal
 
@@ -451,9 +466,10 @@ before changing a policy.
   the difference shown rather than hidden, UPI to reconcile against their own
   app, a nudge for everything still on the shelf, then *Close the desk*. One
   row per day.
-- **Staff** — add a colleague by their sign-in email; the last person can't
-  remove themselves. *Handled by* on finished cards puts a name to
-  `order_events.actor`, which has always been recorded.
+- **Staff** — *Add someone* makes a join code; they open it on their own
+  phone, sign in once, and they're on the list with the name from their
+  account. The last person can't remove themselves. *Handled by* on finished
+  cards puts a name to `order_events.actor`, which has always been recorded.
 - **Stock as a ledger** — every change is a row with a reason and a person;
   collected jobs write their own. A number you overwrite is a number nobody
   trusts by Wednesday.
@@ -630,14 +646,16 @@ Being specific about this matters more than a green badge:
 - `npm run check` — types, pricing, phone normalisation, pickup slots, UPI link
   format, the write-guard column list, and the SQL below. **Passes.**
 - `npm run build` — **passes.**
-- `npm run check:sql` — all eighteen migrations applied, re-applied, and their
+- `npm run check:sql` — all nineteen migrations applied, re-applied, and their
   triggers driven through a real order under a real JWT: tokens, the timeline,
   the write guard, per-file settings, the report constraint, the upload
   ceiling, the order rate limit, document ownership, push endpoint sanity, and
   SQL-vs-TypeScript pricing across 144 jobs, messages queuing a push, the
   stock ledger, staff by email, closing the desk, a hundred concurrent tokens
-  at one desk, the handover code, and desk sign-in end to end (pairing, PIN
-  rules, lockout, revocation). **Passes.** It does not check the RLS policies
+  at one desk, the handover code, desk sign-in end to end (pairing, PIN
+  rules, lockout, revocation), and join codes (admin creates a desk, a code
+  joins once, expired and revoked codes are dead, twenty guesses and you
+  wait, applications gone). **Passes.** It does not check the RLS policies
   themselves; see above for why.
 - **Desk sign-in** — `/api/desk` verified against the live project: a malformed
   body gets 400, an unknown device gets 401 with the database's own message.

@@ -4,84 +4,8 @@ import { ensureSession, getSupabase } from "./supabase/client";
 import type { OrderRow, OrderStatus } from "./orders";
 
 /* ============================================================
-   Applications
+   Admin — desks
    ============================================================ */
-
-export type ApplicationStatus = "pending" | "approved" | "rejected" | "withdrawn";
-
-export interface Application {
-  id: string;
-  user_id: string;
-  display_name: string;
-  campus: string;
-  location: string | null;
-  phone: string;
-  machine: string | null;
-  note: string | null;
-  status: ApplicationStatus;
-  review_note: string | null;
-  reviewed_at: string | null;
-  operator_id: string | null;
-  created_at: string;
-}
-
-export interface ApplicationDraft {
-  display_name: string;
-  campus: string;
-  location: string;
-  phone: string;
-  machine: string;
-  note: string;
-}
-
-/** The applicant's own most recent application, whatever its state. */
-export async function myApplication(): Promise<Application | null> {
-  const supabase = getSupabase();
-  if (!supabase) return null;
-  const session = await ensureSession();
-  if (session.status !== "ready") return null;
-
-  const { data } = await supabase
-    .from("operator_applications")
-    .select("*")
-    .eq("user_id", session.userId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return (data as Application) ?? null;
-}
-
-export async function submitApplication(draft: ApplicationDraft): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) throw new Error("No database connection.");
-  const session = await ensureSession();
-  if (session.status !== "ready") throw new Error("Sign in to apply.");
-
-  const { error } = await supabase.from("operator_applications").insert({
-    user_id: session.userId,
-    display_name: draft.display_name.trim(),
-    campus: draft.campus.trim(),
-    location: draft.location.trim() || null,
-    phone: draft.phone.trim(),
-    machine: draft.machine.trim() || null,
-    note: draft.note.trim() || null,
-    status: "pending",
-  });
-
-  if (error) throw new Error(explain(error.message));
-}
-
-export async function withdrawApplication(id: string): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) return;
-  const { error } = await supabase
-    .from("operator_applications")
-    .update({ status: "withdrawn" })
-    .eq("id", id);
-  if (error) throw new Error(explain(error.message));
-}
-
-/* ---------- reviewer side ---------- */
 
 export async function isAdmin(): Promise<boolean> {
   const supabase = getSupabase();
@@ -112,36 +36,43 @@ export async function claimFirstAdmin(): Promise<boolean> {
   return Boolean(data);
 }
 
-export async function listApplications(status?: ApplicationStatus): Promise<Application[]> {
+export interface Desk {
+  id: string;
+  name: string;
+  campus: string;
+  is_open: boolean;
+  created_at: string;
+  staff_count: number;
+  open_invites: number;
+}
+
+/** Every desk, with how many people run it. Admins only, enforced in SQL. */
+export async function adminDesks(): Promise<Desk[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  let query = supabase
-    .from("operator_applications")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (status) query = query.eq("status", status);
-  const { data } = await query;
-  return (data ?? []) as Application[];
+  const { data, error } = await supabase.rpc("admin_desks");
+  if (error) throw new Error(explain(error.message));
+  return ((data ?? []) as Desk[]).map((d) => ({
+    ...d,
+    staff_count: Number(d.staff_count),
+    open_invites: Number(d.open_invites),
+  }));
 }
 
-export async function approveApplication(id: string, note?: string): Promise<void> {
+/**
+ * A new desk with nobody on it. The admin then makes a join code for it and
+ * hands that to the owner — see `createInvite` in lib/desk.ts.
+ */
+export async function createDesk(name: string, campus: string): Promise<string> {
   const supabase = getSupabase();
-  if (!supabase) return;
-  const { error } = await supabase.rpc("approve_application", {
-    p_application: id,
-    p_note: note ?? null,
+  if (!supabase) throw new Error("No database connection.");
+  const { data, error } = await supabase.rpc("create_operator", {
+    p_name: name.trim(),
+    p_campus: campus.trim(),
   });
   if (error) throw new Error(explain(error.message));
-}
-
-export async function rejectApplication(id: string, note: string): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) return;
-  const { error } = await supabase.rpc("reject_application", {
-    p_application: id,
-    p_note: note,
-  });
-  if (error) throw new Error(explain(error.message));
+  if (typeof data !== "string") throw new Error("The database returned no desk id.");
+  return data;
 }
 
 /* ============================================================
@@ -233,10 +164,10 @@ function explain(message: string): string {
   if (m.includes("row-level security")) {
     return "The database refused that. Your sign-in may not be reaching Supabase — check the banner above.";
   }
-  if (m.includes("operator_applications_one_pending")) {
-    return "You already have an application waiting to be reviewed.";
-  }
   if (m.includes("does not exist") || m.includes("schema cache")) {
+    if (m.includes("admin_desks") || m.includes("create_operator")) {
+      return "This needs migration 0019 — run supabase/migrations/0019_join_codes.sql.";
+    }
     return "A table or function is missing. Run every migration in supabase/migrations, in order.";
   }
   return message;

@@ -140,9 +140,14 @@ one **Print batch** action.
 `opens_at` / `closes_at` are only changeable in SQL. They feed the pickup slot
 generator, so an operator who works evenings cannot offer correct slots.
 
-### 2.4 Staff management — done
+### 2.4 Staff management — done, then redone (0019)
 `staff` supports many people per operator but only SQL can add them. A desk run
-in shifts needs the owner to invite a second account from the portal.
+in shifts needs the owner to invite a second account from the portal. First
+version asked for the colleague's sign-in email and needed them to have signed
+in already; now *Add someone* makes a join code (QR, link, or eight characters
+read across the counter), they open it on their own phone, sign in once, and
+they're on. The same code brings a new desk's owner in from `/admin`; the
+application form and review queue are retired.
 
 ### 2.5 Consumables, with auto-close — done
 Paper and toner counters that decrement as pages print, warn at low, and flip

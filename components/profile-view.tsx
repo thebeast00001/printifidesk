@@ -172,8 +172,8 @@ export function ProfileView() {
           <NavRow
             href="/admin"
             icon={ShieldCheck}
-            label="Operator applications"
-            hint="Review and approve"
+            label="Desks"
+            hint="Create one, hand its owner a code"
           />
         )}
       </SettingsGroup>

@@ -807,6 +807,129 @@ await scenario("a revoked device is a dead device", async () => {
   return "lists nothing, signs nobody in";
 });
 
+/* ---------- 0019: join codes ---------- */
+
+let joinCode = null;
+let newDesk = null;
+
+await scenario("an admin creates a desk and gets an owner code", async () => {
+  await actingAs(null);
+  await db.exec(`insert into public.admins (user_id) values ('admin_test') on conflict do nothing;`);
+
+  // Not an admin: refused.
+  await actingAs("student_test");
+  let refused = false;
+  try {
+    await db.query(`select public.create_operator('Sharma Stationery, CEC', 'CEC');`);
+  } catch (error) {
+    refused = /Only an admin/.test(String(error?.message ?? error));
+  }
+  if (!refused) throw new Error("a student created a desk");
+
+  await actingAs("admin_test");
+  const { rows } = await db.query(`select public.create_operator('Sharma Stationery, CEC', 'CEC') as id;`);
+  newDesk = rows[0].id;
+  const { rows: desk } = await db.query(`select short_name, is_open, is_listed from public.operators where id = $1;`, [newDesk]);
+  if (desk[0].short_name !== "Sharma Stationery" || desk[0].is_open || !desk[0].is_listed) {
+    throw new Error(`desk row is wrong: ${JSON.stringify(desk[0])}`);
+  }
+
+  // The admin isn't staff of it, and can still make its first code.
+  const { rows: inv } = await db.query(`select * from public.create_invite($1, 'Owner');`, [newDesk]);
+  joinCode = inv[0].code;
+  if (!/^[A-HJ-NP-Z2-9]{8}$/.test(joinCode)) throw new Error(`code has the wrong shape: ${joinCode}`);
+  const hours = (new Date(inv[0].expires_at) - Date.now()) / 3600000;
+  if (hours < 23.9 || hours > 24.1) throw new Error(`expiry is ${hours.toFixed(2)} h, not 24`);
+
+  const { rows: list } = await db.query(`select * from public.admin_desks();`);
+  const mine = list.find((d) => d.id === newDesk);
+  if (!mine || Number(mine.staff_count) !== 0 || Number(mine.open_invites) !== 1) {
+    throw new Error(`admin_desks reports ${JSON.stringify(mine)}`);
+  }
+  return `${joinCode.slice(0, 4)}-${joinCode.slice(4)}, 24 h, desk listed with 0 staff and 1 open code`;
+});
+
+await scenario("a join code adds whoever claims it, exactly once", async () => {
+  // Typed sloppily — lower case, a dash, a space — on purpose.
+  const typed = `${joinCode.slice(0, 4).toLowerCase()}-${joinCode.slice(4)} `;
+  await actingAs("owner_test");
+  const { rows } = await db.query(`select * from public.claim_invite($1);`, [typed]);
+  if (!rows[0]?.ok || rows[0].operator_id !== newDesk || rows[0].operator_name !== "Sharma Stationery, CEC") {
+    throw new Error(`claim returned ${JSON.stringify(rows[0])}`);
+  }
+  const { rows: staff } = await db.query(
+    `select 1 from public.staff where user_id = 'owner_test' and operator_id = $1;`,
+    [newDesk],
+  );
+  if (staff.length !== 1) throw new Error("claiming didn't add them to staff");
+  const { rows: used } = await db.query(`select claimed_by from public.staff_invites where code = $1;`, [joinCode]);
+  if (used[0].claimed_by !== "owner_test") throw new Error("the code doesn't record who used it");
+
+  await actingAs("someone_else");
+  const { rows: again } = await db.query(`select * from public.claim_invite($1);`, [joinCode]);
+  if (again[0].ok || !/already been used/.test(again[0].message)) throw new Error("a used code worked twice");
+
+  // The owner, now staff, makes the next code — the admin isn't needed again.
+  await actingAs("owner_test");
+  const { rows: next } = await db.query(`select * from public.create_invite($1, 'Priya');`, [newDesk]);
+  if (!next[0]?.code) throw new Error("staff can't make a code");
+  joinCode = next[0].code;
+  return "typed as xk7p-2q4m, joined, recorded; second use refused; owner can now make codes";
+});
+
+await scenario("an expired or cancelled code is a dead code", async () => {
+  await actingAs(null);
+  await db.query(`update public.staff_invites set expires_at = now() - interval '1 minute' where code = $1;`, [joinCode]);
+  await actingAs("priya_test");
+  const { rows: late } = await db.query(`select * from public.claim_invite($1);`, [joinCode]);
+  if (late[0].ok || !/expired/.test(late[0].message)) throw new Error("an expired code was accepted");
+
+  await actingAs("owner_test");
+  const { rows: fresh } = await db.query(`select * from public.create_invite($1, 'Priya');`, [newDesk]);
+  const { rows: row } = await db.query(`select id from public.staff_invites where code = $1;`, [fresh[0].code]);
+  await db.query(`select public.revoke_invite($1);`, [row[0].id]);
+  await actingAs("priya_test");
+  const { rows: dead } = await db.query(`select * from public.claim_invite($1);`, [fresh[0].code]);
+  if (dead[0].ok || !/cancelled/.test(dead[0].message)) throw new Error("a revoked code was accepted");
+
+  // A student can't make one for a desk they don't run.
+  await actingAs("student_test");
+  let outsider = false;
+  try {
+    await db.query(`select * from public.create_invite($1, null);`, [newDesk]);
+  } catch (error) {
+    outsider = /Only staff/.test(String(error?.message ?? error));
+  }
+  if (!outsider) throw new Error("a non-staff user made a code");
+  return "expired refused, revoked refused, outsider can't mint";
+});
+
+await scenario("twenty bad guesses in an hour and you wait", async () => {
+  await actingAs("guesser_test");
+  let lastMessage = "";
+  for (let i = 0; i < 21; i++) {
+    const { rows } = await db.query(`select * from public.claim_invite('ZZZZZZZZ');`);
+    lastMessage = rows[0].message;
+    if (i < 20 && !/isn't one we know/.test(lastMessage)) throw new Error(`guess ${i + 1} said: ${lastMessage}`);
+  }
+  if (!/Too many tries/.test(lastMessage)) throw new Error(`21st guess said: ${lastMessage}`);
+  // Someone else is unaffected.
+  await actingAs("priya_test");
+  const { rows: other } = await db.query(`select * from public.claim_invite('ZZZZZZZZ');`);
+  if (!/isn't one we know/.test(other[0].message)) throw new Error(`another user saw: ${other[0].message}`);
+  return "21st refused for an hour; another user still gets a plain 'not known'";
+});
+
+await scenario("applications are gone", async () => {
+  const { rows } = await db.query(`select to_regclass('public.operator_applications') as t;`);
+  if (rows[0].t !== null) throw new Error("operator_applications still exists");
+  const { rows: fn } = await db.query(
+    `select count(*)::int as n from pg_proc where proname in ('approve_application', 'reject_application');`,
+  );
+  if (fn[0].n !== 0) throw new Error("approve/reject_application still exist");
+  return "table and both functions dropped";
+});
+
 await scenario("the upload ceiling holds", async () => {
   await actingAs("student_test");
   // 500 MB is the cap; one file over it must be refused.

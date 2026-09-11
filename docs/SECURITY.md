@@ -23,7 +23,7 @@ token can still attempt, so every rule that matters has to hold in Postgres.
 |---|---|---|
 | Who you are | Clerk JWT → `public.clerk_id()` reads `sub` | Supabase verifies the signature; nothing here does. |
 | Your rows vs mine | RLS on every table | `user_id = clerk_id()` or `is_staff(operator_id)`. |
-| Staff vs student | `public.staff` table, read by `is_staff()` | Written only by `approve_application()` (admin) or manual SQL. |
+| Staff vs student | `public.staff` table, read by `is_staff()` | Written only by `claim_invite()` (a live join code), `add_staff()` (staff, by email) or manual SQL. Desks are created by `create_operator()` (admin). |
 | Admin | `public.admins`, read by `is_admin()` | First seat via `claim_first_admin()` under a table lock; no other write path. |
 | Order price | `place_order()` RPC (0014) | The browser never writes a total. See below. |
 | Order changes | `guard_order_update()` trigger (0009, 0012) | Pins every column a student may not touch, by name. |
@@ -257,6 +257,41 @@ but a four-digit PIN is a four-digit PIN. Staff who want more can set six.
 And a paired device is a key: lose the tablet, revoke it in Settings, and it
 is a tablet again.
 
+### 11. Join codes replace applications — **0019**
+
+The only way onto a desk's staff is now a code made by someone already on it
+(or, for a brand-new desk, by an admin). A stranger with a form was never a
+real path, and the review queue it fed was a place for mistakes; both are
+gone — `operator_applications`, `approve_application`, `reject_application`.
+
+What a code is worth, and what limits it:
+
+- **Entropy.** Eight symbols from a 32-symbol alphabet: 2⁴⁰, about a trillion.
+  Drawn from the random bytes of two v4 UUIDs, taking only the bytes that
+  carry no version or variant bits; 256 divides by 32, so the draw is uniform.
+- **Window.** One use, then it's spent (and records who spent it). Twenty-four
+  hours. Revocable by the desk or an admin. Ten open codes per desk at most,
+  which bounds what a guesser could ever hit.
+- **Guess rate.** Every claim attempt is a row in `invite_attempts`; twenty in
+  an hour and that account is told to wait. The function returns a verdict
+  row instead of raising, because a raise would roll back the attempt row it
+  had just written — the same trap `desk_verify_pin` had, and the harness
+  caught it here too before it shipped.
+- **Nothing on page load.** The link inside the QR opens a page with the code
+  filled in; joining is a tap. A link pasted into the wrong chat and clicked
+  by the wrong person still needs that person to choose to join, and when
+  they do the code is spent and the desk sees who took it.
+- **What joining grants.** The same as before: full staff of that desk, no
+  more. The desk's owner made the code on purpose; the risk of a stray code
+  is the desk's, and it's one revoke away.
+
+**Verified** in the SQL harness: an admin creates a desk and gets an owner
+code (a student can't); the code joins whoever claims it, typed in any case
+with a dash and a space, exactly once; expired and revoked codes are dead; a
+non-staff account can't mint; the twenty-first guess in an hour is refused
+while another account still gets a plain "not known"; the applications table
+and both functions no longer exist.
+
 ### Reviewed and left alone
 
 - **No XSS sinks.** No `dangerouslySetInnerHTML`, `innerHTML`, or `eval` anywhere.
@@ -309,3 +344,4 @@ The security-relevant scenarios in `check:sql`, by name:
 - a hundred orders at one desk get a hundred distinct tokens and codes
 - a student's handover code can't be set to a known one
 - desk sign-in: fake token lists nobody, weak PINs refused, lockout after five, revoked device dead
+- join codes: admin-only desk creation, one use, expiry and revocation, twenty guesses then wait

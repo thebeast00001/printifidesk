@@ -2,24 +2,24 @@ import { Container } from "@/components/container";
 import { PageHeader } from "@/components/page-header";
 import { StaggerIn } from "@/components/stagger-in";
 import { ConnectionBanner } from "@/components/connection-banner";
-import { AdminDesks } from "@/components/admin-desks";
+import { JoinDesk } from "@/components/join-desk";
 
-export const metadata = { title: "Desks · Printify" };
+export const metadata = { title: "Join a desk · Printify" };
 
-/** Creating desks and handing their owners a code. Admins only, enforced in the database. */
-export default function AdminPage() {
+/** Typing a join code by hand — the page the QR's link also lands on. */
+export default function JoinPage() {
   return (
     <StaggerIn>
       <PageHeader
         eyebrow="Printify"
-        title="Desks"
-        sub="Create a desk, hand its owner a code. They sign in once and it's theirs."
+        title="Join a desk"
+        sub="A code from whoever runs the desk puts you on its staff. Sign in once; after that the counter device only asks for a PIN."
       />
       <Container className="pt-3">
         <div className="mb-4">
           <ConnectionBanner />
         </div>
-        <AdminDesks />
+        <JoinDesk />
       </Container>
     </StaggerIn>
   );
