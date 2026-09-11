@@ -869,12 +869,50 @@ await scenario("a join code adds whoever claims it, exactly once", async () => {
   const { rows: again } = await db.query(`select * from public.claim_invite($1);`, [joinCode]);
   if (again[0].ok || !/already been used/.test(again[0].message)) throw new Error("a used code worked twice");
 
-  // The owner, now staff, makes the next code — the admin isn't needed again.
+  // The owner, now staff, makes the next code — and from here the admin is
+  // shut out of this desk's staff entirely.
   await actingAs("owner_test");
   const { rows: next } = await db.query(`select * from public.create_invite($1, 'Priya');`, [newDesk]);
   if (!next[0]?.code) throw new Error("staff can't make a code");
   joinCode = next[0].code;
-  return "typed as xk7p-2q4m, joined, recorded; second use refused; owner can now make codes";
+
+  await actingAs("admin_test");
+  let adminOut = false;
+  try {
+    await db.query(`select * from public.create_invite($1, 'Admin sneaking in');`, [newDesk]);
+  } catch (error) {
+    adminOut = /Only staff/.test(String(error?.message ?? error));
+  }
+  if (!adminOut) throw new Error("the admin could still make a code for a staffed desk");
+  const { rows: row } = await db.query(`select id from public.staff_invites where code = $1;`, [joinCode]);
+  let adminRevoke = false;
+  try {
+    await db.query(`select public.revoke_invite($1);`, [row[0].id]);
+  } catch (error) {
+    adminRevoke = /No open code/.test(String(error?.message ?? error));
+  }
+  if (!adminRevoke) throw new Error("the admin could revoke a staffed desk's code");
+  return "typed as xk7p-2q4m, joined, recorded; second use refused; owner makes codes now, admin can't";
+});
+
+await scenario("admin is granted by hand only", async () => {
+  const { rows: fn } = await db.query(
+    `select count(*)::int as n from pg_proc where proname = 'claim_first_admin';`,
+  );
+  if (fn[0].n !== 0) throw new Error("claim_first_admin still exists");
+  // No client write path: the only policy on admins is a read.
+  const { rows: pol } = await db.query(
+    `select cmd from pg_policies where schemaname = 'public' and tablename = 'admins';`,
+  );
+  const cmds = pol.map((r) => r.cmd).sort();
+  if (cmds.join(",") !== "SELECT") throw new Error(`admins policies: ${cmds.join(", ") || "none"}`);
+  // And no function in the schema writes it, other than nothing.
+  const { rows: writers } = await db.query(
+    `select proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and prosrc ~* 'insert into public\\.admins';`,
+  );
+  if (writers.length) throw new Error(`functions writing admins: ${writers.map((r) => r.proname).join(", ")}`);
+  return "no claim function, only a read policy, no function inserts into admins";
 });
 
 await scenario("an expired or cancelled code is a dead code", async () => {

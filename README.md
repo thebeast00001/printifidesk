@@ -75,7 +75,8 @@ factual-teal-4113.clerk.accounts.dev
 [`0016_handover_code.sql`](supabase/migrations/0016_handover_code.sql),
 [`0017_paise_and_rate_snapshot.sql`](supabase/migrations/0017_paise_and_rate_snapshot.sql),
 [`0018_desk_devices.sql`](supabase/migrations/0018_desk_devices.sql),
-then [`0019_join_codes.sql`](supabase/migrations/0019_join_codes.sql).
+[`0019_join_codes.sql`](supabase/migrations/0019_join_codes.sql),
+then [`0020_admin_by_hand.sql`](supabase/migrations/0020_admin_by_hand.sql).
 
 These are **SQL** — they go in the Supabase dashboard's SQL editor
 (`Project → SQL Editor → New query`), not a terminal.
@@ -85,9 +86,9 @@ table and touches nothing else — no schema, no policies, no functions. It
 names each table rather than looping, and `check:sql` asserts the list matches
 what the migrations create. Files live in Storage and accounts live in Clerk,
 so those are emptied from their own dashboards; the script's header says how.
-The first sign-in afterwards is a plain student: `/diagnostics` → *Claim
-admin*, `/admin` → *New desk* → an owner code, `/join` with that code, and
-the desk exists again with you on it.
+The first sign-in afterwards is a plain student: `/diagnostics` → copy the
+`INSERT` → run it in the SQL editor, `/admin` → *New desk* → an owner code,
+`/join` with that code, and the desk exists again with you on it.
 
 Run them **in order** — 0003 renames things 0002 created, and 0004 rewrites a
 function 0003 defines. With Docker running you can execute the whole set against
@@ -144,19 +145,23 @@ up after. `0003` does exactly that dance around `is_staff`.
 Also: `position` is a reserved word and can't name a `RETURNS TABLE` column,
 which is why `queue_status` returns `place`.
 
-**4. Make yourself an admin.** Sign in, open **`/diagnostics`**, and press
-**Make me an admin**. The button only appears while nobody holds it, and the
-database refuses a second claim — so it can't be used to escalate later.
-
-On a deployment left public with no admin, the first stranger to sign in could
-claim it, so do this immediately after migrating. To take the seat manually
-instead:
+**4. Make yourself the admin — by hand.** Sign in once, open
+**`/diagnostics`**, and copy the `INSERT` it shows (it has your real Clerk id
+in it). Run it in the Supabase SQL editor:
 
 ```sql
 insert into public.admins (user_id) values ('user_...');
 ```
 
-Every desk after that is created by you at `/admin`; its owner joins with the code you hand them.
+There is no button for this, on purpose. Since `0020` nothing inside the app
+can write the `admins` table — no function, no policy — so the only way to
+become admin is SQL run by whoever can open the project's dashboard. That is
+the boundary: your Supabase login is the admin key.
+
+Every desk after that is created by you at `/admin`; its owner joins with the
+code you hand them, and from then on **staff is the desk's business** — an
+admin can make a code only for a desk with nobody on it, sees how many people
+a desk has but never who, and can't add or remove anyone.
 
 Credentials live in `.env.local` (gitignored; `.env.example` documents the
 shape). The Supabase key and Clerk publishable key are safe in the browser;
@@ -646,7 +651,7 @@ Being specific about this matters more than a green badge:
 - `npm run check` — types, pricing, phone normalisation, pickup slots, UPI link
   format, the write-guard column list, and the SQL below. **Passes.**
 - `npm run build` — **passes.**
-- `npm run check:sql` — all nineteen migrations applied, re-applied, and their
+- `npm run check:sql` — all twenty migrations applied, re-applied, and their
   triggers driven through a real order under a real JWT: tokens, the timeline,
   the write guard, per-file settings, the report constraint, the upload
   ceiling, the order rate limit, document ownership, push endpoint sanity, and
@@ -655,7 +660,8 @@ Being specific about this matters more than a green badge:
   at one desk, the handover code, desk sign-in end to end (pairing, PIN
   rules, lockout, revocation), and join codes (admin creates a desk, a code
   joins once, expired and revoked codes are dead, twenty guesses and you
-  wait, applications gone). **Passes.** It does not check the RLS policies
+  wait, applications gone, the admin is shut out of a staffed desk, no
+  function or policy can write `admins`). **Passes.** It does not check the RLS policies
   themselves; see above for why.
 - **Desk sign-in** — `/api/desk` verified against the live project: a malformed
   body gets 400, an unknown device gets 401 with the database's own message.

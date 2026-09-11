@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useUser } from "@clerk/nextjs";
-import { AlertCircle, CircleCheck, CircleSlash, Copy, Loader2 } from "lucide-react";
+import { AlertCircle, CircleCheck, CircleSlash, Copy } from "lucide-react";
 import { SettingsGroup, SettingsRow } from "./settings-ui";
 import { useAuthKey } from "@/hooks/use-auth-key";
 import {
@@ -14,7 +14,7 @@ import {
 } from "@/lib/supabase/client";
 import { useProfileSync } from "@/lib/profile-sync";
 import { staffOperatorId } from "@/lib/orders";
-import { adminsExist, claimFirstAdmin, isAdmin } from "@/lib/operator";
+import { adminsExist, isAdmin } from "@/lib/operator";
 import { cn } from "@/lib/utils";
 
 /**
@@ -185,11 +185,10 @@ function Pill({
 }
 
 /**
- * Claiming the first admin seat.
- *
- * Only rendered while nobody holds it. Doing this in the app rather than the
- * SQL editor removes the one setup step that had no in-app path — and the
- * database refuses a second claim, so the button can't grant anything later.
+ * How admin is granted: by hand, in the Supabase SQL editor, by whoever owns
+ * the project. There is deliberately no button. The section shows the exact
+ * INSERT with the signed-in account's real id, because a placeholder pasted
+ * into the editor is how a wrong row ends up in the table.
  */
 export function ClaimAdmin() {
   const authKey = useAuthKey();
@@ -197,8 +196,6 @@ export function ClaimAdmin() {
     "checking" | "open" | "claimed" | "held-by-other" | "signed-out"
   >("checking");
   const [clerkId, setClerkId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const session = await ensureSession();
@@ -217,71 +214,46 @@ export function ClaimAdmin() {
 
   if (state === "checking" || state === "signed-out") return null;
 
-  if (state === "held-by-other") {
+  if (state === "claimed") {
     return (
-      <SettingsGroup
-        title="Admin"
-        note="Run this in the Supabase SQL editor to see who holds it, and to take it over if that row is wrong."
-      >
+      <SettingsGroup title="Admin" note="Admins create desks and hand their owners a join code. Nothing else.">
         <div className="p-4 lg:px-5">
           <p className="m-0 flex items-center gap-2 text-[13.5px] font-semibold">
-            <CircleSlash size={15} strokeWidth={2.4} />
-            Admin is held by a different account
+            <CircleCheck size={15} strokeWidth={2.4} />
+            You&apos;re the admin. Open /admin to create desks.
           </p>
-          <p className="m-0 mt-1.5 max-w-[60ch] text-[12.5px] leading-relaxed text-muted">
-            The seat is taken, so it can&apos;t be claimed here. If it was filled in by mistake —
-            a placeholder pasted instead of a real id — replace it:
-          </p>
-          <pre className="mt-2.5 overflow-x-auto rounded-xl border border-line bg-surface-sunk p-3 font-mono text-[11px] leading-relaxed">
-{`select * from public.admins;
-
-delete from public.admins where user_id not like 'user\_%';
-insert into public.admins (user_id)
-values ('${clerkId ?? "user_..."}')
-on conflict (user_id) do nothing;`}
-          </pre>
         </div>
       </SettingsGroup>
     );
   }
 
+  const held = state === "held-by-other";
   return (
     <SettingsGroup
       title="Admin"
-      note="Only offered while nobody is an admin yet. Claim it now — on a public deployment the first person to sign in could otherwise take it."
+      note="There is no button for this, on purpose. Admin is granted only in the Supabase SQL editor, by whoever owns the project."
     >
       <div className="p-4 lg:px-5">
-        {state === "claimed" ? (
-          <p className="m-0 flex items-center gap-2 text-[13.5px] font-semibold">
-            <CircleCheck size={15} strokeWidth={2.4} />
-            You&apos;re an admin. Open /admin to create desks and hand out owner codes.
-          </p>
-        ) : (
-          <>
-            <p className="m-0 mb-3 max-w-[60ch] text-[12.5px] leading-relaxed text-muted">
-              Admins create desks and hand their owners a join code. Nobody holds it yet.
-            </p>
-            <button
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                setError(null);
-                try {
-                  setState((await claimFirstAdmin()) ? "claimed" : "held-by-other");
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : "Couldn't claim it.");
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              className="flex items-center gap-2 rounded-xl bg-ink px-4 py-2.5 text-[13px] font-semibold text-paper disabled:opacity-60"
-            >
-              {busy && <Loader2 size={14} className="animate-spin" />}
-              Make me an admin
-            </button>
-          </>
-        )}
-        {error && <p className="m-0 mt-2.5 text-[12px] text-clay-ink dark:text-clay">{error}</p>}
+        <p className="m-0 flex items-center gap-2 text-[13.5px] font-semibold">
+          <CircleSlash size={15} strokeWidth={2.4} />
+          {held ? "Admin is held by a different account" : "Nobody is an admin yet"}
+        </p>
+        <p className="m-0 mt-1.5 max-w-[60ch] text-[12.5px] leading-relaxed text-muted">
+          {held
+            ? "If that row was filled in by mistake — a placeholder pasted instead of a real id — the project owner replaces it with this account:"
+            : "If this is your project, run this in Supabase → SQL Editor and this account becomes the admin:"}
+        </p>
+        <pre className="mt-2.5 overflow-x-auto rounded-xl border border-line bg-surface-sunk p-3 font-mono text-[11px] leading-relaxed">
+{held
+  ? `select * from public.admins;
+
+delete from public.admins where user_id not like 'user\\_%';
+insert into public.admins (user_id)
+values ('${clerkId ?? "user_..."}')
+on conflict (user_id) do nothing;`
+  : `insert into public.admins (user_id)
+values ('${clerkId ?? "user_..."}');`}
+        </pre>
       </div>
     </SettingsGroup>
   );

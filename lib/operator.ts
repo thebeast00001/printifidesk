@@ -24,18 +24,6 @@ export async function adminsExist(): Promise<boolean> {
   return Boolean(data);
 }
 
-/**
- * Takes the first admin seat. Succeeds only while nobody holds it, so it can't
- * be used to escalate once the deployment is set up.
- */
-export async function claimFirstAdmin(): Promise<boolean> {
-  const supabase = getSupabase();
-  if (!supabase) throw new Error("No database connection.");
-  const { data, error } = await supabase.rpc("claim_first_admin");
-  if (error) throw new Error(explain(error.message));
-  return Boolean(data);
-}
-
 export interface Desk {
   id: string;
   name: string;

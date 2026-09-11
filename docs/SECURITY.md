@@ -24,7 +24,7 @@ token can still attempt, so every rule that matters has to hold in Postgres.
 | Who you are | Clerk JWT → `public.clerk_id()` reads `sub` | Supabase verifies the signature; nothing here does. |
 | Your rows vs mine | RLS on every table | `user_id = clerk_id()` or `is_staff(operator_id)`. |
 | Staff vs student | `public.staff` table, read by `is_staff()` | Written only by `claim_invite()` (a live join code), `add_staff()` (staff, by email) or manual SQL. Desks are created by `create_operator()` (admin). |
-| Admin | `public.admins`, read by `is_admin()` | First seat via `claim_first_admin()` under a table lock; no other write path. |
+| Admin | `public.admins`, read by `is_admin()` | **No write path from the app at all** (0020): no function inserts, no policy allows it. Granted only by SQL in the project dashboard. An admin creates desks and mints a code for an *empty* desk; nothing else. |
 | Order price | `place_order()` RPC (0014) | The browser never writes a total. See below. |
 | Order changes | `guard_order_update()` trigger (0009, 0012) | Pins every column a student may not touch, by name. |
 | Files | Storage RLS keyed on the path's first folder | Path is `<clerk id>/<doc id>-<name>`; `documents_path_owned` (0014) ties the row to it. |
@@ -299,8 +299,16 @@ and both functions no longer exist.
 - **Secrets.** `.env*` is ignored; only `NEXT_PUBLIC_*` values reach the bundle,
   and each of those is meant to be public. The service-role key and the
   webhook secret are read only inside route handlers.
-- **Admin bootstrap.** `claim_first_admin()` takes an exclusive table lock
-  before checking emptiness, so two simultaneous claims can't both succeed.
+- **Admin bootstrap.** Removed in 0020. `claim_first_admin()` let the first
+  signed-in person take the seat while the table was empty — which, right
+  after a reset, is the moment a stranger could. Now nothing in the app
+  writes `admins`; the harness asserts there is no such function and the
+  table's only policy is a read. The admin is whoever can open the Supabase
+  dashboard and run one `INSERT`.
+- **Admin reach.** An admin can create a desk and make a join code for a
+  desk with nobody on it. Once someone is on staff, `can_invite_for()` shuts
+  the admin out: no codes, no revokes, no listing of the desk's codes, and
+  `admin_desks()` reports a head count, never names. Staff is the desk's.
 - **Signed URLs** for operator file access expire in 300 seconds.
 - **`operators` is publicly readable**, including `upi_vpa`. Students have to
   pay to it, so it is public by design. Stock levels are also visible; that is
@@ -345,3 +353,4 @@ The security-relevant scenarios in `check:sql`, by name:
 - a student's handover code can't be set to a known one
 - desk sign-in: fake token lists nobody, weak PINs refused, lockout after five, revoked device dead
 - join codes: admin-only desk creation, one use, expiry and revocation, twenty guesses then wait
+- admin: shut out of a staffed desk's codes; no function or policy writes `admins`

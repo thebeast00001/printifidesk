@@ -78,11 +78,13 @@ export function AdminDesks() {
     }
   }
 
+  // Only for a desk nobody is on yet. Once the owner has joined, staff is the
+  // desk's business; the database refuses an admin's code from then on.
   async function ownerCode(desk: Desk) {
     setBusy(desk.id);
     setError(null);
     try {
-      const made = await createInvite(desk.id, desk.staff_count === 0 ? "Owner" : "");
+      const made = await createInvite(desk.id, "Owner");
       setFresh({ deskId: desk.id, ...made });
       await load();
     } catch (e) {
@@ -112,8 +114,8 @@ export function AdminDesks() {
           {!signedIn
             ? "Admins sign in with the same account everyone else uses."
             : seatTaken
-              ? "Someone already holds admin, so it can't be claimed from /diagnostics. If that row was filled in by mistake, replace it below."
-              : "Nobody is an admin yet — you can take the seat from /diagnostics with one button, or run this."}
+              ? "Someone else holds admin. Admin is granted only in the Supabase SQL editor, by whoever owns the project — if that row was filled in by mistake, they replace it with this:"
+              : "Nobody is an admin yet. Admin is granted only in the Supabase SQL editor, by whoever owns the project — if that's you, run this:"}
         </p>
         {signedIn && clerkId && <AdminFixSql clerkId={clerkId} seatTaken={seatTaken} copied={copied} setCopied={setCopied} />}
       </div>
@@ -158,7 +160,7 @@ export function AdminDesks() {
               <p className="m-0 text-[13px] font-semibold">A new desk</p>
               <p className="m-0 mt-1 max-w-[60ch] text-[12.5px] leading-relaxed text-muted">
                 Closed and unstaffed until its owner joins. You get a code to hand them; the rest —
-                prices, hours, UPI — they set themselves.
+                prices, hours, UPI, who else works there — is theirs.
               </p>
               <div className="mt-3 grid gap-2 sm:grid-cols-[1.4fr_1fr_auto_auto]">
                 <input
@@ -237,22 +239,26 @@ export function AdminDesks() {
                   {desk.open_invites > 0 && ` · ${desk.open_invites} code${desk.open_invites === 1 ? "" : "s"} open`}
                 </p>
               </div>
-              <button
-                onClick={() => ownerCode(desk)}
-                disabled={busy === desk.id}
-                className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface-sunk px-3.5 text-[12.5px] font-semibold text-ink-soft disabled:opacity-50"
-              >
-                {busy === desk.id ? <Loader2 size={13} className="animate-spin" /> : <Ticket size={14} strokeWidth={2.2} />}
-                {desk.staff_count === 0 ? "Owner code" : "Join code"}
-              </button>
+              {desk.staff_count === 0 ? (
+                <button
+                  onClick={() => ownerCode(desk)}
+                  disabled={busy === desk.id}
+                  className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface-sunk px-3.5 text-[12.5px] font-semibold text-ink-soft disabled:opacity-50"
+                >
+                  {busy === desk.id ? <Loader2 size={13} className="animate-spin" /> : <Ticket size={14} strokeWidth={2.2} />}
+                  Owner code
+                </button>
+              ) : (
+                <p className="m-0 shrink-0 text-[11.5px] text-muted">Staff is theirs to manage.</p>
+              )}
             </div>
 
-            {fresh?.deskId === desk.id && (
+            {fresh?.deskId === desk.id && desk.staff_count === 0 && (
               <InviteCard
                 code={fresh.code}
                 expiresAt={fresh.expires_at}
-                label={desk.staff_count === 0 ? "Owner code" : "Join code"}
-                who={desk.staff_count === 0 ? "The owner" : undefined}
+                label="Owner code"
+                who="The owner"
                 className="mt-3.5"
               />
             )}
