@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 import { House, Printer, Receipt, Settings2, SlidersHorizontal, Wallet } from "lucide-react";
 import { useActiveCount } from "@/hooks/use-tracking";
 import { useApp } from "@/lib/store";
+import { useSurface } from "./surface-provider";
 import { cn, spring } from "@/lib/utils";
 
 const STUDENT_NAV = [
@@ -20,18 +21,20 @@ const STUDENT_NAV = [
  * ink pill is a shared layout element that slides between destinations while
  * the active label expands out of the icon.
  *
- * On the operator's page it keeps its shape and changes its meaning. "Home"
- * there is the queue, not the student's front page — an operator who taps
- * home mid-shift wants their desk back, not a place to upload. All three
- * destinations are faces of the operator page: nothing in this bar leaves
- * the desk. The way back to the student side is a link in the page header,
- * where reaching for it is deliberate.
+ * On the desk it keeps its shape and changes its meaning. "Home" there is
+ * the queue, not the student's front page — an operator who taps home
+ * mid-shift wants their desk back, not a place to upload. All three
+ * destinations are the desk's own pages: nothing in this bar leaves the
+ * desk, and on the desk's own host there is nowhere else to go.
  */
 export function FloatingDock() {
   const pathname = usePathname();
-  const operatorMode = pathname.startsWith("/operator");
+  const { isDeskPath } = useSurface();
 
-  return operatorMode ? <OperatorDock /> : <StudentDock pathname={pathname} />;
+  // A door has nowhere else to go.
+  if (pathname.startsWith("/sign-in") || pathname.startsWith("/sso-callback")) return null;
+
+  return isDeskPath(pathname) ? <OperatorDock pathname={pathname} /> : <StudentDock pathname={pathname} />;
 }
 
 function StudentDock({ pathname }: { pathname: string }) {
@@ -51,35 +54,31 @@ function StudentDock({ pathname }: { pathname: string }) {
   );
 }
 
-function OperatorDock() {
-  const view = useApp((s) => s.operatorView);
-  const setView = useApp((s) => s.setOperatorView);
+function OperatorDock({ pathname }: { pathname: string }) {
   const pending = useApp((s) => s.operatorPending);
+  const { desk } = useSurface();
+  // The three faces are real pages; the browser URL says which is active.
+  // `desk()` gives the public address on this site: `/takings` on the desk
+  // host, `/operator/takings` where both sites share one.
+  const faces = [
+    { internal: "/operator", label: "Queue", icon: Printer, badge: pending || undefined },
+    { internal: "/operator/takings", label: "Takings", icon: Wallet, badge: undefined },
+    { internal: "/operator/settings", label: "Settings", icon: SlidersHorizontal, badge: undefined },
+  ] as const;
+  const active = faces.reduce<string>((best, f) => {
+    const href = desk(f.internal);
+    const hit = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
+    return hit && href.length >= best.length ? href : best;
+  }, "");
 
   return (
     <DockShell>
-      <DockItem
-        href="/operator"
-        label="Queue"
-        icon={Printer}
-        active={view === "queue"}
-        badge={pending || undefined}
-        onClick={() => setView("queue")}
-      />
-      <DockItem
-        href="/operator"
-        label="Takings"
-        icon={Wallet}
-        active={view === "takings"}
-        onClick={() => setView("takings")}
-      />
-      <DockItem
-        href="/operator"
-        label="Settings"
-        icon={SlidersHorizontal}
-        active={view === "settings"}
-        onClick={() => setView("settings")}
-      />
+      {faces.map((f) => {
+        const href = desk(f.internal);
+        return (
+          <DockItem key={f.internal} href={href} label={f.label} icon={f.icon} active={href === active} badge={f.badge} />
+        );
+      })}
     </DockShell>
   );
 }

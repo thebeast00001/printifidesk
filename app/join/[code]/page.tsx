@@ -4,7 +4,7 @@ import { StaggerIn } from "@/components/stagger-in";
 import { ConnectionBanner } from "@/components/connection-banner";
 import { JoinDesk } from "@/components/join-desk";
 
-export const metadata = { title: "Join a desk · Printify" };
+export const metadata = { title: "Join a desk" };
 
 /**
  * The link inside the QR. The code is in the path, not a query string, so it

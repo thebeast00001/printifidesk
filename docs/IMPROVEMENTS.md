@@ -171,6 +171,13 @@ the order with a reason, visible to the student.
 `operator_stats()` is today-only. Week and month, plus a busiest-hour breakdown,
 is what tells an operator when to staff up.
 
+### 2.11 Two sites — done
+The desk is its own site: `desk.printify.app`, its own door (email and
+password, or a PIN on a paired device), its own installable app with its own
+mark, new-order pushes to its own devices, and no student chrome anywhere.
+The student site never shows a desk link. One codebase, one database; the
+host picks the site and `lib/surface.ts` is the whole rule.
+
 ### 2.10 Desk sign-in: a name and a PIN, not Google — done (0018)
 A shared counter tablet changes hands every shift; a Google sign-in each time
 was the wrong shape. Pair the device once from Settings, then a shift starts

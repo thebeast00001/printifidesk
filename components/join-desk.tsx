@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { SignInButton, useAuth } from "@clerk/nextjs";
+import Link from "next/link";
+import { useAuth } from "@clerk/nextjs";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowRight, Check, KeyRound, Loader2, LogIn, Ticket } from "lucide-react";
 import { claimInvite } from "@/lib/desk";
 import { setMyPin } from "@/lib/desk-auth";
 import { cn, easeIos } from "@/lib/utils";
+import { useSurface } from "./surface-provider";
 
 /**
  * Joining a desk with a code.
@@ -31,6 +33,7 @@ export function JoinDesk({
   const router = useRouter();
   const pathname = usePathname();
   const { isLoaded, isSignedIn } = useAuth();
+  const { desk } = useSurface();
   const [code, setCode] = useState(pretty(initialCode));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +76,7 @@ export function JoinDesk({
 
   function openDesk() {
     if (onJoined) onJoined();
-    else router.push("/operator");
+    else router.push(desk("/operator"));
   }
 
   if (!isLoaded) {
@@ -99,12 +102,13 @@ export function JoinDesk({
             ? `You have a code${raw ? ` — ${pretty(raw)}` : ""}. Sign in once and it's yours; after that the counter device only ever asks for a PIN.`
             : "Sign in once, then type the code the desk gave you. After that the counter device only ever asks for a PIN."}
         </p>
-        <SignInButton mode="modal" forceRedirectUrl={here}>
-          <button className="mt-4 inline-flex h-11 items-center gap-2 rounded-xl bg-ink px-4 text-[13px] font-semibold text-paper">
-            <LogIn size={14} strokeWidth={2.2} />
-            Sign in to join
-          </button>
-        </SignInButton>
+        <Link
+          href={`/sign-in?desk=1&redirect_url=${encodeURIComponent(here)}`}
+          className="mt-4 inline-flex h-11 items-center gap-2 rounded-xl bg-ink px-4 text-[13px] font-semibold text-paper"
+        >
+          <LogIn size={14} strokeWidth={2.2} />
+          Sign in to join
+        </Link>
       </Shell>
     );
   }

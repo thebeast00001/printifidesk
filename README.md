@@ -39,6 +39,38 @@ presence. **GSAP** owns *time* — sequences and numeric tweens that need
 retargeting mid-flight, like the progress fill that changes target when a
 realtime update lands before the last tween finished.
 
+## Two sites
+
+Students use **`printify.app`**; the desk uses **`desk.printify.app`**. One
+codebase, one database, one Clerk instance, one deployment — the host picks
+the site. [`lib/surface.ts`](lib/surface.ts) is the whole rule: a pure
+routing table the middleware, the server layout and the browser all read, and
+`check:features` exercises every row of it.
+
+| | Student site | Desk site |
+|---|---|---|
+| Pages | `/`, `/orders`, `/profile`, `/settings` | `/` (queue), `/takings`, `/settings`, `/join`, `/admin` |
+| Sign-in | one **Google** button, nothing else | **email + password**; create account; forgot password by emailed code — or a PIN on a paired device |
+| Chrome | status island, rotating headline, student dock | desk header, desk dock, no student anything |
+| Installs as | "Printify", portrait, `/icon-*.png` | "Printify Desk", any orientation, `/desk-icon-*.png` |
+| Push | "your job is ready" | "new order A03 — 12 pages, ₹28", to devices subscribed *from the desk* |
+| Stray page | `/operator…`, `/join`, `/admin` → desk host | `/orders`, `/profile` → student host |
+
+Both doors are Clerk custom flows, so Clerk still does the hashing, the
+breach check, the emailed codes and the session; the instance just has both
+Google and password enabled, and each site shows only its own. Signing out
+of the desk lands on the desk's door.
+
+With `NEXT_PUBLIC_DESK_HOST` unset both sites share one host and the desk
+lives under `/operator` — that is how a bare `localhost:3000` runs, and
+`desk.localhost:3000` shows the desk site there without any config. Nothing
+about the pages differs between the modes, only where they are addressed
+from: `/operator/takings` on one host is `/takings` on the desk's.
+
+On Vercel: add both domains to the one project, set the two variables, and
+put the Clerk production instance on the apex — its session cookie sits on
+`.printify.app`, so the subdomain shares it with no satellite setup.
+
 ## Setup
 
 Authentication is **Clerk**; Postgres, storage and realtime are **Supabase**.
@@ -76,7 +108,8 @@ factual-teal-4113.clerk.accounts.dev
 [`0017_paise_and_rate_snapshot.sql`](supabase/migrations/0017_paise_and_rate_snapshot.sql),
 [`0018_desk_devices.sql`](supabase/migrations/0018_desk_devices.sql),
 [`0019_join_codes.sql`](supabase/migrations/0019_join_codes.sql),
-then [`0020_admin_by_hand.sql`](supabase/migrations/0020_admin_by_hand.sql).
+[`0020_admin_by_hand.sql`](supabase/migrations/0020_admin_by_hand.sql),
+then [`0021_desk_push.sql`](supabase/migrations/0021_desk_push.sql).
 
 These are **SQL** — they go in the Supabase dashboard's SQL editor
 (`Project → SQL Editor → New query`), not a terminal.
@@ -483,6 +516,16 @@ before changing a policy.
 - **Next up**, **age badges** (amber past what the rate card promised), the
   **Scheduled** tab grouped by hour with *due in 20 min*.
 
+### The desk hears about new orders
+
+`0021`: a device that turns on *New-order alerts* in the desk's settings gets
+a push the moment an order is inserted — "New order A03 — 7 pages, 2 colour,
+₹22.25" — with the tab closed or the app in a pocket. The subscription row is
+flagged `desk`, so the dispatcher sends desk rows only to desk devices and a
+student's "ready" pushes go where they always went. Staff with no desk
+device get no row at all rather than a "skipped" line per order. The same
+queue, the same dispatcher, the same honesty about what was sent.
+
 ### Starting a shift without Google
 
 A counter's tablet changes hands three times a day, and a Google sign-in each
@@ -651,7 +694,7 @@ Being specific about this matters more than a green badge:
 - `npm run check` — types, pricing, phone normalisation, pickup slots, UPI link
   format, the write-guard column list, and the SQL below. **Passes.**
 - `npm run build` — **passes.**
-- `npm run check:sql` — all twenty migrations applied, re-applied, and their
+- `npm run check:sql` — all twenty-one migrations applied, re-applied, and their
   triggers driven through a real order under a real JWT: tokens, the timeline,
   the write guard, per-file settings, the report constraint, the upload
   ceiling, the order rate limit, document ownership, push endpoint sanity, and
@@ -661,8 +704,17 @@ Being specific about this matters more than a green badge:
   rules, lockout, revocation), and join codes (admin creates a desk, a code
   joins once, expired and revoked codes are dead, twenty guesses and you
   wait, applications gone, the admin is shut out of a staffed desk, no
-  function or policy can write `admins`). **Passes.** It does not check the RLS policies
+  function or policy can write `admins`, a new order pushes to desk devices
+  and only them). **Passes.** It does not check the RLS policies
   themselves; see above for why.
+- **Two sites** — the routing table is unit-tested row by row (38 checks),
+  and a split-mode production server was probed on both hosts: every student
+  page serves on the student host, every desk page on the desk host, every
+  stray page hops across with its path and query intact, and neither site's
+  HTML links to the other. Both doors render; a wrong password shows Clerk's
+  own "Couldn't find your account."; account creation reaches Clerk's bot
+  check inside the page. Completing a Google or password sign-in needs a
+  real account, which is a you-step.
 - **Desk sign-in** — `/api/desk` verified against the live project: a malformed
   body gets 400, an unknown device gets 401 with the database's own message.
   The tile screen and its revoked-device state render; a real PIN sign-in

@@ -11,6 +11,7 @@ import { clockLabel } from "../lib/utils";
 import { deskPrefix, parseScan } from "../components/operator/scan-sheet";
 import QRCode from "qrcode";
 import jsQR from "jsqr";
+import { deskPath, hostsFrom, isSingleHost, onDesk, routeFor, sameOriginPath, surfaceFor } from "../lib/surface";
 
 let fails = 0;
 const check = (name: string, got: unknown, want: unknown) => {
@@ -258,6 +259,58 @@ check("expired reads negative", (jwtMsRemaining(tokenExpiring(-5), at) ?? 0) < 0
 check("no exp reads unknown", jwtMsRemaining(`${b64url("{}")}.${b64url('{"sub":"x"}')}.s`, at), null);
 check("garbage reads unknown", jwtMsRemaining("not-a-token", at), null);
 check("two segments reads unknown", jwtMsRemaining("a.b", at), null);
+
+console.log("\n— two sites: which host serves what —");
+const two = hostsFrom({ desk: "desk.printify.app" });
+const one = hostsFrom({});
+check("student host derived from desk.", two.student, "printify.app");
+check("scheme and path stripped", hostsFrom({ desk: "https://desk.printify.app/x" }).desk, "desk.printify.app");
+check("no desk host → single", isSingleHost(one), true);
+check("desk host is the desk", surfaceFor("desk.printify.app", two), "desk");
+check("student host is the student", surfaceFor("printify.app", two), "student");
+check("desk.localhost is the desk, even single", surfaceFor("desk.localhost:3000", one), "desk");
+check("localhost is the student", surfaceFor("localhost:3000", one), "student");
+check("host case-insensitive", surfaceFor("DESK.Printify.app", two), "desk");
+
+// desk site
+check("desk / → queue", routeFor("desk", "/", two), { kind: "rewrite", to: "/operator" });
+check("desk /takings → face", routeFor("desk", "/takings", two), { kind: "rewrite", to: "/operator/takings" });
+check("desk /settings is the desk's", routeFor("desk", "/settings", two), { kind: "rewrite", to: "/operator/settings" });
+check("desk /operator/x → short", routeFor("desk", "/operator/takings", two), { kind: "redirect", to: "/takings" });
+check("desk /operator → /", routeFor("desk", "/operator", two), { kind: "redirect", to: "/" });
+check("desk /join passes", routeFor("desk", "/join/XK7P2Q4M", two), { kind: "pass" });
+check("desk /admin passes", routeFor("desk", "/admin", two), { kind: "pass" });
+check("desk /sign-in passes", routeFor("desk", "/sign-in", two), { kind: "pass" });
+check("desk /api passes", routeFor("desk", "/api/desk", two), { kind: "pass" });
+check("desk /orders → student site", routeFor("desk", "/orders", two), { kind: "redirect", to: "/orders", host: "student" });
+check("desk /orders, single → served", routeFor("desk", "/orders", one), { kind: "pass" });
+
+// student site
+check("student / passes", routeFor("student", "/", two), { kind: "pass" });
+check("student /orders passes", routeFor("student", "/orders", two), { kind: "pass" });
+check("student /operator → desk /", routeFor("student", "/operator", two), { kind: "redirect", to: "/", host: "desk" });
+check("student /operator/settings → desk", routeFor("student", "/operator/settings", two), { kind: "redirect", to: "/settings", host: "desk" });
+check("student /join → desk, path kept", routeFor("student", "/join/XK7P2Q4M", two), { kind: "redirect", to: "/join/XK7P2Q4M", host: "desk" });
+check("student /admin → desk", routeFor("student", "/admin", two), { kind: "redirect", to: "/admin", host: "desk" });
+check("single host: nothing moves", routeFor("student", "/operator/settings", one), { kind: "pass" });
+
+// links and chrome
+check("deskPath short on desk", deskPath("desk", "/operator/takings"), "/takings");
+check("deskPath root on desk", deskPath("desk", "/operator"), "/");
+check("deskPath untouched elsewhere", deskPath("student", "/operator/takings"), "/operator/takings");
+check("deskPath leaves /join alone", deskPath("desk", "/join"), "/join");
+check("onDesk: desk site always", onDesk("desk", "/"), true);
+check("onDesk: /operator on one host", onDesk("student", "/operator/settings"), true);
+check("onDesk: student home", onDesk("student", "/"), false);
+check("sameOriginPath keeps a path", sameOriginPath("/orders?x=1", "/"), "/orders?x=1");
+check("sameOriginPath refuses a host", sameOriginPath("https://evil.example/", "/"), "/");
+check("sameOriginPath refuses //", sameOriginPath("//evil.example", "/"), "/");
+check("sameOriginPath refuses /\\", sameOriginPath("/\\evil.example", "/"), "/");
+check("sameOriginPath fallback on null", sameOriginPath(null, "/orders"), "/orders");
+check("absolute, same origin → path", sameOriginPath("http://localhost:3000/orders?x=1", "/", "http://localhost:3000"), "/orders?x=1");
+check("absolute, same origin, bare → /", sameOriginPath("http://localhost:3000", "/", "http://localhost:3000"), "/");
+check("absolute, other origin → fallback", sameOriginPath("http://localhost:3000.evil.com/x", "/", "http://localhost:3000"), "/");
+check("absolute, origin unknown → fallback", sameOriginPath("http://localhost:3000/orders", "/"), "/");
 
 const done = fails === 0 ? "\nPASS - all checks passed" : `\nFAIL - ${fails} check(s) failed`;
 console.log(done);

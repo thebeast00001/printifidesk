@@ -19,8 +19,9 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(payload.title || "Printify", {
       body: payload.body || "",
-      icon: "/icon-192.png",
-      badge: "/icon-192.png",
+      // The desk's pushes carry the desk's mark; anything else is the app's.
+      icon: sameOriginPath(payload.icon, "/icon-192.png"),
+      badge: sameOriginPath(payload.icon, "/icon-192.png"),
       // Same tag replaces an earlier notification for the same order rather
       // than stacking three of them as a job moves through the queue.
       tag: payload.tag || "printify-order",
@@ -39,15 +40,15 @@ self.addEventListener("push", (event) => {
  * the one place a stray absolute URL would open a phishing page under our
  * name. A relative path is the only shape accepted.
  */
-function sameOriginPath(url) {
-  if (typeof url !== "string") return "/orders";
-  if (!url.startsWith("/") || url.startsWith("//")) return "/orders";
+function sameOriginPath(url, fallback) {
+  if (typeof url !== "string") return fallback;
+  if (!url.startsWith("/") || url.startsWith("//") || url.startsWith("/\\")) return fallback;
   return url;
 }
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = sameOriginPath(event.notification.data && event.notification.data.url);
+  const target = sameOriginPath(event.notification.data && event.notification.data.url, "/orders");
 
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {

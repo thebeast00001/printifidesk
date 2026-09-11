@@ -1,7 +1,7 @@
 "use client";
 
-import { SignInButton } from "@clerk/nextjs";
-import { LogIn } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { GoogleSignIn } from "./sign-in/google-button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,6 +18,7 @@ export function SignedOutNotice({
   body: string;
   className?: string;
 }) {
+  const pathname = usePathname();
   return (
     <div
       className={cn(
@@ -29,12 +30,9 @@ export function SignedOutNotice({
       <p className="mx-auto m-0 mt-1.5 max-w-[42ch] text-[12.5px] leading-relaxed text-muted">
         {body}
       </p>
-      <SignInButton mode="modal">
-        <button className="mt-4 inline-flex items-center gap-2 rounded-xl bg-ink px-4 py-2.5 text-[13px] font-semibold text-paper">
-          <LogIn size={14} strokeWidth={2.2} />
-          Sign in
-        </button>
-      </SignInButton>
+      <div className="mt-4">
+        <GoogleSignIn next={pathname} />
+      </div>
     </div>
   );
 }

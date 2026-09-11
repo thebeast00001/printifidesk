@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { SignInButton, useAuth, useUser } from "@clerk/nextjs";
+import { useAuth, useUser } from "@clerk/nextjs";
+import { useGoogleSignIn } from "./sign-in/google-button";
 import { AnimatePresence, motion, useMotionValueEvent, useScroll } from "motion/react";
 import { LogIn, MapPin, Search, User } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -210,18 +211,21 @@ function IdleHeadline({ wait, operator }: { wait: OperatorWait; operator: Operat
 function HeaderActions() {
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
+  const google = useGoogleSignIn("/");
 
   // Reserve the space before Clerk resolves, so the header doesn't jump.
   if (!isLoaded) return <div className="size-11 shrink-0" aria-hidden />;
 
   if (!isSignedIn) {
     return (
-      <SignInButton mode="modal">
-        <button className="flex h-11 shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-4 text-[13px] font-semibold shadow-card transition-colors hover:bg-surface-sunk">
-          <LogIn size={15} strokeWidth={2.2} />
-          Sign in
-        </button>
-      </SignInButton>
+      <button
+        onClick={() => void google.go()}
+        disabled={google.busy}
+        className="flex h-11 shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-4 text-[13px] font-semibold shadow-card transition-colors hover:bg-surface-sunk disabled:opacity-60"
+      >
+        <LogIn size={15} strokeWidth={2.2} />
+        Sign in
+      </button>
     );
   }
 

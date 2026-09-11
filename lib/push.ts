@@ -70,9 +70,10 @@ export async function pushState(): Promise<PushState> {
  * Asks permission, subscribes, and stores the keys.
  *
  * The endpoint is unique per browser+device, so the same account on a phone and
- * a laptop is two rows and gets both.
+ * a laptop is two rows and gets both. `desk` marks a subscription made on the
+ * desk site: that device gets the desk's new-order pushes as well.
  */
-export async function enablePush(): Promise<PushState> {
+export async function enablePush({ desk = false }: { desk?: boolean } = {}): Promise<PushState> {
   if (!pushSupported()) return "unsupported";
   if (!PUSH_PUBLIC_KEY) return "unconfigured";
 
@@ -102,6 +103,7 @@ export async function enablePush(): Promise<PushState> {
       auth: json.keys.auth,
       user_agent: navigator.userAgent.slice(0, 200),
       failed_at: null,
+      desk,
     },
     { onConflict: "endpoint" },
   );

@@ -1,8 +1,15 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import { hostsFrom, routeFor, surfaceFor } from "@/lib/surface";
 
 /**
  * Browsing is public — you can see the counter's wait and the upload card
  * without an account. Anything that reads or writes your own rows needs one.
+ *
+ * `/operator` is deliberately not in this list. A paired desk device opens
+ * it signed out and sees the tap-a-name screen; everything on the page is
+ * behind RLS, so an unpaired, signed-out visitor sees a sign-in and nothing
+ * else. Sending them to a hosted sign-in would defeat the point.
  */
 const isProtected = createRouteMatcher([
   "/orders(.*)",
@@ -11,10 +18,15 @@ const isProtected = createRouteMatcher([
   "/admin(.*)",
 ]);
 
-// /operator is deliberately not in that list. A paired desk device opens it
-// signed out and sees the tap-a-name screen; everything on the page is
-// behind RLS, so an unpaired, signed-out visitor sees a sign-in and nothing
-// else. Redirecting to Clerk's hosted sign-in would defeat the point.
+/**
+ * Two sites on one deployment: the host picks the site, the table in
+ * lib/surface.ts says what each site does with each path. Empty when both
+ * live on one host, which is how a bare `localhost` runs.
+ */
+const HOSTS = hostsFrom({
+  desk: process.env.NEXT_PUBLIC_DESK_HOST,
+  student: process.env.NEXT_PUBLIC_SITE_HOST,
+});
 
 /**
  * Every host the page is allowed to talk to, and nothing else.
@@ -33,9 +45,36 @@ export default clerkMiddleware(
     // scheduler, not a signed-in browser; they authenticate with their own
     // shared secret, compared in constant time.
     if (request.nextUrl.pathname.startsWith("/api/")) return;
+
+    const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+    const surface = surfaceFor(host, HOSTS);
+    const route = routeFor(surface, request.nextUrl.pathname, HOSTS);
+
+    if (route.kind === "redirect") {
+      // Built from the request's own host, not `nextUrl`'s — behind a proxy
+      // (and in dev) that is the bind address, not what the browser typed.
+      // The search string travels with it so a join link or a sign-in return
+      // address survives the hop.
+      const proto = request.headers.get("x-forwarded-proto") ?? request.nextUrl.protocol.replace(":", "");
+      const target = route.host ? (route.host === "desk" ? HOSTS.desk : HOSTS.student) : host;
+      return NextResponse.redirect(`${proto}://${target}${route.to}${request.nextUrl.search}`, 307);
+    }
+
     if (isProtected(request)) await auth.protect();
+
+    if (route.kind === "rewrite") {
+      const url = request.nextUrl.clone();
+      url.pathname = route.to;
+      return NextResponse.rewrite(url);
+    }
   },
   {
+    // Both sites have a `/sign-in`, each its own: the student's is one
+    // Google button, the desk's is email and password. A protected page a
+    // signed-out person lands on sends them there, and back afterwards.
+    signInUrl: "/sign-in",
+    signUpUrl: "/sign-in",
+
     /*
      * A strict, nonce-based Content Security Policy.
      *

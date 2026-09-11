@@ -968,6 +968,46 @@ await scenario("applications are gone", async () => {
   return "table and both functions dropped";
 });
 
+/* ---------- 0021: the desk hears about new orders ---------- */
+
+await scenario("a new order pushes to staff with a desk device, and only them", async () => {
+  await actingAs(null);
+  // op_test has a desk device; a second staff member has only a student one.
+  await db.exec(`
+    insert into public.staff (user_id, operator_id) values ('op_two', '${OPERATOR}') on conflict do nothing;
+    insert into public.push_subscriptions (user_id, endpoint, p256dh, auth, desk)
+    values ('op_test', 'https://fcm.googleapis.com/fcm/send/desk-1', 'k', 'a', true),
+           ('op_two',  'https://fcm.googleapis.com/fcm/send/phone-2', 'k', 'a', false)
+    on conflict (endpoint) do nothing;
+  `);
+  // A fresh student: student_test has hit the hourly order cap by now.
+  await actingAs("student_push");
+  const { rows: placed } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "essay.pdf", pages: 7, colour_pages: 2, config: { copies: 1, sides: "single" } }]),
+  ]);
+  await actingAs(null);
+  const { rows } = await db.query(
+    `select user_id, body, status, audience from public.notifications
+      where order_id = $1 and audience = 'desk' order by user_id;`,
+    [placed[0].id],
+  );
+  if (rows.length !== 1 || rows[0].user_id !== "op_test") {
+    throw new Error(`desk rows went to: ${rows.map((r) => r.user_id).join(", ") || "nobody"}`);
+  }
+  if (rows[0].status !== "queued") throw new Error(`status ${rows[0].status}`);
+  const { rows: ord } = await db.query(`select token, total from public.orders where id = $1;`, [placed[0].id]);
+  const expected = `New order ${ord[0].token} — 7 pages, 2 colour, ₹${Number(ord[0].total) % 1 === 0 ? Number(ord[0].total) : Number(ord[0].total).toFixed(2)}`;
+  if (rows[0].body !== expected) throw new Error(`body "${rows[0].body}" ≠ "${expected}"`);
+  // The student's own rows are untouched by the new column.
+  const { rows: student } = await db.query(
+    `select count(*)::int as n from public.notifications where order_id = $1 and audience = 'student';`,
+    [placed[0].id],
+  );
+  if (student[0].n !== 0) throw new Error("a placed order queued a student notification, which it never did");
+  return `"${rows[0].body}" → op_test only; op_two's phone stays quiet`;
+});
+
 await scenario("the upload ceiling holds", async () => {
   await actingAs("student_test");
   // 500 MB is the cap; one file over it must be refused.

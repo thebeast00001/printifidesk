@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/page-header";
 import { StaggerIn } from "@/components/stagger-in";
 import { ClaimAdmin, DiagnosticsView } from "@/components/diagnostics-view";
 
-export const metadata = { title: "Diagnostics · Print Counter" };
+export const metadata = { title: "Diagnostics" };
 
 /**
  * Setup checks for whoever runs this deployment. Deliberately not linked from

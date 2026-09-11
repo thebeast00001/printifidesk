@@ -15,7 +15,7 @@ import {
   myTotals,
   orderEvents,
   queueStatus,
-  staffOperatorId,
+  staffOperatorIds,
   type Operator,
   type OperatorWait,
   type OrderEventRow,
@@ -288,11 +288,18 @@ export function useActiveCount() {
   return count;
 }
 
-/** Operator console. Empty operatorId means "you aren't staff anywhere". */
-export function useOperatorQueue() {
+/**
+ * Operator console. Empty operatorId means "you aren't staff anywhere".
+ *
+ * `preferred` is the desk the person picked when they're on more than one;
+ * it's honoured only if they really are staff of it, otherwise the first
+ * desk wins, so a stale choice can never show someone else's queue.
+ */
+export function useOperatorQueue(preferred: string | null = null) {
   const authKey = useAuthKey();
   const [backend, setBackend] = useState<Backend>({ state: "loading" });
   const [operatorId, setOperatorId] = useState<string | null>(null);
+  const [operatorIds, setOperatorIds] = useState<string[]>([]);
   const [operator, setOperator] = useState<Operator | null>(null);
   const [queue, setQueue] = useState<OrderRow[]>([]);
 
@@ -301,7 +308,9 @@ export function useOperatorQueue() {
     if (blocked) return setBackend(blocked);
 
     try {
-      const id = await staffOperatorId();
+      const ids = await staffOperatorIds();
+      const id = (preferred && ids.includes(preferred) ? preferred : ids[0]) ?? null;
+      setOperatorIds(ids);
       setOperatorId(id);
       setOperator(id ? await getOperator(id) : null);
       setQueue(id ? await operatorQueue(id) : []);
@@ -312,7 +321,7 @@ export function useOperatorQueue() {
         message: error instanceof Error ? error.message : "Couldn't reach the database.",
       });
     }
-  }, [authKey]);
+  }, [authKey, preferred]);
 
   useEffect(() => {
     void load();
@@ -320,5 +329,5 @@ export function useOperatorQueue() {
 
   useRealtime(load, backend.state === "ready");
 
-  return { backend, operatorId, operator, queue, reload: load };
+  return { backend, operatorId, operatorIds, operator, queue, reload: load };
 }

@@ -5,6 +5,9 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AppChrome } from "@/components/app-chrome";
 import { SupabaseBridge } from "@/components/supabase-bridge";
+import { SurfaceProvider } from "@/components/surface-provider";
+import { HOSTS, requestSurface } from "@/lib/server/surface";
+import { isSingleHost } from "@/lib/surface";
 import "./globals.css";
 
 /* Display face: the width + optical-size axes are what give the widget
@@ -29,13 +32,29 @@ const dmMono = DM_Mono({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: "Print Counter",
-  description:
-    "Upload from your phone, pay with UPI, collect a printed set. Campus printing without the queue.",
-  manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "Print Counter" },
-};
+/**
+ * Two sites, two names. The desk installs as its own app, with its own
+ * manifest and icon, so a tablet at the counter doesn't open to an upload
+ * card.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const surface = await requestSurface();
+  if (surface === "desk") {
+    return {
+      title: { default: "Printify Desk", template: "%s · Printify Desk" },
+      description: "The counter's side of Printify: the queue, the prices, the hours, the handover.",
+      manifest: "/desk.webmanifest",
+      appleWebApp: { capable: true, statusBarStyle: "default", title: "Printify Desk" },
+    };
+  }
+  return {
+    title: { default: "Printify", template: "%s · Printify" },
+    description:
+      "Upload from your phone, pay with UPI, collect a printed set. Campus printing without the queue.",
+    manifest: "/manifest.webmanifest",
+    appleWebApp: { capable: true, statusBarStyle: "default", title: "Printify" },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: [
@@ -53,6 +72,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // makes the layout dynamic, which is right: the nonce is different every
   // time, so a prerendered shell could never carry a valid one.
   const nonce = (await headers()).get("x-nonce") ?? undefined;
+  const surface = await requestSurface();
+  const split = !isSingleHost(HOSTS);
 
   return (
     <html
@@ -69,10 +90,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body suppressHydrationWarning>
         {/* Both providers inject a script tag; both need this request's nonce
             or the strict CSP blocks them. */}
-        <ClerkProvider nonce={nonce}>
+        <ClerkProvider
+          nonce={nonce}
+          signInUrl="/sign-in"
+          signUpUrl="/sign-in"
+          // Signing out of the desk lands on the desk's door, not a student home.
+          afterSignOutUrl={surface === "desk" ? "/sign-in" : "/"}
+        >
           <ThemeProvider nonce={nonce}>
-            <SupabaseBridge />
-            <AppChrome>{children}</AppChrome>
+            <SurfaceProvider surface={surface} split={split}>
+              <SupabaseBridge />
+              <AppChrome>{children}</AppChrome>
+            </SurfaceProvider>
           </ThemeProvider>
         </ClerkProvider>
       </body>

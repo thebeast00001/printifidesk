@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/page-header";
 import { StaggerIn } from "@/components/stagger-in";
 import { ProfileView } from "@/components/profile-view";
 
-export const metadata = { title: "Profile · Print Counter" };
+export const metadata = { title: "Profile" };
 
 export default function ProfilePage() {
   return (

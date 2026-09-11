@@ -26,6 +26,7 @@ import { staffOperatorId } from "@/lib/orders";
 import { isAdmin } from "@/lib/operator";
 import { formatBytes } from "@/lib/analysis";
 import { useApp } from "@/lib/store";
+import { useSurface } from "./surface-provider";
 import { cn } from "@/lib/utils";
 
 interface Profile {
@@ -42,6 +43,7 @@ export function ProfileView() {
   const { totals, ready } = useTotals();
   const { user } = useUser();
   const clerk = useClerk();
+  const { split } = useSurface();
   const openSheet = useApp((s) => s.openSheet);
 
   const [session, setSession] = useState<SessionState | null>(null);
@@ -157,10 +159,10 @@ export function ProfileView() {
           onClick={() => openSheet("upload")}
         />
         <NavRow href="/orders" icon={Receipt} label="Your orders" hint="Tokens and live status" />
-        {/* Only people who already run a desk get a way to it from here.
-            Advertising "apply to be an operator" on every student's profile
-            invited applications nobody had asked for. */}
-        {isStaff && (
+        {/* Only where both sites share a host, and only for people already on a
+            desk. On its own host the desk is its own site; nothing here
+            points at it. */}
+        {!split && isStaff && (
           <NavRow
             href="/operator"
             icon={Printer}
@@ -168,7 +170,7 @@ export function ProfileView() {
             hint="Your queue, prices and hours"
           />
         )}
-        {admin && (
+        {!split && admin && (
           <NavRow
             href="/admin"
             icon={ShieldCheck}

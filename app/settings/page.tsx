@@ -10,7 +10,7 @@ import {
 import { OperatorPicker } from "@/components/operator-picker";
 import { ConnectionBanner } from "@/components/connection-banner";
 
-export const metadata = { title: "Settings · Print Counter" };
+export const metadata = { title: "Settings" };
 
 export default function SettingsPage() {
   return (

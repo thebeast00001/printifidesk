@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Check, Loader2, MonitorSmartphone, Trash2 } from "lucide-react";
 import {
   forgetThisDevice,
@@ -23,8 +22,16 @@ import { cn } from "@/lib/utils";
  * that makes a device "paired" is shown to nobody — it goes straight into
  * this browser's storage and only its hash is kept on the server.
  */
-export function DevicePanel({ operator, hasPin }: { operator: Operator; hasPin: boolean }) {
-  const router = useRouter();
+export function DevicePanel({
+  operator,
+  hasPin,
+  onPinChanged,
+}: {
+  operator: Operator;
+  hasPin: boolean;
+  /** The desk shell keeps the PIN flag; tell it when one is set. */
+  onPinChanged?: () => void;
+}) {
   const [devices, setDevices] = useState<DeskDevice[] | null>(null);
   const [paired, setPaired] = useState(false);
   const [name, setName] = useState("");
@@ -76,7 +83,7 @@ export function DevicePanel({ operator, hasPin }: { operator: Operator; hasPin: 
       await setMyPin(operator.id, pin);
       setPin("");
       setNote({ tone: "ok", text: "PIN set. It works on any device paired to this desk." });
-      router.refresh();
+      onPinChanged?.();
     } catch (e) {
       setNote({ tone: "bad", text: e instanceof Error ? e.message : "Couldn't set that PIN." });
     } finally {

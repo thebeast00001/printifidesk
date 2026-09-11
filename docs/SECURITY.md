@@ -33,6 +33,7 @@ token can still attempt, so every rule that matters has to hold in Postgres.
 | Desk sign-in (0018) | `desk_devices` (hashed token) + `staff_pins` (salted hash, lockout) → `/api/desk` → Clerk sign-in token | A name-and-PIN shift start on a paired device. The result is an ordinary Clerk session; nothing downstream changes. See below. |
 | Maintenance routes | `NOTIFY_WEBHOOK_SECRET`, compared in constant time | Clerk middleware skips `/api/`; the secret is the whole gate. |
 | Desk tools (0015) | RPCs check `is_staff` themselves; tables have read policies only | Messages: staff insert, owner reads. Stock and close-outs: no client insert path at all. Staff: `add_staff` looks up by email, `remove_staff` refuses to empty the desk. |
+| Two sites | `lib/surface.ts` in the middleware, keyed on the request host | The desk's pages never serve on the student host and vice versa; the door on each shows only its own sign-in method. Not a security boundary on its own — RLS is — but it keeps a student from ever seeing a desk page, signed in or not. |
 | Browser | Strict nonce-based CSP + the headers in `next.config.ts` | Injected script runs nothing, even where escaping fails. |
 
 ## Findings from the pass
@@ -292,6 +293,34 @@ non-staff account can't mint; the twenty-first guess in an hour is refused
 while another account still gets a plain "not known"; the applications table
 and both functions no longer exist.
 
+### 12. Two doors, one lock
+
+The student site signs in with Google only; the desk with email and
+password (or a PIN on a paired device). Both are Clerk custom flows over the
+same instance, so nothing about *what a session can do* changed — `is_staff`
+and RLS still decide everything — and Clerk still does the hashing, the
+HaveIBeenPwned check, the emailed codes and the bot check on account
+creation (rendered inside the page in `#clerk-captcha`, which the CSP already
+allowed for the hosted modal).
+
+Three details worth knowing:
+
+- **Return addresses.** Clerk sends people to `/sign-in?redirect_url=…` with
+  an absolute URL. `sameOriginPath()` keeps it only if it is exactly this
+  origin's, and then keeps only the path and query — `//evil`, `/\evil` and
+  `http://localhost:3000.evil.com` all fall back. Push payload URLs go
+  through the same function in the service worker.
+- **Cross-host hops** are 307s built from the request's own host header and
+  the two configured hosts — never from a value in the URL — so a request
+  can't be bounced anywhere the deployment wasn't told about.
+- **The desk's pushes** go only to subscriptions flagged `desk`, which only
+  the desk's own settings page writes; a student's device never receives a
+  desk's "new order" line, and a desk device still gets its owner's own
+  "ready" pushes because student rows aren't filtered.
+
+**Verified:** the routing table row by row in `check:features`; both hosts
+of a split-mode production server with `curl`; the doors in the browser.
+
 ### Reviewed and left alone
 
 - **No XSS sinks.** No `dangerouslySetInnerHTML`, `innerHTML`, or `eval` anywhere.
@@ -354,3 +383,4 @@ The security-relevant scenarios in `check:sql`, by name:
 - desk sign-in: fake token lists nobody, weak PINs refused, lockout after five, revoked device dead
 - join codes: admin-only desk creation, one use, expiry and revocation, twenty guesses then wait
 - admin: shut out of a staffed desk's codes; no function or policy writes `admins`
+- a new order pushes to staff with a desk device, and only them

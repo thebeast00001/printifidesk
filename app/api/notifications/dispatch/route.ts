@@ -26,6 +26,8 @@ interface QueuedRow {
   channel: "whatsapp" | "push";
   to_phone: string | null;
   body: string;
+  /** Who it's for: a student's own order, or the desk hearing about a new one. */
+  audience: "student" | "desk";
 }
 
 interface PushRow {
@@ -86,14 +88,19 @@ export async function POST(request: Request) {
         continue;
       }
 
-      const { data: subs } = await supabase
+      // A desk row goes only to devices subscribed from the desk site; a
+      // student row goes to every device the student has, as it always did.
+      const desk = row.audience === "desk";
+      let query = supabase
         .from("push_subscriptions")
         .select("id, endpoint, p256dh, auth")
         .eq("user_id", row.user_id);
+      if (desk) query = query.eq("desk", true);
+      const { data: subs } = await query;
 
       const devices = (subs ?? []) as PushRow[];
       if (devices.length === 0) {
-        await complete(row.id, "skipped", "No device subscribed.");
+        await complete(row.id, "skipped", desk ? "No desk device subscribed." : "No device subscribed.");
         skipped++;
         continue;
       }
@@ -105,12 +112,26 @@ export async function POST(request: Request) {
         try {
           await webpush.sendNotification(
             { endpoint: device.endpoint, keys: { p256dh: device.p256dh, auth: device.auth } },
-            JSON.stringify({
-              title: "Printify",
-              body: row.body,
-              tag: row.order_id ? `order-${row.order_id}` : "printify",
-              url: "/orders",
-            }),
+            JSON.stringify(
+              desk
+                ? {
+                    // The desk's alert: its own mark, the queue as the target,
+                    // and it stays on screen until someone looks at it — a
+                    // counter shouldn't miss an order because a phone dimmed.
+                    title: "Printify Desk",
+                    body: row.body,
+                    tag: row.order_id ? `desk-order-${row.order_id}` : "printify-desk",
+                    url: "/operator",
+                    icon: "/desk-icon-192.png",
+                    requireInteraction: true,
+                  }
+                : {
+                    title: "Printify",
+                    body: row.body,
+                    tag: row.order_id ? `order-${row.order_id}` : "printify",
+                    url: "/orders",
+                  },
+            ),
           );
           delivered++;
         } catch (e) {

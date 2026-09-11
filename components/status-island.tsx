@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
-import { SignInButton } from "@clerk/nextjs";
+import { useGoogleSignIn } from "./sign-in/google-button";
+import { useSurface } from "./surface-provider";
 import { AlertCircle, Flag, Loader2, LogIn, RotateCcw } from "lucide-react";
 import { useActiveOrder } from "@/hooks/use-tracking";
 import { STATUS_LABEL, type OrderEventRow, type OrderRow, type QueueStatus } from "@/lib/orders";
@@ -34,22 +35,7 @@ export function StatusIsland() {
 
   if (backend.state === "loading") return <IslandSkeleton />;
 
-  if (backend.state === "signed-out") {
-    return (
-      <IslandShell>
-        <SignInButton mode="modal">
-          <button className="w-full text-left">
-            <IslandRow
-              icon={<LogIn size={15} strokeWidth={2.2} className="text-shell-faint" />}
-              title="Sign in to track a job"
-              sub="Your orders are tied to your account"
-            />
-          </button>
-        </SignInButton>
-        <DeskShortcut />
-      </IslandShell>
-    );
-  }
+  if (backend.state === "signed-out") return <SignedOutIsland />;
 
   if (backend.state === "unconfigured" || backend.state === "error") {
     return (
@@ -478,14 +464,39 @@ function StageTrack({
 
 /* ---------- pieces ---------- */
 
+/** One Google button, drawn as an island row. */
+function SignedOutIsland() {
+  const { go, busy, error } = useGoogleSignIn("/");
+  return (
+    <IslandShell>
+      <button onClick={() => void go()} disabled={busy} className="w-full text-left disabled:opacity-60">
+        <IslandRow
+          icon={
+            busy ? (
+              <Loader2 size={15} className="animate-spin text-shell-faint" />
+            ) : (
+              <LogIn size={15} strokeWidth={2.2} className="text-shell-faint" />
+            )
+          }
+          title="Sign in with Google to track a job"
+          sub={error ?? "Your orders are tied to your account"}
+        />
+      </button>
+      <DeskShortcut />
+    </IslandShell>
+  );
+}
+
 /**
  * On a device paired to a desk, the student home is usually the wrong page
- * to be on. One line points the way; it renders nothing anywhere else.
+ * to be on. One line points the way. Only where both sites share a host —
+ * on its own host the desk device would never be here.
  */
 function DeskShortcut() {
+  const { split } = useSurface();
   const [paired, setPaired] = useState(false);
   useEffect(() => setPaired(isPairedDevice()), []);
-  if (!paired) return null;
+  if (split || !paired) return null;
   return (
     <Link
       href="/operator"

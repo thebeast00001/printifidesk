@@ -8,7 +8,6 @@ import { releaseThumbnails } from "./thumbnails";
 export type SheetStep = "upload" | "options";
 
 /** The three faces of the operator page; the dock switches between them. */
-export type OperatorView = "queue" | "takings" | "settings";
 
 export type UploadStatus = "reading" | "scanning" | "uploading" | "ready" | "error";
 
@@ -79,15 +78,7 @@ interface AppState {
   reviewFileId: string | null;
   setReviewFileId: (id: string | null) => void;
 
-  /**
-   * The operator page has two faces — the queue and the settings — and the
-   * floating dock switches between them, so the choice lives here rather than
-   * inside the page. Nothing about a real operator is mirrored; this is which
-   * panel is open.
-   */
-  operatorView: OperatorView;
-  setOperatorView: (view: OperatorView) => void;
-  /** Orders waiting to be accepted, for the dock's badge. Null until known. */
+  /** Orders waiting to be accepted, for the desk dock's badge. Null until known. */
   operatorPending: number | null;
   setOperatorPending: (n: number | null) => void;
 }
@@ -139,8 +130,6 @@ export const useApp = create<AppState>((set) => ({
   reviewFileId: null,
   setReviewFileId: (reviewFileId) => set({ reviewFileId }),
 
-  operatorView: "queue",
-  setOperatorView: (operatorView) => set({ operatorView }),
   operatorPending: null,
   setOperatorPending: (operatorPending) => set({ operatorPending }),
 }));

@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { ArrowLeft, Delete, Loader2, LockKeyhole } from "lucide-react";
 import { deskStaff, deskTicket, deviceToken, forgetThisDevice, type DeskStaff } from "@/lib/desk-auth";
 import { cn, easeIos, spring } from "@/lib/utils";
+import { useSurface } from "../surface-provider";
 
 /**
  * A shift starts here: tap your name, type your PIN.
@@ -23,6 +24,7 @@ export function DeskSignIn() {
   // signal-shaped wrapper whose create() reports only an error, and the
   // ticket flow needs the resulting session id to activate it.
   const clerk = useClerk();
+  const { desk } = useSurface();
 
   const [staff, setStaff] = useState<DeskStaff[] | null>(null);
   const [broken, setBroken] = useState<string | null>(null);
@@ -65,7 +67,7 @@ export function DeskSignIn() {
           throw new Error("Clerk didn't complete the sign-in.");
         }
         await clerk.setActive({ session: result.createdSessionId });
-        router.replace("/operator");
+        router.replace(desk("/operator"));
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Couldn't sign in.");
@@ -74,7 +76,7 @@ export function DeskSignIn() {
         setBusy(false);
       }
     },
-    [who, token, clerk, router],
+    [who, token, clerk, router, desk],
   );
 
   // A six-digit PIN submits itself; four or five digits take the lock key,

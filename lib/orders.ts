@@ -291,6 +291,18 @@ export async function getOperator(id: string): Promise<Operator | null> {
   return (data as unknown as Operator) ?? null;
 }
 
+/** Names for a handful of desks — the switcher for someone on more than one. */
+export async function operatorNames(ids: string[]): Promise<Record<string, string>> {
+  const supabase = getSupabase();
+  if (!supabase || ids.length === 0) return {};
+  const { data } = await supabase.from("operators").select("id, name, short_name").in("id", ids);
+  const out: Record<string, string> = {};
+  for (const row of (data ?? []) as { id: string; name: string; short_name: string | null }[]) {
+    out[row.id] = row.short_name || row.name;
+  }
+  return out;
+}
+
 /** Update the rate card and desk settings. Staff only — RLS enforces it. */
 export async function updateOperator(
   operatorId: string,
@@ -455,10 +467,22 @@ export async function cancelOrder(orderId: string): Promise<void> {
 /* ---------- operator side ---------- */
 
 export async function staffOperatorId(): Promise<string | null> {
+  const ids = await staffOperatorIds();
+  return ids[0] ?? null;
+}
+
+/**
+ * Every desk this account is on, oldest first. Almost always one; a person
+ * who covers two counters picks between them in the desk header.
+ */
+export async function staffOperatorIds(): Promise<string[]> {
   const supabase = getSupabase();
-  if (!supabase) return null;
-  const { data } = await supabase.from("staff").select("operator_id").limit(1).maybeSingle();
-  return data?.operator_id ?? null;
+  if (!supabase) return [];
+  const { data } = await supabase
+    .from("staff")
+    .select("operator_id")
+    .order("created_at", { ascending: true });
+  return ((data ?? []) as { operator_id: string }[]).map((r) => r.operator_id);
 }
 
 export async function operatorQueue(operatorId: string): Promise<OrderRow[]> {

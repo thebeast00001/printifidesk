@@ -4,7 +4,7 @@ import { StaggerIn } from "@/components/stagger-in";
 import { ConnectionBanner } from "@/components/connection-banner";
 import { JoinDesk } from "@/components/join-desk";
 
-export const metadata = { title: "Join a desk · Printify" };
+export const metadata = { title: "Join a desk" };
 
 /** Typing a join code by hand — the page the QR's link also lands on. */
 export default function JoinPage() {

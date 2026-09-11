@@ -5,7 +5,7 @@ import { StatusIsland } from "@/components/status-island";
 import { OrderList } from "@/components/order-list";
 import { PrivacyNote } from "@/components/privacy-note";
 
-export const metadata = { title: "Orders · Print Counter" };
+export const metadata = { title: "Orders" };
 
 export default function OrdersPage() {
   return (
