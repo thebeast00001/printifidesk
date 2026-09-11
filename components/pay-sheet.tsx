@@ -250,7 +250,11 @@ function ClaimButton({
       disabled={busy}
       onClick={onClick}
       className={cn(
-        "flex h-12 flex-1 items-center justify-center gap-2 rounded-xl text-[13.5px] font-semibold disabled:opacity-60",
+        // `sm:flex-1`, not `flex-1`: on a phone these stack in a column, and
+        // there flex-1 makes the *height* basis zero, so h-12 loses and the
+        // button collapses to the height of its label. Full width and 48px
+        // tall when stacked; equal halves when side by side.
+        "flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-xl text-[13.5px] font-semibold disabled:opacity-60 sm:w-auto sm:flex-1",
         primary ? "bg-ink text-paper" : "border border-line bg-surface text-ink-soft",
       )}
     >
