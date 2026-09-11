@@ -80,9 +80,10 @@ export function StaffPanel({ operator, me }: { operator: Operator; me: string | 
                   {s.name ?? s.email ?? s.user_id}
                   {s.user_id === me && <span className="ml-1.5 font-normal text-muted">(you)</span>}
                 </span>
-                {s.email && s.name && (
-                  <span className="block truncate font-mono text-[11px] text-muted">{s.email}</span>
-                )}
+                <span className="block truncate font-mono text-[11px] text-muted">
+                  {s.email && s.name ? `${s.email} · ` : ""}
+                  {s.has_pin ? "PIN set" : "no PIN — can't use desk sign-in yet"}
+                </span>
               </span>
               <button
                 onClick={() => remove(s.user_id)}

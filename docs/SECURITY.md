@@ -30,6 +30,7 @@ token can still attempt, so every rule that matters has to hold in Postgres.
 | Files | Storage RLS keyed on the path's first folder | Path is `<clerk id>/<doc id>-<name>`; `documents_path_owned` (0014) ties the row to it. |
 | Operator file access | `claim_document_access()` RPC + storage policy (0011) | Logged per open; only while the order is live. |
 | Handover | `handover_code` in the student's QR (0016) | Per-order secret; the slip's QR has none. Scanner reports verified / found / wrong. |
+| Desk sign-in (0018) | `desk_devices` (hashed token) + `staff_pins` (salted hash, lockout) → `/api/desk` → Clerk sign-in token | A name-and-PIN shift start on a paired device. The result is an ordinary Clerk session; nothing downstream changes. See below. |
 | Maintenance routes | `NOTIFY_WEBHOOK_SECRET`, compared in constant time | Clerk middleware skips `/api/`; the secret is the whole gate. |
 | Desk tools (0015) | RPCs check `is_staff` themselves; tables have read policies only | Messages: staff insert, owner reads. Stock and close-outs: no client insert path at all. Staff: `add_staff` looks up by email, `remove_staff` refuses to empty the desk. |
 | Browser | Strict nonce-based CSP + the headers in `next.config.ts` | Injected script runs nothing, even where escaping fails. |
@@ -201,6 +202,61 @@ ticket. That's a feature. And a desk that ignores *found, not verified* and
 hands over anyway is a desk, not a system — the sheet makes the state
 impossible to miss, but it doesn't take the button away.
 
+### 10. Desk sign-in without Google — **added, 0018**
+
+A counter changes hands three times a day. Signing each person in through
+Google on a shared tablet was the wrong shape, so a shift now starts by
+tapping a name and typing a PIN — but only on a device the desk has paired,
+and the session that results is a normal Clerk session with nothing special
+about it.
+
+The pieces, and what each one is allowed to do:
+
+- **Pairing.** A signed-in staff member pairs the device from Settings.
+  `pair_device()` mints a 64-hex token, stores only its SHA-256 in
+  `desk_devices`, and returns the token to that browser once; it lives in
+  `localStorage` and is shown to nobody. A desk can hold ten live devices;
+  any staff member can revoke any of them, and a revoked token lists no one.
+- **The staff list.** `desk_staff(token)` is the only thing an unpaired,
+  signed-out visitor could try, and it returns nothing without a live token.
+  With one, it returns names and whether each has a PIN — no emails, no ids
+  beyond what the tiles need. Nobody sees a desk's roster by loading a URL.
+- **PINs.** Four to six digits, set by their owner while signed in through
+  Google; `set_my_pin()` refuses `0000`, `1234`, `1111`, `123456`, `000000`
+  and `111111`. Stored as a salted SHA-256 in `staff_pins`, never returned.
+- **The check.** `/api/desk` validates the shape of the body, then calls
+  `desk_verify_pin()` with the *anon* key — no service role, because the
+  function is the gate: it requires the token to be live, the person to be
+  on that desk's staff, and the digest to match. Five wrong tries lock that
+  person's PIN for five minutes; the counter is per PIN, so one person's
+  attempts don't lock the desk. The function returns a row rather than
+  raising, because a raise would have rolled back the attempt counter it
+  had just incremented. On success the route asks Clerk for a sign-in token
+  for that user, good for sixty seconds, and the browser exchanges it for a
+  session.
+- **The session.** From that moment the app is exactly what it is after a
+  Google sign-in. RLS, `is_staff`, the write guard, the scanner — none of
+  them know or care how the session started. Signing out ("Switch staff")
+  returns the device to the tile screen.
+
+`/operator` is no longer redirected to Clerk's hosted sign-in at the edge,
+because a paired device has to land there signed out. That removes nothing:
+every row on the page is behind RLS, so the signed-out page without a paired
+token is a sign-in prompt and empty space.
+
+**Verified** in the SQL harness: pairing returns a token and lists the desk's
+staff by it; a fake token lists nobody; weak PINs are refused; the right PIN
+verifies; five wrong tries lock, a sixth right one is still refused, another
+staff member's PIN is unaffected, and setting a new PIN unlocks; a revoked
+device verifies nothing. `/api/desk` refuses a malformed body with 400 and an
+unknown device with 401 and the database's own message.
+
+**What this doesn't cover.** A PIN typed at a counter is typed in front of
+people — the pad shows dots, not digits, and the lockout makes guessing slow,
+but a four-digit PIN is a four-digit PIN. Staff who want more can set six.
+And a paired device is a key: lose the tablet, revoke it in Settings, and it
+is a tablet again.
+
 ### Reviewed and left alone
 
 - **No XSS sinks.** No `dangerouslySetInnerHTML`, `innerHTML`, or `eval` anywhere.
@@ -250,3 +306,6 @@ The security-relevant scenarios in `check:sql`, by name:
 - the order rate limit holds
 - the upload ceiling holds
 - a bad print can be reported once
+- a hundred orders at one desk get a hundred distinct tokens and codes
+- a student's handover code can't be set to a known one
+- desk sign-in: fake token lists nobody, weak PINs refused, lockout after five, revoked device dead

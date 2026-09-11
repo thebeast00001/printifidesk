@@ -14,7 +14,12 @@ import { OperatorDay } from "./operator-day";
 import { CloseoutPanel } from "./operator/closeout";
 import { StaffPanel } from "./operator/staff-panel";
 import { StockPanel } from "./operator/stock-panel";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth, useClerk } from "@clerk/nextjs";
+import { DeskSignIn } from "./operator/desk-sign-in";
+import { DevicePanel } from "./operator/device-panel";
+import { isPairedDevice } from "@/lib/desk-auth";
+import { listStaff } from "@/lib/desk";
+import { UserRoundCheck } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { cn, spring } from "@/lib/utils";
 
@@ -26,7 +31,19 @@ export function OperatorBoard() {
   const { backend, operatorId, operator, reload } = useOperatorQueue();
   const { verdict } = useConnectionVerdict();
   const { userId } = useAuth();
+  const clerk = useClerk();
   const view = useApp((s) => s.operatorView);
+  // Read after mount: localStorage isn't there on the server, and a value
+  // that differs between the two renders is a hydration mismatch.
+  const [paired, setPaired] = useState(false);
+  const [hasPin, setHasPin] = useState(false);
+  useEffect(() => setPaired(isPairedDevice()), []);
+  useEffect(() => {
+    if (!operatorId || !userId) return;
+    void listStaff(operatorId).then((rows) =>
+      setHasPin(rows.some((r) => r.user_id === userId && r.has_pin)),
+    );
+  }, [operatorId, userId, view]);
   const setView = useApp((s) => s.setOperatorView);
   const setPending = useApp((s) => s.setOperatorPending);
   const showSettings = view === "settings";
@@ -45,6 +62,9 @@ export function OperatorBoard() {
   }
 
   if (backend.state === "signed-out") {
+    // A paired desk: the shift starts with a name and a PIN. Anything else:
+    // the ordinary sign-in.
+    if (paired) return <DeskSignIn />;
     return (
       <SignedOutNotice
         title="Sign in to continue"
@@ -84,6 +104,16 @@ export function OperatorBoard() {
         </div>
 
         <div className="flex items-center gap-2">
+          {paired && (
+            <button
+              onClick={() => void clerk.signOut({ redirectUrl: "/operator" })}
+              title="End your shift — the next person taps their name"
+              className="flex h-11 items-center gap-2 rounded-xl border border-line bg-surface px-3.5 text-[13px] font-semibold text-ink-soft transition-colors hover:bg-surface-sunk"
+            >
+              <UserRoundCheck size={14} strokeWidth={2.2} />
+              <span className="hidden sm:inline">Switch staff</span>
+            </button>
+          )}
           <OpenSwitch operator={operator} onChanged={reload} compact />
           <button
             onClick={() => setView(showSettings ? "queue" : "settings")}
@@ -107,6 +137,7 @@ export function OperatorBoard() {
           <OperatorPricing operator={operator} onSaved={reload} />
           <StockPanel operator={operator} onChanged={reload} />
           <StaffPanel operator={operator} me={userId ?? null} />
+          <DevicePanel operator={operator} hasPin={hasPin} />
         </div>
       ) : view === "takings" ? (
         <div className="flex flex-col gap-4">

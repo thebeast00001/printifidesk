@@ -73,7 +73,8 @@ factual-teal-4113.clerk.accounts.dev
 [`0014_hardening.sql`](supabase/migrations/0014_hardening.sql),
 [`0015_desk_tools.sql`](supabase/migrations/0015_desk_tools.sql),
 [`0016_handover_code.sql`](supabase/migrations/0016_handover_code.sql),
-then [`0017_paise_and_rate_snapshot.sql`](supabase/migrations/0017_paise_and_rate_snapshot.sql).
+[`0017_paise_and_rate_snapshot.sql`](supabase/migrations/0017_paise_and_rate_snapshot.sql),
+then [`0018_desk_devices.sql`](supabase/migrations/0018_desk_devices.sql).
 
 These are **SQL** — they go in the Supabase dashboard's SQL editor
 (`Project → SQL Editor → New query`), not a terminal.
@@ -453,6 +454,29 @@ before changing a policy.
 - **Next up**, **age badges** (amber past what the rate card promised), the
   **Scheduled** tab grouped by hour with *due in 20 min*.
 
+### Starting a shift without Google
+
+A counter's tablet changes hands three times a day, and a Google sign-in each
+time is the wrong shape for that. `0018` adds **desk sign-in**:
+
+1. Someone on staff signs in through Google once, opens *Settings → Desk
+   sign-in*, sets a PIN (four to six digits), and taps *Pair this device*.
+2. From then on, when that device is opened with nobody signed in, it shows
+   the desk's staff as tiles. Tap your name, type your PIN, you're in.
+3. *Switch staff* in the header signs out and returns to the tiles.
+
+Under the hood, the PIN check happens in Postgres (`desk_verify_pin`), and on
+success `/api/desk` asks Clerk for a sixty-second sign-in token for that user.
+The browser turns it into an ordinary Clerk session — so RLS, the write guard
+and `is_staff` see nothing different from a Google sign-in. Five wrong tries
+lock a PIN for five minutes. A lost device is revoked from the same panel.
+
+Two settings in the Clerk dashboard make it comfortable: **Sessions →
+Inactivity timeout** off (or long), and **Maximum lifetime** around 30 days,
+so a paired desk stays signed in between shifts rather than asking for a PIN
+every morning. Passkeys (Clerk → User & Authentication → Passkeys) are a
+nice second option for staff on their own phones.
+
 ### Refunds are recorded, not sent
 
 The operator's refund control writes `refunded_at`, `refund_amount` and
@@ -598,13 +622,19 @@ Being specific about this matters more than a green badge:
 - `npm run check` — types, pricing, phone normalisation, pickup slots, UPI link
   format, the write-guard column list, and the SQL below. **Passes.**
 - `npm run build` — **passes.**
-- `npm run check:sql` — all seventeen migrations applied, re-applied, and their
+- `npm run check:sql` — all eighteen migrations applied, re-applied, and their
   triggers driven through a real order under a real JWT: tokens, the timeline,
   the write guard, per-file settings, the report constraint, the upload
   ceiling, the order rate limit, document ownership, push endpoint sanity, and
   SQL-vs-TypeScript pricing across 144 jobs, messages queuing a push, the
-  stock ledger, staff by email, and closing the desk. **Passes.** It does not
-  check the RLS policies themselves; see above for why.
+  stock ledger, staff by email, closing the desk, a hundred concurrent tokens
+  at one desk, the handover code, and desk sign-in end to end (pairing, PIN
+  rules, lockout, revocation). **Passes.** It does not check the RLS policies
+  themselves; see above for why.
+- **Desk sign-in** — `/api/desk` verified against the live project: a malformed
+  body gets 400, an unknown device gets 401 with the database's own message.
+  The tile screen and its revoked-device state render; a real PIN sign-in
+  needs a paired device and a Clerk secret key, which is a you-step.
 - **Scan to hand over** — decoding is jsQR wherever the browser's own
   `BarcodeDetector` can't actually read QR codes (Windows Chrome has the
   constructor and none of the formats). `npm run check:features` rasterises the

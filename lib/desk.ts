@@ -103,6 +103,8 @@ export interface StaffMember {
   name: string | null;
   email: string | null;
   joined_at: string;
+  /** Whether they can start a shift from a paired device. */
+  has_pin: boolean;
 }
 
 export async function listStaff(operatorId: string): Promise<StaffMember[]> {

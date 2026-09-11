@@ -259,7 +259,12 @@ $$;
 -- ============================================================
 -- 3. Staff, without the SQL editor
 -- ============================================================
-create or replace function public.list_staff(p_operator uuid)
+-- Dropped first: RETURNS TABLE is part of a function's identity, and 0018
+-- widens it. Without this, re-running 0015 after 0018 fails on this line and
+-- rolls back everything above it — including the ledger version of
+-- consume_stock() — which is how a harness replay first caught it.
+drop function if exists public.list_staff(uuid);
+create function public.list_staff(p_operator uuid)
 returns table (user_id text, name text, email text, joined_at timestamptz)
 language plpgsql stable security definer set search_path = public as $$
 begin

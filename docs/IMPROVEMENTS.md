@@ -166,6 +166,15 @@ the order with a reason, visible to the student.
 `operator_stats()` is today-only. Week and month, plus a busiest-hour breakdown,
 is what tells an operator when to staff up.
 
+### 2.10 Desk sign-in: a name and a PIN, not Google — done (0018)
+A shared counter tablet changes hands every shift; a Google sign-in each time
+was the wrong shape. Pair the device once from Settings, then a shift starts
+by tapping a name and typing a PIN. The PIN is checked in Postgres, the route
+mints a sixty-second Clerk sign-in token, and the result is an ordinary
+session — nothing downstream knows the difference. Lockout after five wrong
+tries; revoke a lost device from the same panel. Pair with a 30-day session
+lifetime in the Clerk dashboard so the desk stays signed in between shifts.
+
 ---
 
 ## 3. Trust, safety and correctness

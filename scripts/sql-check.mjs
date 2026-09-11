@@ -601,7 +601,7 @@ await scenario("stock is a ledger", async () => {
   if (Number(after[0].paper_stock) !== 600) throw new Error(`paper is ${after[0].paper_stock}, not 600`);
 
   // Collecting a job draws it down and writes its own ledger row.
-  await db.query(`update public.orders set status = 'collected' where id = $1;`, [orderId]).catch(() => {});
+  await db.query(`update public.orders set status = 'collected' where id = $1;`, [orderId]);
   const { rows: log } = await db.query(
     `select paper_delta, actor, order_id from public.stock_log where operator_id = $1 order by id;`,
     [OPERATOR],
@@ -716,6 +716,95 @@ await scenario("a student cannot change their handover code", async () => {
   ]);
   if (after[0].handover_code !== before[0].handover_code) throw new Error("the code was changed");
   return "pinned by the guard";
+});
+
+// ---------------------------------------------------------------
+// 0018: a paired desk and a PIN per shift.
+// ---------------------------------------------------------------
+let deskToken = null;
+
+await scenario("a device can be paired once and the token is never stored", async () => {
+  await actingAs("op_test");
+  const { rows } = await db.query(`select public.pair_device($1, 'Counter tablet') as token;`, [OPERATOR]);
+  deskToken = rows[0].token;
+  if (!/^[0-9a-f]{64}$/.test(deskToken)) throw new Error(`token is ${deskToken}`);
+  const { rows: stored } = await db.query(`select token_hash from public.desk_devices where operator_id = $1;`, [OPERATOR]);
+  if (stored.some((r) => r.token_hash === deskToken)) throw new Error("the raw token was stored");
+  return "64 hex chars returned, only the hash kept";
+});
+
+await scenario("a signed-out device can list the desk's staff by token", async () => {
+  await actingAs(null);
+  const { rows } = await db.query(`select * from public.desk_staff($1);`, [deskToken]);
+  if (rows.length === 0) throw new Error("no staff returned for a live token");
+  if (!rows.some((r) => r.user_id === "op_test")) throw new Error("op_test missing");
+  if (rows.some((r) => r.has_pin)) throw new Error("a PIN is reported before any was set");
+  const { rows: bad } = await db.query(`select * from public.desk_staff('not-a-token');`);
+  if (bad.length !== 0) throw new Error("a wrong token listed staff");
+  return `${rows.length} on the desk, no PINs yet; a wrong token gets nothing`;
+});
+
+await scenario("a PIN must be four to six digits and not obvious", async () => {
+  await actingAs("op_test");
+  for (const weak of ["12", "1234", "abcd", "0000"]) {
+    let refused = false;
+    try {
+      await db.query(`select public.set_my_pin($1, $2);`, [OPERATOR, weak]);
+    } catch {
+      refused = true;
+    }
+    if (!refused) throw new Error(`'${weak}' was accepted`);
+  }
+  await db.query(`select public.set_my_pin($1, '4827');`, [OPERATOR]);
+  const { rows } = await db.query(`select pin_hash from public.staff_pins where user_id = 'op_test';`);
+  if (rows[0].pin_hash.includes("4827")) throw new Error("the PIN is stored in the clear");
+  return "12, 1234, abcd, 0000 refused; 4827 set and hashed";
+});
+
+await scenario("the right PIN on a paired device names the person", async () => {
+  await actingAs(null);
+  const { rows } = await db.query(`select * from public.desk_verify_pin($1, 'op_test', '4827');`, [deskToken]);
+  if (!rows[0].ok || rows[0].who !== "op_test") throw new Error(`got ${JSON.stringify(rows[0])}`);
+  return "op_test";
+});
+
+await scenario("five wrong PINs lock that person for five minutes", async () => {
+  await actingAs(null);
+  let wrongs = 0;
+  for (let i = 0; i < 5; i++) {
+    const { rows } = await db.query(`select * from public.desk_verify_pin($1, 'op_test', '0001');`, [deskToken]);
+    if (!rows[0].ok && /Wrong PIN/.test(rows[0].message)) wrongs++;
+  }
+  if (wrongs !== 5) throw new Error(`expected 5 wrong-PIN refusals, got ${wrongs}`);
+  const { rows: lockedRow } = await db.query(`select * from public.desk_verify_pin($1, 'op_test', '4827');`, [deskToken]);
+  if (lockedRow[0].ok || !/Locked for/.test(lockedRow[0].message)) throw new Error("the right PIN was accepted while locked");
+  // A lock on one person is not a lock on the desk.
+  await db.query(`insert into public.profiles (id, name) values ('other_staff', 'Rahul') on conflict do nothing;`);
+  await db.query(`insert into public.staff (user_id, operator_id) values ('other_staff', $1) on conflict do nothing;`, [OPERATOR]);
+  await actingAs("other_staff");
+  await db.query(`select public.set_my_pin($1, '7391');`, [OPERATOR]);
+  await actingAs(null);
+  const { rows } = await db.query(`select * from public.desk_verify_pin($1, 'other_staff', '7391');`, [deskToken]);
+  if (!rows[0].ok) throw new Error("the other person was locked out too");
+  // Resetting the PIN clears the lock.
+  await actingAs("op_test");
+  await db.query(`select public.set_my_pin($1, '5150');`, [OPERATOR]);
+  await actingAs(null);
+  const { rows: fresh } = await db.query(`select * from public.desk_verify_pin($1, 'op_test', '5150');`, [deskToken]);
+  if (!fresh[0].ok) throw new Error("a new PIN didn't clear the lock");
+  return "locked after 5, other staff unaffected, a new PIN unlocks";
+});
+
+await scenario("a revoked device is a dead device", async () => {
+  await actingAs("op_test");
+  const { rows } = await db.query(`select id from public.desk_devices where operator_id = $1 and revoked_at is null;`, [OPERATOR]);
+  await db.query(`select public.revoke_device($1);`, [rows[0].id]);
+  await actingAs(null);
+  const { rows: staff } = await db.query(`select * from public.desk_staff($1);`, [deskToken]);
+  if (staff.length !== 0) throw new Error("a revoked token still lists staff");
+  const { rows: dead } = await db.query(`select * from public.desk_verify_pin($1, 'op_test', '5150');`, [deskToken]);
+  if (dead[0].ok || !/not paired/.test(dead[0].message)) throw new Error("a revoked device could still sign someone in");
+  return "lists nothing, signs nobody in";
 });
 
 await scenario("the upload ceiling holds", async () => {

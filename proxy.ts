@@ -7,10 +7,14 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 const isProtected = createRouteMatcher([
   "/orders(.*)",
   "/profile(.*)",
-  "/operator(.*)",
   "/diagnostics(.*)",
   "/admin(.*)",
 ]);
+
+// /operator is deliberately not in that list. A paired desk device opens it
+// signed out and sees the tap-a-name screen; everything on the page is
+// behind RLS, so an unpaired, signed-out visitor sees a sign-in and nothing
+// else. Redirecting to Clerk's hosted sign-in would defeat the point.
 
 /**
  * Every host the page is allowed to talk to, and nothing else.

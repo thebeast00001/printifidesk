@@ -14,6 +14,9 @@ import type { ConnectionState } from "@/lib/realtime";
 import { PaySheet } from "./pay-sheet";
 import { ReportSheet } from "./report-sheet";
 import { DeskMessages } from "./desk-messages";
+import { isPairedDevice } from "@/lib/desk-auth";
+import Link from "next/link";
+import { MonitorSmartphone } from "lucide-react";
 import { cn, easeIos, spring } from "@/lib/utils";
 
 /**
@@ -43,6 +46,7 @@ export function StatusIsland() {
             />
           </button>
         </SignInButton>
+        <DeskShortcut />
       </IslandShell>
     );
   }
@@ -473,6 +477,25 @@ function StageTrack({
 }
 
 /* ---------- pieces ---------- */
+
+/**
+ * On a device paired to a desk, the student home is usually the wrong page
+ * to be on. One line points the way; it renders nothing anywhere else.
+ */
+function DeskShortcut() {
+  const [paired, setPaired] = useState(false);
+  useEffect(() => setPaired(isPairedDevice()), []);
+  if (!paired) return null;
+  return (
+    <Link
+      href="/operator"
+      className="mt-3 flex items-center gap-2 rounded-xl bg-shell-line px-3 py-2.5 text-[12.5px] font-semibold"
+    >
+      <MonitorSmartphone size={14} strokeWidth={2.2} className="text-shell-faint" />
+      This is a desk device — start a shift
+    </Link>
+  );
+}
 
 function IslandShell({ children, open }: { children: React.ReactNode; open?: boolean }) {
   return (
