@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import { GraduationCap, House, Printer, Receipt, Settings2, SlidersHorizontal } from "lucide-react";
+import { House, Printer, Receipt, Settings2, SlidersHorizontal, Wallet } from "lucide-react";
 import { useActiveCount } from "@/hooks/use-tracking";
 import { useApp } from "@/lib/store";
 import { cn, spring } from "@/lib/utils";
@@ -22,9 +22,10 @@ const STUDENT_NAV = [
  *
  * On the operator's page it keeps its shape and changes its meaning. "Home"
  * there is the queue, not the student's front page — an operator who taps
- * home mid-shift wants their desk back, not a place to upload. The two faces
- * of that page (queue, settings) are dock destinations, and the way back to
- * the student side is explicit and labelled, never a surprise.
+ * home mid-shift wants their desk back, not a place to upload. All three
+ * destinations are faces of the operator page: nothing in this bar leaves
+ * the desk. The way back to the student side is a link in the page header,
+ * where reaching for it is deliberate.
  */
 export function FloatingDock() {
   const pathname = usePathname();
@@ -67,14 +68,18 @@ function OperatorDock() {
       />
       <DockItem
         href="/operator"
+        label="Takings"
+        icon={Wallet}
+        active={view === "takings"}
+        onClick={() => setView("takings")}
+      />
+      <DockItem
+        href="/operator"
         label="Settings"
         icon={SlidersHorizontal}
         active={view === "settings"}
         onClick={() => setView("settings")}
       />
-      {/* Leaving is a deliberate act with a name on it, not the button that
-          used to be "Home" quietly going somewhere else. */}
-      <DockItem href="/" label="Student side" icon={GraduationCap} active={false} />
     </DockShell>
   );
 }

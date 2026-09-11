@@ -10,6 +10,7 @@ import { useConnectionVerdict } from "./connection-banner";
 import { OperatorApplication } from "./operator-application";
 import { OperatorPortal } from "./operator-portal";
 import { OperatorPricing } from "./operator-pricing";
+import { OperatorDay } from "./operator-day";
 import { useApp } from "@/lib/store";
 import { cn, spring } from "@/lib/utils";
 
@@ -95,11 +96,13 @@ export function OperatorBoard() {
         </div>
       </div>
 
-      {showSettings ? (
+      {view === "settings" ? (
         <div className="flex flex-col gap-4">
           <OpenSwitch operator={operator} onChanged={reload} />
           <OperatorPricing operator={operator} onSaved={reload} />
         </div>
+      ) : view === "takings" ? (
+        <OperatorDay operator={operator} />
       ) : (
         <OperatorPortal operator={operator} />
       )}

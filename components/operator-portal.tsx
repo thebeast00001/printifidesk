@@ -41,7 +41,6 @@ import { openReports, resolveReport, type OrderReport } from "@/lib/reports";
 import { useAuthKey } from "@/hooks/use-auth-key";
 import { subscribeTable, type ConnectionState } from "@/lib/realtime";
 import { AlertToggle, useNewOrderAlert } from "./new-order-alert";
-import { OperatorDay } from "./operator-day";
 import { useApp } from "@/lib/store";
 import { cn, easeIos, spring } from "@/lib/utils";
 
@@ -95,7 +94,6 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
-  const [showDay, setShowDay] = useState(false);
   const [reports, setReports] = useState<OrderReport[]>([]);
 
   const load = useCallback(async () => {
@@ -317,19 +315,7 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
           ))}
         </div>
 
-        <div className="flex items-center gap-2">
-          <AlertToggle enabled={alert.enabled} onToggle={alert.toggle} />
-          <button
-            onClick={() => setShowDay((v) => !v)}
-            aria-pressed={showDay}
-            className={cn(
-              "h-11 shrink-0 rounded-xl border px-3.5 text-[12.5px] font-semibold transition-colors",
-              showDay ? "border-ink bg-ink text-paper" : "border-line bg-surface text-ink-soft",
-            )}
-          >
-            Takings
-          </button>
-        </div>
+        <AlertToggle enabled={alert.enabled} onToggle={alert.toggle} />
 
         <label className="flex h-10 items-center gap-2 rounded-xl border border-line bg-surface px-3 sm:w-[220px]">
           <Search size={14} strokeWidth={2.2} className="shrink-0 text-faint" />
@@ -341,8 +327,6 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
           />
         </label>
       </div>
-
-      {showDay && <OperatorDay operator={operator} />}
 
       {orders === null ? (
         <Empty icon={<Loader2 size={16} className="animate-spin" />} title="Loading the queue…" />

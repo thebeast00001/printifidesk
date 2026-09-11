@@ -7,6 +7,9 @@ import { releaseThumbnails } from "./thumbnails";
 
 export type SheetStep = "upload" | "options";
 
+/** The three faces of the operator page; the dock switches between them. */
+export type OperatorView = "queue" | "takings" | "settings";
+
 export type UploadStatus = "reading" | "scanning" | "uploading" | "ready" | "error";
 
 export interface UploadFile {
@@ -82,8 +85,8 @@ interface AppState {
    * inside the page. Nothing about a real operator is mirrored; this is which
    * panel is open.
    */
-  operatorView: "queue" | "settings";
-  setOperatorView: (view: "queue" | "settings") => void;
+  operatorView: OperatorView;
+  setOperatorView: (view: OperatorView) => void;
   /** Orders waiting to be accepted, for the dock's badge. Null until known. */
   operatorPending: number | null;
   setOperatorPending: (n: number | null) => void;
