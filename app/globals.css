@@ -120,6 +120,13 @@
     font-family: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* Nothing may widen the page. On a phone, one element that overflows to
+       the right doesn't just poke out — it widens the layout viewport, and
+       every fixed element (the dock, the next-up bar) is then laid out against
+       that wider width and slides off the screen. `clip` rather than `hidden`
+       so the body doesn't become a scroll container, which would break
+       position: sticky. */
+    overflow-x: clip;
   }
   :focus-visible {
     outline: 2px solid var(--ink);

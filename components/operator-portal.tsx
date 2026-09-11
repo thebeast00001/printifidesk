@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   AlertCircle,
@@ -105,6 +105,28 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
   const [reports, setReports] = useState<OrderReport[]>([]);
   const [scanning, setScanning] = useState(false);
   const [slipFor, setSlipFor] = useState<OrderRow | null>(null);
+  // Whether the hero card's own buttons are on screen. The thumb bar exists
+  // for when they aren't; drawn over them it just hides them.
+  const [heroInView, setHeroInView] = useState(true);
+  const heroRef = useRef<HTMLDivElement | null>(null);
+  const heroObserver = useRef<IntersectionObserver | null>(null);
+
+  const observeHero = useCallback((node: HTMLDivElement | null) => {
+    heroObserver.current?.disconnect();
+    heroRef.current = node;
+    if (!node) {
+      setHeroInView(true);
+      return;
+    }
+    heroObserver.current = new IntersectionObserver(
+      ([entry]) => setHeroInView(entry.isIntersecting),
+      // Count it as visible while any of it shows above the bar's own zone.
+      { rootMargin: "0px 0px -140px 0px", threshold: 0.15 },
+    );
+    heroObserver.current.observe(node);
+  }, []);
+
+  useEffect(() => () => heroObserver.current?.disconnect(), []);
   // One clock for every age badge on the screen.
   const now = useNow();
 
@@ -337,7 +359,18 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
           ))}
         </div>
 
+        {/* One row on a phone: the search takes the width, the two buttons
+            sit beside it. An icon button alone on its own row read as lost. */}
         <div className="flex items-center gap-2">
+          <label className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border border-line bg-surface px-3 sm:w-[220px] sm:flex-none">
+            <Search size={14} strokeWidth={2.2} className="shrink-0 text-faint" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Token or file"
+              className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-faint"
+            />
+          </label>
           <AlertToggle enabled={alert.enabled} onToggle={alert.toggle} />
           {readyOrders.length > 0 && (
             <button
@@ -350,16 +383,6 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
             </button>
           )}
         </div>
-
-        <label className="flex h-10 items-center gap-2 rounded-xl border border-line bg-surface px-3 sm:w-[220px]">
-          <Search size={14} strokeWidth={2.2} className="shrink-0 text-faint" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Token or file"
-            className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-faint"
-          />
-        </label>
       </div>
 
       {orders === null ? (
@@ -376,6 +399,7 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
             {filtered.map((order, index) => (
               <motion.div
                 key={order.id}
+                ref={nextUp?.id === order.id ? observeHero : undefined}
                 layout="position"
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.24, ease: easeIos }}
@@ -417,7 +441,7 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
       )}
 
       <NextUpBar
-        order={nextUp}
+        order={heroInView ? null : nextUp}
         busy={busy === nextUp?.id}
         onAct={(order, to, label) =>
           run(order.id, () => (to === "queued" && order.status === "placed" ? acceptOrder(order.id) : advance(order.id, to, label)))

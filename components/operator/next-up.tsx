@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { Check, Loader2 } from "lucide-react";
 import { NEXT_STATUS, type OrderRow, type OrderStatus } from "@/lib/orders";
 import { spring } from "@/lib/utils";
@@ -31,34 +31,36 @@ export function NextUpBar({
   busy: boolean;
   onAct: (order: OrderRow, to: OrderStatus, label: string) => void;
 }) {
-  if (!order) return null;
-  const action = primaryAction(order);
-  if (!action) return null;
-
-  const name = order.order_items?.[0]?.name ?? `${order.pages} pages`;
+  const action = order ? primaryAction(order) : null;
+  const name = order ? (order.order_items?.[0]?.name ?? `${order.pages} pages`) : "";
 
   return (
     <div className="pointer-events-none fixed inset-x-3 bottom-[calc(84px+env(safe-area-inset-bottom))] z-30 sm:hidden">
-      <motion.div
-        layout
-        initial={{ y: 12, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={spring}
-        className="pointer-events-auto flex items-center gap-3 rounded-[22px] border border-line bg-surface/[0.92] p-2 pl-3.5 shadow-dock backdrop-blur-2xl"
-      >
-        <span className="font-mono text-[15px] font-medium">{order.token ?? "—"}</span>
-        <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted">{name}</span>
-        <motion.button
-          whileTap={{ scale: 0.97 }}
-          transition={spring}
-          disabled={busy}
-          onClick={() => onAct(order, action.to, action.label)}
-          className="flex h-11 shrink-0 items-center gap-1.5 rounded-[16px] bg-ink px-4 text-[13.5px] font-semibold text-paper disabled:opacity-60"
-        >
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} strokeWidth={2.6} />}
-          {action.label}
-        </motion.button>
-      </motion.div>
+      <AnimatePresence>
+        {order && action && (
+          <motion.div
+            key={order.id}
+            initial={{ y: 16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 16, opacity: 0 }}
+            transition={spring}
+            className="pointer-events-auto flex items-center gap-3 rounded-[22px] border border-line bg-surface/[0.92] p-2 pl-3.5 shadow-dock backdrop-blur-2xl"
+          >
+            <span className="shrink-0 font-mono text-[15px] font-medium">{order.token ?? "—"}</span>
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted">{name}</span>
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              transition={spring}
+              disabled={busy}
+              onClick={() => onAct(order, action.to, action.label)}
+              className="flex h-11 shrink-0 items-center gap-1.5 rounded-[16px] bg-ink px-4 text-[13.5px] font-semibold whitespace-nowrap text-paper disabled:opacity-60"
+            >
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} strokeWidth={2.6} />}
+              {action.label}
+            </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
