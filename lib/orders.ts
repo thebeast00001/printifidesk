@@ -49,6 +49,12 @@ export interface OrderRow {
   refunded_at: string | null;
   refund_amount: number | null;
   refund_note: string | null;
+  /**
+   * The secret in the student's QR (0016). Only the owner and the desk can
+   * read the row, so only they ever see it; a scan that carries it is proof
+   * the code came from the student's own screen.
+   */
+  handover_code: string | null;
   user_id: string;
   accepted_at: string | null;
   started_at: string | null;

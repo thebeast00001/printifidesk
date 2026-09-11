@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Drawer } from "vaul";
 import { motion } from "motion/react";
-import { Camera, Check, Keyboard, Loader2, ScanLine } from "lucide-react";
+import { Camera, Check, Keyboard, Loader2, ScanLine, ShieldAlert, ShieldCheck } from "lucide-react";
+import { orderCustomer, type Customer } from "@/lib/operator";
 import type { OrderRow } from "@/lib/orders";
 import { cn, spring } from "@/lib/utils";
 
@@ -18,13 +19,28 @@ import { cn, spring } from "@/lib/utils";
  * wrong student's phone must not be a completed handover.
  */
 
-/** `printify:order:A03` → `A03`. Anything else is treated as a typed token. */
-export function tokenFromScan(raw: string): string | null {
+/**
+ * What a scan or a typed token says.
+ *
+ * The student's code is `printify:order:A03:7F3A9C21` — token and secret.
+ * The slip's is `printify:order:A03` — token only, because whoever holds
+ * the slip already holds the paper, and it exists to *find*, not to prove.
+ * A typed token is the same as a slip.
+ */
+export function parseScan(raw: string): { token: string; code: string | null } | null {
   const text = raw.trim();
-  const m = /^printify:order:([A-Z0-9-]+)$/i.exec(text);
+  const m = /^printify:order:([A-Z0-9-]+)(?::([A-Z0-9]{6,16}))?$/i.exec(text);
   const token = (m ? m[1] : text).toUpperCase();
-  return /^[A-Z]{1,2}\d{1,4}$/.test(token) ? token : null;
+  if (!/^[A-Z]{1,2}\d{1,4}$/.test(token)) return null;
+  return { token, code: m?.[2] ? m[2].toUpperCase() : null };
 }
+
+/** Kept for callers that only want the token. */
+export function tokenFromScan(raw: string): string | null {
+  return parseScan(raw)?.token ?? null;
+}
+
+type Proof = "verified" | "unverified" | "wrong";
 
 interface Detector {
   detect(source: HTMLVideoElement): Promise<{ rawValue: string }[]>;
@@ -60,7 +76,9 @@ export function ScanSheet({
   const [supported] = useState(() => typeof window !== "undefined" && Boolean(detectorFor()));
   const [camera, setCamera] = useState<"idle" | "starting" | "on" | "denied">("idle");
   const [typed, setTyped] = useState("");
-  const [match, setMatch] = useState<OrderRow | null>(null);
+  const [match, setMatch] = useState<{ order: OrderRow; proof: Proof } | null>(null);
+  /** Two ready orders with the same token — yesterday's and today's. */
+  const [choices, setChoices] = useState<OrderRow[]>([]);
   const [miss, setMiss] = useState<string | null>(null);
 
   const stop = useCallback(() => {
@@ -71,19 +89,44 @@ export function ScanSheet({
 
   const resolve = useCallback(
     (raw: string) => {
-      const token = tokenFromScan(raw);
-      if (!token) {
+      const parsed = parseScan(raw);
+      if (!parsed) {
         setMiss("That doesn't look like a Printify token.");
         return;
       }
-      const found = ready.find((o) => o.token?.toUpperCase() === token);
-      if (!found) {
+      const { token, code } = parsed;
+      const candidates = ready.filter((o) => o.token?.toUpperCase() === token);
+      if (candidates.length === 0) {
         setMiss(`${token} isn't waiting to be collected here.`);
         setMatch(null);
+        setChoices([]);
         return;
       }
       setMiss(null);
-      setMatch(found);
+
+      if (code) {
+        // The secret picks the order out, and proves the phone is the owner's.
+        const owner = candidates.find((o) => o.handover_code?.toUpperCase() === code);
+        if (owner) {
+          setMatch({ order: owner, proof: "verified" });
+          setChoices([]);
+          return;
+        }
+        // A code that matches no order with this token is a forged or stale
+        // QR. Say so; don't offer a handover.
+        setMatch({ order: candidates[0], proof: "wrong" });
+        setChoices([]);
+        return;
+      }
+
+      // No code: a slip, or a typed token. That finds but doesn't prove.
+      if (candidates.length > 1) {
+        setChoices(candidates);
+        setMatch(null);
+        return;
+      }
+      setMatch({ order: candidates[0], proof: "unverified" });
+      setChoices([]);
     },
     [ready],
   );
@@ -155,6 +198,7 @@ export function ScanSheet({
   useEffect(() => {
     if (!open) {
       setMatch(null);
+      setChoices([]);
       setMiss(null);
       setTyped("");
     }
@@ -181,38 +225,47 @@ export function ScanSheet({
             </Drawer.Description>
 
             {match ? (
-              <div className="rounded-[20px] border border-sage bg-sage/30 p-4">
-                <p className="m-0 font-mono text-[11px] tracking-[0.1em] text-muted uppercase">
-                  Ready to hand over
+              <MatchPanel
+                order={match.order}
+                proof={match.proof}
+                busy={busy}
+                onHandOver={() => onHandOver(match.order)}
+                onDismiss={() => setMatch(null)}
+              />
+            ) : choices.length > 0 ? (
+              <div className="rounded-[20px] border border-line bg-surface p-4">
+                <p className="m-0 text-[13px] font-semibold">
+                  Two orders on the shelf are {choices[0].token} — which one?
                 </p>
-                <p className="font-figure m-0 mt-1 text-[44px] leading-none font-extrabold">
-                  {match.token}
+                <p className="m-0 mt-1 text-[12px] text-muted">
+                  Tokens start again each day. Ask them when they ordered, or scan their phone
+                  instead — its code says which.
                 </p>
-                <p className="m-0 mt-2 text-[13px]">
-                  {match.order_items?.[0]?.name ?? `${match.pages} pages`}
-                  {(match.order_items?.length ?? 0) > 1 ? ` + ${match.order_items!.length - 1} more` : ""}
-                  {" · "}
-                  {match.pages} p
-                </p>
-
-                <div className="mt-4 flex gap-2">
-                  <motion.button
-                    whileTap={{ scale: 0.98 }}
-                    transition={spring}
-                    disabled={busy}
-                    onClick={() => onHandOver(match)}
-                    className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-ink text-[14px] font-semibold text-paper disabled:opacity-60"
-                  >
-                    {busy ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} strokeWidth={2.6} />}
-                    Handed over
-                  </motion.button>
-                  <button
-                    onClick={() => setMatch(null)}
-                    className="h-12 rounded-xl border border-line px-4 text-[13.5px] font-semibold text-ink-soft"
-                  >
-                    Not this one
-                  </button>
-                </div>
+                <ul className="m-0 mt-3 flex list-none flex-col gap-1.5 p-0">
+                  {choices.map((o) => (
+                    <li key={o.id}>
+                      <button
+                        onClick={() => {
+                          setChoices([]);
+                          setMatch({ order: o, proof: "unverified" });
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl border border-line bg-surface-sunk px-3 py-2.5 text-left text-[12.5px] transition-colors hover:border-ink"
+                      >
+                        <span className="min-w-0 flex-1 truncate">
+                          {o.order_items?.[0]?.name ?? `${o.pages} pages`}
+                        </span>
+                        <span className="shrink-0 font-mono text-[11px] text-muted">
+                          placed{" "}
+                          {new Date(o.created_at).toLocaleString([], {
+                            weekday: "short",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               </div>
             ) : (
               <>
@@ -291,5 +344,114 @@ export function ScanSheet({
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>
+  );
+}
+
+/**
+ * The order the scan found, and how sure the desk should be.
+ *
+ * Verified: the code came from the student's own screen. Unverified: a slip
+ * or a typed token found it, so check the name — it's shown for exactly that.
+ * Wrong: the QR carried a code and it doesn't belong to this order; nothing
+ * is offered, because a QR someone made up is the one case this exists for.
+ */
+function MatchPanel({
+  order,
+  proof,
+  busy,
+  onHandOver,
+  onDismiss,
+}: {
+  order: OrderRow;
+  proof: Proof;
+  busy: boolean;
+  onHandOver: () => void;
+  onDismiss: () => void;
+}) {
+  const [customer, setCustomer] = useState<Customer | null>(null);
+
+  useEffect(() => {
+    setCustomer(null);
+    void orderCustomer(order.user_id).then(setCustomer);
+  }, [order.user_id]);
+
+  const tone =
+    proof === "verified"
+      ? "border-sage bg-sage/30"
+      : proof === "wrong"
+        ? "border-clay bg-clay/30"
+        : "border-line bg-surface";
+
+  return (
+    <div className={cn("rounded-[20px] border p-4", tone)}>
+      <p className="m-0 flex items-center gap-1.5 font-mono text-[11px] tracking-[0.1em] uppercase">
+        {proof === "verified" ? (
+          <>
+            <ShieldCheck size={13} strokeWidth={2.4} className="text-sage-ink" />
+            <span className="text-sage-ink">Their phone — verified</span>
+          </>
+        ) : proof === "wrong" ? (
+          <>
+            <ShieldAlert size={13} strokeWidth={2.4} className="text-clay-ink" />
+            <span className="text-clay-ink">Code doesn&apos;t match this order</span>
+          </>
+        ) : (
+          <>
+            <ShieldAlert size={13} strokeWidth={2.4} className="text-muted" />
+            <span className="text-muted">Found, not verified — check the name</span>
+          </>
+        )}
+      </p>
+
+      <p className="font-figure m-0 mt-1 text-[44px] leading-none font-extrabold">{order.token}</p>
+
+      <p className="m-0 mt-2 text-[13px]">
+        {order.order_items?.[0]?.name ?? `${order.pages} pages`}
+        {(order.order_items?.length ?? 0) > 1 ? ` + ${order.order_items!.length - 1} more` : ""}
+        {" · "}
+        {order.pages} p
+      </p>
+      <p className="m-0 mt-1 text-[13px]">
+        <span className="font-semibold">{customer?.name ?? "\u2026"}</span>
+        {customer?.roll_no && (
+          <span className="ml-2 font-mono text-[11.5px] text-muted">{customer.roll_no}</span>
+        )}
+      </p>
+
+      {proof === "wrong" ? (
+        <p className="m-0 mt-3 text-[12px] leading-relaxed text-clay-ink">
+          This QR names {order.token} but its code belongs to nobody on the shelf. A made-up code, or
+          one from another day. Don&apos;t hand it over on this scan — ask them to open the order on
+          their own phone.
+        </p>
+      ) : (
+        <div className="mt-4 flex gap-2">
+          <motion.button
+            whileTap={{ scale: 0.98 }}
+            transition={spring}
+            disabled={busy}
+            onClick={onHandOver}
+            className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-ink text-[14px] font-semibold text-paper disabled:opacity-60"
+          >
+            {busy ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} strokeWidth={2.6} />}
+            Handed over
+          </motion.button>
+          <button
+            onClick={onDismiss}
+            className="h-12 rounded-xl border border-line px-4 text-[13.5px] font-semibold text-ink-soft"
+          >
+            Not this one
+          </button>
+        </div>
+      )}
+      {proof === "wrong" && (
+        <button
+          onClick={onDismiss}
+          className="mt-3 h-11 w-full rounded-xl border border-line text-[13.5px] font-semibold text-ink-soft"
+        >
+          Scan again
+        </button>
+      )}
+    </div>
   );
 }

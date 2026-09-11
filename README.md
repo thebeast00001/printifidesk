@@ -71,7 +71,8 @@ factual-teal-4113.clerk.accounts.dev
 [`0012_rate_limit.sql`](supabase/migrations/0012_rate_limit.sql),
 [`0013_per_item_config_and_reports.sql`](supabase/migrations/0013_per_item_config_and_reports.sql),
 [`0014_hardening.sql`](supabase/migrations/0014_hardening.sql),
-then [`0015_desk_tools.sql`](supabase/migrations/0015_desk_tools.sql).
+[`0015_desk_tools.sql`](supabase/migrations/0015_desk_tools.sql),
+then [`0016_handover_code.sql`](supabase/migrations/0016_handover_code.sql).
 
 These are **SQL** — they go in the Supabase dashboard's SQL editor
 (`Project → SQL Editor → New query`), not a terminal.
@@ -579,7 +580,7 @@ Being specific about this matters more than a green badge:
 - `npm run check` — types, pricing, phone normalisation, pickup slots, UPI link
   format, the write-guard column list, and the SQL below. **Passes.**
 - `npm run build` — **passes.**
-- `npm run check:sql` — all fifteen migrations applied, re-applied, and their
+- `npm run check:sql` — all sixteen migrations applied, re-applied, and their
   triggers driven through a real order under a real JWT: tokens, the timeline,
   the write guard, per-file settings, the report constraint, the upload
   ceiling, the order rate limit, document ownership, push endpoint sanity, and

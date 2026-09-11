@@ -29,6 +29,7 @@ token can still attempt, so every rule that matters has to hold in Postgres.
 | Order changes | `guard_order_update()` trigger (0009, 0012) | Pins every column a student may not touch, by name. |
 | Files | Storage RLS keyed on the path's first folder | Path is `<clerk id>/<doc id>-<name>`; `documents_path_owned` (0014) ties the row to it. |
 | Operator file access | `claim_document_access()` RPC + storage policy (0011) | Logged per open; only while the order is live. |
+| Handover | `handover_code` in the student's QR (0016) | Per-order secret; the slip's QR has none. Scanner reports verified / found / wrong. |
 | Maintenance routes | `NOTIFY_WEBHOOK_SECRET`, compared in constant time | Clerk middleware skips `/api/`; the secret is the whole gate. |
 | Desk tools (0015) | RPCs check `is_staff` themselves; tables have read policies only | Messages: staff insert, owner reads. Stock and close-outs: no client insert path at all. Staff: `add_staff` looks up by email, `remove_staff` refuses to empty the desk. |
 | Browser | Strict nonce-based CSP + the headers in `next.config.ts` | Injected script runs nothing, even where escaping fails. |
@@ -150,6 +151,45 @@ column now has a `CHECK` on length, and `avatar_url` must be `https`.
 `notificationclick` navigated to `payload.url`. The payload is signed with our
 VAPID key, so it's trusted today — but a service worker outlives the code that
 registered it. `sameOriginPath()` accepts only a relative path.
+
+### 9. The handover QR was just the token — **fixed, 0016**
+
+Tokens are sequential and printed on every slip on the shelf. The student's
+QR carried only `printify:order:A03`, so anyone could make one in a free QR
+generator, and the scan sheet — which showed a filename and a page count, not
+a name — would have found A03 and offered *Handed over*.
+
+Every order now gets a `handover_code`: eight hex characters from a v4 UUID,
+set by the same trigger moment as the token, readable only by the owner and
+the desk, and pinned by the write guard so a student can't set a known one.
+The student's QR carries token **and** code; the slip's QR carries the token
+only, because whoever holds the slip already holds the paper. The scanner
+reports what it proved: **verified** when the code matched (the phone is the
+owner's), **found, not verified** for a slip or a typed token (the customer's
+name and roll number are shown for exactly that), and **wrong** when a QR
+carries a code that belongs to no order with that token — in which case no
+handover is offered at all.
+
+Two smaller things closed in the same migration:
+
+- A desk's tokens start again each day, so yesterday's uncollected A03 and
+  today's A03 were ambiguous to a token-only lookup. A scan with a code picks
+  the right one; a lookup without one lists both and asks.
+- Token uniqueness relied on `assign_order_token()`'s upsert being atomic.
+  It is — Postgres serialises the hundred concurrent inserts on one row per
+  desk per day — but nothing *enforced* it. A unique index on
+  `(operator_id, day, token)` now refuses a second A03 outright.
+
+**Verified:** a hundred orders placed at one desk get a hundred distinct
+tokens (A01 … A99, B01) and a hundred distinct codes; a forced duplicate
+token is refused by the index; a student's attempt to change their code is
+discarded by the guard.
+
+**What this doesn't cover:** a student who screenshots their QR and sends it
+to a friend has delegated collection, the same as handing over a paper
+ticket. That's a feature. And a desk that ignores *found, not verified* and
+hands over anyway is a desk, not a system — the sheet makes the state
+impossible to miss, but it doesn't take the button away.
 
 ### Reviewed and left alone
 

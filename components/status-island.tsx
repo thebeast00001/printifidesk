@@ -187,7 +187,9 @@ function LiveOrder({
         )}
       </motion.button>
 
-      {order.status === "ready" && order.token && <HandoverCode token={order.token} />}
+      {order.status === "ready" && order.token && (
+        <HandoverCode token={order.token} code={order.handover_code} />
+      )}
 
       <DeskMessages orderId={order.id} visible={open} />
 
@@ -610,7 +612,7 @@ function Timeline({ events, order }: { events: OrderEventRow[]; order: OrderRow 
  * difference between a fifteen-second handover and a two-second one when there
  * is a queue behind you.
  */
-function HandoverCode({ token }: { token: string }) {
+function HandoverCode({ token, code }: { token: string; code: string | null }) {
   const [src, setSrc] = useState<string | null>(null);
   const [shown, setShown] = useState(false);
 
@@ -618,7 +620,9 @@ function HandoverCode({ token }: { token: string }) {
     if (!shown || src) return;
     let cancelled = false;
     void import("qrcode").then(({ default: QRCode }) =>
-      QRCode.toDataURL(`printify:order:${token}`, { margin: 1, width: 420 })
+      // Token plus the per-order secret. The token alone is on every slip on
+      // the shelf and is sequential; the secret is what makes this code yours.
+      QRCode.toDataURL(`printify:order:${token}${code ? `:${code}` : ""}`, { margin: 1, width: 420 })
         .then((url) => !cancelled && setSrc(url))
         .catch(() => undefined),
     );

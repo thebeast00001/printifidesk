@@ -640,6 +640,68 @@ await scenario("closing the desk snapshots the day and shuts it", async () => {
   return `expected ${out.expected_cash} cash, counted ${out.counted_cash}, desk closed, one row per day`;
 });
 
+// ---------------------------------------------------------------
+// 0016: a hundred students at one desk, and the handover code.
+// ---------------------------------------------------------------
+await scenario("a hundred orders at one desk get a hundred distinct tokens", async () => {
+  // A fresh desk so the day's sequence starts clean, and a hundred different
+  // students so the per-user rate limit doesn't get in the way of the point.
+  await db.query(
+    `insert into public.operators (id, name, campus, short_name, is_open, is_listed)
+     values ('33333333-3333-3333-3333-333333333333', 'Rush desk', 'Main campus', 'Rush', true, true)
+     on conflict (id) do nothing;`,
+  );
+  const items = JSON.stringify([{ name: "notes.pdf", pages: 3, colour_pages: 0 }]);
+  const ids = [];
+  for (let i = 0; i < 100; i++) {
+    await actingAs(`rush_${i}`);
+    const { rows } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+      "33333333-3333-3333-3333-333333333333",
+      items,
+    ]);
+    ids.push(rows[0].id);
+  }
+  const { rows } = await db.query(
+    `select token, handover_code from public.orders
+      where operator_id = '33333333-3333-3333-3333-333333333333' order by created_at, token;`,
+  );
+  const tokens = rows.map((r) => r.token);
+  const codes = rows.map((r) => r.handover_code);
+  if (new Set(tokens).size !== 100) throw new Error(`only ${new Set(tokens).size} distinct tokens`);
+  if (new Set(codes).size !== 100) throw new Error(`only ${new Set(codes).size} distinct codes`);
+  if (codes.some((c) => !/^[0-9A-F]{8}$/.test(c))) throw new Error("a handover code is malformed");
+  if (!tokens.includes("A99") || !tokens.includes("B01")) throw new Error("the sequence didn't roll from A99 to B01");
+  return `${tokens[0]} … ${tokens[98]}, ${tokens[99]}; every code 8 hex chars, all distinct`;
+});
+
+await scenario("a duplicate token is refused by the index, not just by luck", async () => {
+  // Bypass the trigger by supplying a token that already exists today.
+  let refused = false;
+  try {
+    await db.query(
+      `insert into public.orders (user_id, operator_id, token, pages, colour_pages, total, config)
+       values ('rush_0', '33333333-3333-3333-3333-333333333333', 'A01', 1, 0, 5, '{}'::jsonb);`,
+    );
+  } catch (error) {
+    refused = /orders_token_unique_per_day/.test(String(error?.message ?? error));
+  }
+  if (!refused) throw new Error("a second A01 on the same desk and day was accepted");
+  return "second A01 today refused";
+});
+
+await scenario("a student cannot change their handover code", async () => {
+  await actingAs("rush_5");
+  const { rows: before } = await db.query(
+    `select id, handover_code from public.orders where user_id = 'rush_5';`,
+  );
+  await db.query(`update public.orders set handover_code = 'AAAAAAAA' where id = $1;`, [before[0].id]);
+  const { rows: after } = await db.query(`select handover_code from public.orders where id = $1;`, [
+    before[0].id,
+  ]);
+  if (after[0].handover_code !== before[0].handover_code) throw new Error("the code was changed");
+  return "pinned by the guard";
+});
+
 await scenario("the upload ceiling holds", async () => {
   await actingAs("student_test");
   // 500 MB is the cap; one file over it must be refused.

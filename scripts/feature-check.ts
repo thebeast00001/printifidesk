@@ -8,6 +8,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { jwtMsRemaining } from "../lib/jwt";
 import { clockLabel } from "../lib/utils";
+import { parseScan } from "../components/operator/scan-sheet";
 
 let fails = 0;
 const check = (name: string, got: unknown, want: unknown) => {
@@ -147,6 +148,7 @@ for (const column of [
   "operator_id",
   "user_id",
   "token",
+  "handover_code",
   "is_priority",
   "operator_note",
   "payment_taken_at",
@@ -188,6 +190,15 @@ check("midnight", clockLabel("00:00:00"), "12 AM");
 check("no seconds", clockLabel("17:45"), "5:45 PM");
 check("null stays null", clockLabel(null), null);
 check("garbage stays null", clockLabel("soon"), null);
+
+console.log("\n— handover scans (a code is proof; a bare token is only a lookup) —");
+check("student QR carries the code", parseScan("printify:order:A03:7F3A9C21"), { token: "A03", code: "7F3A9C21" });
+check("slip QR has no code", parseScan("printify:order:A03"), { token: "A03", code: null });
+check("typed lowercase token", parseScan(" b12 "), { token: "B12", code: null });
+check("code is upper-cased", parseScan("printify:order:a03:7f3a9c21")?.code, "7F3A9C21");
+check("a short code is not a code", parseScan("printify:order:A03:7F3")?.code ?? "rejected", "rejected");
+check("garbage rejected", parseScan("https://evil.example/A03"), null);
+check("a bare number is not a token", parseScan("12345"), null);
 
 console.log("\n— token expiry (the realtime socket must refresh before it lapses) —");
 // A JWT with exp = now + 45s, built the way Clerk builds them: three
