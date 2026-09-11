@@ -79,6 +79,14 @@ then [`0018_desk_devices.sql`](supabase/migrations/0018_desk_devices.sql).
 These are **SQL** — they go in the Supabase dashboard's SQL editor
 (`Project → SQL Editor → New query`), not a terminal.
 
+**Starting over.** [`supabase/reset.sql`](supabase/reset.sql) empties every
+table and touches nothing else — no schema, no policies, no functions. It
+names each table rather than looping, and `check:sql` asserts the list matches
+what the migrations create. Files live in Storage and accounts live in Clerk,
+so those are emptied from their own dashboards; the script's header says how.
+The first sign-in afterwards is a plain student: `/diagnostics` → *Claim
+admin*, `/operator` → apply, `/admin` → approve, and the desk exists again.
+
 Run them **in order** — 0003 renames things 0002 created, and 0004 rewrites a
 function 0003 defines. With Docker running you can execute the whole set against
 a throwaway Postgres before touching your project:

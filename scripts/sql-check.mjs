@@ -825,6 +825,31 @@ await scenario("the upload ceiling holds", async () => {
 
 await actingAs(null);
 
+// Last, because it needs every table the scenarios above filled.
+await scenario("reset.sql empties every table and names every table", async () => {
+  const reset = readFileSync(join(here, "..", "supabase", "reset.sql"), "utf8");
+  const named = [...reset.matchAll(/public\.(\w+)/g)].map((m) => m[1]).sort();
+  const { rows: existing } = await db.query(
+    `select tablename from pg_tables where schemaname = 'public' order by 1`,
+  );
+  const real = existing.map((r) => r.tablename).sort();
+  const missing = real.filter((t) => !named.includes(t));
+  const stale = named.filter((t) => !real.includes(t));
+  if (missing.length) throw new Error(`reset.sql doesn't mention: ${missing.join(", ")}`);
+  if (stale.length) throw new Error(`reset.sql names tables that don't exist: ${stale.join(", ")}`);
+
+  const before = await db.query(`select count(*)::int as n from public.orders`);
+  if (before.rows[0].n === 0) throw new Error("nothing to empty — the scenarios above left no orders");
+  await db.exec(reset);
+  const leftovers = [];
+  for (const t of real) {
+    const { rows } = await db.query(`select count(*)::int as n from public.${t}`);
+    if (rows[0].n > 0) leftovers.push(`${t} (${rows[0].n})`);
+  }
+  if (leftovers.length) throw new Error(`still populated: ${leftovers.join(", ")}`);
+  return `${real.length} tables, ${before.rows[0].n} orders gone, all counts zero`;
+});
+
 console.log(
   failed === 0
     ? "\nPASS - every migration applies, re-applies, and the triggers fire"
