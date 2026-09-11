@@ -642,21 +642,11 @@ function OrderCard({
           </p>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <button
-            onClick={onPriority}
-            disabled={busy}
-            aria-label={order.is_priority ? "Remove priority" : "Mark priority"}
-            className={cn(
-              "grid size-10 place-items-center rounded-xl border transition-colors disabled:opacity-50",
-              order.is_priority
-                ? "border-ink bg-ink text-paper"
-                : "border-line bg-surface-sunk text-muted hover:text-ink",
-            )}
-          >
-            <Star size={15} strokeWidth={2.2} />
-          </button>
-
+        {/* On a phone this was shrink-0 and ran off the card. It now takes a
+            full row beneath the title: the labelled buttons fill it in equal
+            parts and wrap in pairs, and the three icon buttons sit together
+            at the right. From sm up it's the compact cluster it always was. */}
+        <div className="flex basis-full flex-wrap items-center gap-2 sm:basis-auto sm:shrink-0">
           {order.status === "placed" ? (
             <>
               <ActionButton onClick={onAccept} busy={busy} primary>
@@ -707,27 +697,43 @@ function OrderCard({
             </ActionButton>
           )}
 
-          <button
-            onClick={onSlip}
-            aria-label="Job slip"
-            title="Job slip — print it, clip it to the pages"
-            className="grid size-10 place-items-center rounded-xl border border-line bg-surface-sunk text-muted transition-colors hover:text-ink"
-          >
-            <Ticket size={15} strokeWidth={2.2} />
-          </button>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <button
+              onClick={onPriority}
+              disabled={busy}
+              aria-label={order.is_priority ? "Remove priority" : "Mark priority"}
+              className={cn(
+                "grid size-10 place-items-center rounded-xl border transition-colors disabled:opacity-50",
+                order.is_priority
+                  ? "border-ink bg-ink text-paper"
+                  : "border-line bg-surface-sunk text-muted hover:text-ink",
+              )}
+            >
+              <Star size={15} strokeWidth={2.2} />
+            </button>
 
-          <button
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            aria-label="Order detail"
-            className="grid size-10 place-items-center rounded-xl border border-line bg-surface-sunk text-muted transition-colors hover:text-ink"
-          >
-            <ChevronDown
-              size={16}
-              strokeWidth={2.2}
-              className={cn("transition-transform", open && "rotate-180")}
-            />
-          </button>
+            <button
+              onClick={onSlip}
+              aria-label="Job slip"
+              title="Job slip — print it, clip it to the pages"
+              className="grid size-10 place-items-center rounded-xl border border-line bg-surface-sunk text-muted transition-colors hover:text-ink"
+            >
+              <Ticket size={15} strokeWidth={2.2} />
+            </button>
+
+            <button
+              onClick={() => setOpen((v) => !v)}
+              aria-expanded={open}
+              aria-label="Order detail"
+              className="grid size-10 place-items-center rounded-xl border border-line bg-surface-sunk text-muted transition-colors hover:text-ink"
+            >
+              <ChevronDown
+                size={16}
+                strokeWidth={2.2}
+                className={cn("transition-transform", open && "rotate-180")}
+              />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -838,7 +844,10 @@ function ActionButton({
       disabled={busy}
       onClick={onClick}
       className={cn(
-        "flex h-10 items-center gap-1.5 rounded-xl px-3.5 text-[12.5px] font-semibold transition-colors disabled:opacity-50",
+        // A 132px basis with grow: on a 340px row that is two per line,
+        // stretched to fill — symmetrical whatever the count. From sm up the
+        // buttons take their natural width again.
+        "flex h-10 min-w-0 grow basis-[132px] items-center justify-center gap-1.5 rounded-xl px-3.5 text-[12.5px] font-semibold whitespace-nowrap transition-colors disabled:opacity-50 sm:grow-0 sm:basis-auto",
         primary ? "bg-ink text-paper" : "border border-line bg-surface-sunk text-ink-soft",
       )}
     >
