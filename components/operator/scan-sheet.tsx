@@ -5,7 +5,7 @@ import { Drawer } from "vaul";
 import { motion } from "motion/react";
 import { Camera, Check, Keyboard, Loader2, ScanLine, ShieldAlert, ShieldCheck } from "lucide-react";
 import { orderCustomer, type Customer } from "@/lib/operator";
-import type { OrderRow } from "@/lib/orders";
+import { listOperators, type OrderRow } from "@/lib/orders";
 import { cn, spring } from "@/lib/utils";
 
 /**
@@ -22,17 +22,30 @@ import { cn, spring } from "@/lib/utils";
 /**
  * What a scan or a typed token says.
  *
- * The student's code is `printify:order:A03:7F3A9C21` — token and secret.
+ * The student's code is `printify:order:A03:7F3A9C21:5E9A1C2B` — token,
+ * secret, and the first eight characters of the desk it was placed with.
  * The slip's is `printify:order:A03` — token only, because whoever holds
  * the slip already holds the paper, and it exists to *find*, not to prove.
- * A typed token is the same as a slip.
+ * A typed token is the same as a slip. Codes from before the desk segment
+ * existed still parse; they just can't name their desk.
  */
-export function parseScan(raw: string): { token: string; code: string | null } | null {
+export function parseScan(
+  raw: string,
+): { token: string; code: string | null; desk: string | null } | null {
   const text = raw.trim();
-  const m = /^printify:order:([A-Z0-9-]+)(?::([A-Z0-9]{6,16}))?$/i.exec(text);
+  const m = /^printify:order:([A-Z0-9-]+)(?::([A-Z0-9]{6,16}))?(?::([A-F0-9]{8}))?$/i.exec(text);
   const token = (m ? m[1] : text).toUpperCase();
   if (!/^[A-Z]{1,2}\d{1,4}$/.test(token)) return null;
-  return { token, code: m?.[2] ? m[2].toUpperCase() : null };
+  return {
+    token,
+    code: m?.[2] ? m[2].toUpperCase() : null,
+    desk: m?.[3] ? m[3].toUpperCase() : null,
+  };
+}
+
+/** The desk segment for an operator id: the first eight hex characters. */
+export function deskPrefix(operatorId: string): string {
+  return operatorId.replace(/-/g, "").slice(0, 8).toUpperCase();
 }
 
 /** Kept for callers that only want the token. */
@@ -60,13 +73,16 @@ function detectorFor(): Detector | null {
 export function ScanSheet({
   open,
   onOpenChange,
+  operatorId,
   ready,
   busy,
   onHandOver,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Orders currently waiting to be collected. */
+  /** The desk doing the scanning. */
+  operatorId: string;
+  /** Orders currently waiting to be collected here. */
   ready: OrderRow[];
   busy: boolean;
   onHandOver: (order: OrderRow) => void;
@@ -94,7 +110,26 @@ export function ScanSheet({
         setMiss("That doesn't look like a Printify token.");
         return;
       }
-      const { token, code } = parsed;
+      const { token, code, desk } = parsed;
+
+      // The most common wrong scan: the right student at the wrong counter.
+      // This desk can't see that order at all — RLS stops here — but the QR
+      // says where it lives, and operators are public, so it can be named.
+      if (desk && desk !== deskPrefix(operatorId)) {
+        setMatch(null);
+        setChoices([]);
+        setMiss("This order was placed with another desk.");
+        void listOperators().then((all) => {
+          const theirs = all.find((o) => deskPrefix(o.id) === desk);
+          if (theirs) {
+            setMiss(
+              `This order is with ${theirs.short_name?.trim() || theirs.name}${theirs.campus ? `, ${theirs.campus}` : ""} — not here. Send them there.`,
+            );
+          }
+        });
+        return;
+      }
+
       const candidates = ready.filter((o) => o.token?.toUpperCase() === token);
       if (candidates.length === 0) {
         setMiss(`${token} isn't waiting to be collected here.`);
@@ -420,9 +455,9 @@ function MatchPanel({
 
       {proof === "wrong" ? (
         <p className="m-0 mt-3 text-[12px] leading-relaxed text-clay-ink">
-          This QR names {order.token} but its code belongs to nobody on the shelf. A made-up code, or
-          one from another day. Don&apos;t hand it over on this scan — ask them to open the order on
-          their own phone.
+          This QR names {order.token} but its code belongs to nobody on this shelf. Most likely an
+          order placed with another desk, or one from another day; possibly made up. Don&apos;t hand
+          this over on it — ask them to open the order on their own phone, which shows the desk.
         </p>
       ) : (
         <div className="mt-4 flex gap-2">

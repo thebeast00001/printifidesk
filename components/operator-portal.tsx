@@ -451,6 +451,7 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
       <ScanSheet
         open={scanning}
         onOpenChange={setScanning}
+        operatorId={operator.id}
         ready={readyOrders}
         busy={busy !== null}
         onHandOver={(order) => {

@@ -188,7 +188,7 @@ function LiveOrder({
       </motion.button>
 
       {order.status === "ready" && order.token && (
-        <HandoverCode token={order.token} code={order.handover_code} />
+        <HandoverCode token={order.token} code={order.handover_code} operatorId={order.operator_id} />
       )}
 
       <DeskMessages orderId={order.id} visible={open} />
@@ -612,7 +612,15 @@ function Timeline({ events, order }: { events: OrderEventRow[]; order: OrderRow 
  * difference between a fifteen-second handover and a two-second one when there
  * is a queue behind you.
  */
-function HandoverCode({ token, code }: { token: string; code: string | null }) {
+function HandoverCode({
+  token,
+  code,
+  operatorId,
+}: {
+  token: string;
+  code: string | null;
+  operatorId: string;
+}) {
   const [src, setSrc] = useState<string | null>(null);
   const [shown, setShown] = useState(false);
 
@@ -620,9 +628,14 @@ function HandoverCode({ token, code }: { token: string; code: string | null }) {
     if (!shown || src) return;
     let cancelled = false;
     void import("qrcode").then(({ default: QRCode }) =>
-      // Token plus the per-order secret. The token alone is on every slip on
-      // the shelf and is sequential; the secret is what makes this code yours.
-      QRCode.toDataURL(`printify:order:${token}${code ? `:${code}` : ""}`, { margin: 1, width: 420 })
+      // Token, the per-order secret, and the first eight characters of the
+      // desk's id. The token alone is on every slip on the shelf and is
+      // sequential; the secret is what makes this code yours; the desk is so
+      // that a scanner at the wrong counter can say so instead of guessing.
+      QRCode.toDataURL(
+        `printify:order:${token}${code ? `:${code}` : ""}${code ? `:${operatorId.replace(/-/g, "").slice(0, 8).toUpperCase()}` : ""}`,
+        { margin: 1, width: 420 },
+      )
         .then((url) => !cancelled && setSrc(url))
         .catch(() => undefined),
     );

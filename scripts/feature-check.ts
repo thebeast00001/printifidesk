@@ -8,7 +8,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { jwtMsRemaining } from "../lib/jwt";
 import { clockLabel } from "../lib/utils";
-import { parseScan } from "../components/operator/scan-sheet";
+import { deskPrefix, parseScan } from "../components/operator/scan-sheet";
 
 let fails = 0;
 const check = (name: string, got: unknown, want: unknown) => {
@@ -192,9 +192,15 @@ check("null stays null", clockLabel(null), null);
 check("garbage stays null", clockLabel("soon"), null);
 
 console.log("\n— handover scans (a code is proof; a bare token is only a lookup) —");
-check("student QR carries the code", parseScan("printify:order:A03:7F3A9C21"), { token: "A03", code: "7F3A9C21" });
-check("slip QR has no code", parseScan("printify:order:A03"), { token: "A03", code: null });
-check("typed lowercase token", parseScan(" b12 "), { token: "B12", code: null });
+check(
+  "student QR carries code and desk",
+  parseScan("printify:order:A03:7F3A9C21:5E9A1C2B"),
+  { token: "A03", code: "7F3A9C21", desk: "5E9A1C2B" },
+);
+check("older QR without a desk still parses", parseScan("printify:order:A03:7F3A9C21"), { token: "A03", code: "7F3A9C21", desk: null });
+check("slip QR has no code", parseScan("printify:order:A03"), { token: "A03", code: null, desk: null });
+check("typed lowercase token", parseScan(" b12 "), { token: "B12", code: null, desk: null });
+check("desk prefix from a uuid", deskPrefix("5e9a1c2b-1234-4abc-9def-000000000000"), "5E9A1C2B");
 check("code is upper-cased", parseScan("printify:order:a03:7f3a9c21")?.code, "7F3A9C21");
 check("a short code is not a code", parseScan("printify:order:A03:7F3")?.code ?? "rejected", "rejected");
 check("garbage rejected", parseScan("https://evil.example/A03"), null);

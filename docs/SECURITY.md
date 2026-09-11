@@ -185,6 +185,16 @@ tokens (A01 … A99, B01) and a hundred distinct codes; a forced duplicate
 token is refused by the index; a student's attempt to change their code is
 discarded by the guard.
 
+**The wrong desk.** A scanner only ever searches its own desk's ready orders
+— the query is filtered by `operator_id` and RLS returns nothing else — and it
+cannot update another desk's order. So another operator scanning the code
+could never hand the student's job over, or mark it collected. What they *could*
+do was misread the situation: their own shelf often has an A03 too, and a code
+mismatch used to say "made up, or another day". The QR now carries the first
+eight characters of its desk's id; a scanner elsewhere says *"This order is
+with Sharma Stationery, CEC — not here"* and offers nothing. Operators are
+public, which is what lets it name the desk.
+
 **What this doesn't cover:** a student who screenshots their QR and sends it
 to a friend has delegated collection, the same as handing over a paper
 ticket. That's a feature. And a desk that ignores *found, not verified* and
