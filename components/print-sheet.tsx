@@ -13,6 +13,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { Figure } from "./figure";
+import { Bill } from "./bill";
 import { UploadStep } from "./upload-step";
 import { createOrder, defaultOperatorId } from "@/lib/orders";
 import { PickupPicker } from "./pickup-picker";
@@ -390,6 +391,7 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openFile, setOpenFile] = useState<string | null>(null);
+  const [showBill, setShowBill] = useState(false);
   // null means "as soon as possible"; an ISO string means a booked slot.
   const [pickupAt, setPickupAt] = useState<string | null>(null);
   const { operator, wait, ready: waitReady } = useOperatorWait();
@@ -569,9 +571,41 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
       </div>
 
       <div className="shrink-0 border-t border-line bg-paper/[0.92] px-[18px] pt-3.5 pb-[max(18px,env(safe-area-inset-bottom))] backdrop-blur-xl">
+        {/* The arithmetic behind the number, one tap away. Same function that
+            prices it in the database, so this is the bill, not an estimate. */}
+        <AnimatePresence initial={false}>
+          {showBill && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.28, ease: easeIos }}
+              className="overflow-hidden"
+            >
+              <div className="mb-3 max-h-[38dvh] overflow-y-auto rounded-[14px] border border-line bg-surface px-3.5 py-3">
+                <Bill quote={q} card={card} names={files.map((f) => f.name)} />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="mb-3 flex items-end justify-between gap-4">
           <div className="min-w-0">
-            <p className="label-caps m-0">Total</p>
+            <button
+              onClick={() => setShowBill((v) => !v)}
+              aria-expanded={showBill}
+              className="label-caps m-0 flex items-center gap-1 text-left"
+            >
+              Total
+              <ChevronDown
+                size={12}
+                strokeWidth={2.4}
+                className={cn("transition-transform", showBill && "rotate-180")}
+              />
+              <span className="ml-1 font-normal normal-case tracking-normal text-faint">
+                {showBill ? "hide bill" : "see bill"}
+              </span>
+            </button>
             <p className="m-0 mt-0.5 truncate font-mono text-[11px] text-muted">
               {describeOrder(q, lines)}
             </p>

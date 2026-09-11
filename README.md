@@ -72,7 +72,8 @@ factual-teal-4113.clerk.accounts.dev
 [`0013_per_item_config_and_reports.sql`](supabase/migrations/0013_per_item_config_and_reports.sql),
 [`0014_hardening.sql`](supabase/migrations/0014_hardening.sql),
 [`0015_desk_tools.sql`](supabase/migrations/0015_desk_tools.sql),
-then [`0016_handover_code.sql`](supabase/migrations/0016_handover_code.sql).
+[`0016_handover_code.sql`](supabase/migrations/0016_handover_code.sql),
+then [`0017_paise_and_rate_snapshot.sql`](supabase/migrations/0017_paise_and_rate_snapshot.sql).
 
 These are **SQL** — they go in the Supabase dashboard's SQL editor
 (`Project → SQL Editor → New query`), not a terminal.
@@ -396,13 +397,30 @@ says so rather than promising money back that only the operator can send. One
 open report per order, enforced by a partial unique index, so a frustrated
 student refreshing the button doesn't file ten.
 
-### The database prices the order
+### The database prices the order — to the paisa
 
 Since `0014`, the browser never writes a total. `place_order()` takes the files
 and their settings, prices them from the operator's rate card with the same
 arithmetic as `lib/pricing.ts`, and inserts the order and its items in one
 transaction. The quote in the sheet is a preview of what the database will
-decide; `npm run check:sql` proves the two agree across 144 jobs.
+decide; `npm run check:sql` proves the two agree across 144 jobs — every
+total *and every line price*, to the paisa.
+
+Since `0017`, amounts are exact. An operator who sets ₹1.50 a page means ₹4.50
+for three pages, and that is what is charged and shown; the earlier engine
+rounded the order to a whole rupee. Each file's price is round-half-up to two
+decimals, the total is the sum of those prices so a bill always adds up, and
+the minimum order is an explicit *small-order top-up* line. Getting Postgres
+to round exactly as the browser does took care: its `float8 → numeric` cast
+rounds to fifteen significant digits first, and its `round(float8)` is
+banker's rounding, so `to_paise()` spells out the browser's rule instead.
+
+Every order also carries `rate_card` — a snapshot of the operator's rates at
+the moment of pricing. The bill on `/orders` is rebuilt from that and the
+items, so it stays what the student was actually charged after the desk
+changes its prices. Orders older than the snapshot are shown at today's
+rates and labelled as an estimate, with the stored total the number that
+counts.
 
 This closed the most serious finding of the security pass, and
 [`docs/SECURITY.md`](docs/SECURITY.md) has the rest: what each boundary is
@@ -580,7 +598,7 @@ Being specific about this matters more than a green badge:
 - `npm run check` — types, pricing, phone normalisation, pickup slots, UPI link
   format, the write-guard column list, and the SQL below. **Passes.**
 - `npm run build` — **passes.**
-- `npm run check:sql` — all sixteen migrations applied, re-applied, and their
+- `npm run check:sql` — all seventeen migrations applied, re-applied, and their
   triggers driven through a real order under a real JWT: tokens, the timeline,
   the write guard, per-file settings, the report constraint, the upload
   ceiling, the order rate limit, document ownership, push endpoint sanity, and

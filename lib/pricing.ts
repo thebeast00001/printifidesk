@@ -71,6 +71,31 @@ export function rateCardOf(operator: RateSource | null | undefined): RateCard {
   };
 }
 
+/**
+ * Money is kept to the paisa, and the display shows paise only when there
+ * are any. An operator who sets ₹1.50 a page means ₹4.50 for three pages,
+ * not ₹5 — the first version of this rounded the order to whole rupees and
+ * quietly charged more than the rate card said.
+ */
+export const paise = (x: number) => Math.round(x * 100) / 100;
+
+/** One file's bill: the parts a student can check against the rate card. */
+export interface LineBill {
+  pages: number;
+  colourPages: number;
+  config: PrintConfig;
+  /** Pages charged at each rate, for one copy. */
+  bwPages: number;
+  inkedPages: number;
+  /** Rupees, all copies, each to the paisa. These sum exactly to `price`. */
+  bwCost: number;
+  colourCost: number;
+  bulkSaving: number;
+  duplexSaving: number;
+  binding: number;
+  price: number;
+}
+
 export interface Quote {
   bwPages: number;
   colourPages: number;
@@ -78,12 +103,21 @@ export interface Quote {
   binding: number;
   duplexSaving: number;
   bulkSaving: number;
+  /** The files, each with its own arithmetic laid out. */
+  lines: LineBill[];
+  /** Sum of the line prices, before the minimum. */
+  subtotal: number;
+  /** What the minimum order added, if it did. */
+  topUp: number;
   total: number;
   /** What full colour would have cost — the smart-colour pitch. */
   fullColourTotal: number;
   smartSaving: number;
   /** True when the minimum order value lifted the price. */
   minApplied: boolean;
+  /** Whether the bulk slab applied, and what it takes off. */
+  bulkApplied: boolean;
+  bulkPercent: number;
 }
 
 export const DEFAULT_CONFIG: PrintConfig = {
@@ -103,6 +137,9 @@ export interface QuoteLine {
 interface LineCost {
   bwPages: number;
   inkedPages: number;
+  /** List price of the paper for one copy, before any discount. */
+  bwList: number;
+  colourList: number;
   paper: number;
   binding: number;
   duplexSaving: number;
@@ -141,11 +178,47 @@ function lineCost(
   return {
     bwPages: bwPages * copies,
     inkedPages: inkedPages * copies,
+    bwList: bwPages * card.bwPerPage,
+    colourList: inkedPages * card.colourPerPage,
     paper: paper * copies,
     binding: bind * copies,
     duplexSaving: duplexSaving * copies,
     bulkSaving: bulkSaving * copies,
     raw: (paper + bind) * copies,
+  };
+}
+
+/**
+ * The parts of one line, each to the paisa, made to sum exactly to the
+ * line's price. Rounding five parts separately can drift a paisa or two from
+ * rounding their sum; the drift is put on the largest part, so a student who
+ * adds the bill up by hand lands on the number they were charged.
+ */
+function lineBill(line: QuoteLine, cost: LineCost, copies: number): LineBill {
+  const price = paise(cost.raw);
+  const parts = {
+    bwCost: paise(cost.bwList * copies),
+    colourCost: paise(cost.colourList * copies),
+    bulkSaving: paise(cost.bulkSaving),
+    duplexSaving: paise(cost.duplexSaving),
+    binding: paise(cost.binding),
+  };
+  const summed = paise(parts.bwCost + parts.colourCost - parts.bulkSaving - parts.duplexSaving + parts.binding);
+  const drift = paise(price - summed);
+  if (drift !== 0) {
+    const key = (["bwCost", "colourCost", "binding"] as const).reduce((a, b) =>
+      parts[a] >= parts[b] ? a : b,
+    );
+    parts[key] = paise(parts[key] + drift);
+  }
+  return {
+    pages: line.pages,
+    colourPages: line.colourPages,
+    config: line.config,
+    bwPages: cost.bwPages / copies,
+    inkedPages: cost.inkedPages / copies,
+    ...parts,
+    price,
   };
 }
 
@@ -161,44 +234,62 @@ const printedPages = (lines: QuoteLine[]) =>
  * and the minimum order are properties of the job as a whole.
  */
 export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
-  const bulk = printedPages(lines) >= card.bulkThreshold ? card.bulkMultiplier : 1;
+  const bulkApplied = printedPages(lines) >= card.bulkThreshold;
+  const bulk = bulkApplied ? card.bulkMultiplier : 1;
+  const minOrder = paise(card.minOrder);
 
   const costs = lines.map((l) => lineCost(l.pages, l.colourPages, l.config, card, bulk));
+  const bills = lines.map((l, i) => lineBill(l, costs[i], Math.max(1, l.config.copies)));
   const sum = (pick: (c: LineCost) => number) => costs.reduce((n, c) => n + pick(c), 0);
 
-  const raw = sum((c) => c.raw);
-  const total = Math.max(Math.round(raw), Math.round(card.minOrder));
+  // The total is the sum of the line prices as shown — not the rounded sum
+  // of the unrounded lines — so a bill always adds up. The database does the
+  // same, in the same order; the harness compares them line by line.
+  const subtotal = paise(bills.reduce((n, b) => n + b.price, 0));
+  const total = Math.max(subtotal, minOrder);
+  const topUp = paise(total - subtotal);
 
   // What the same job would have cost printed entirely in colour. Used by the
   // savings widget, so every line counts regardless of what it was set to.
-  const fullColourRaw = lines
-    .map((l) => lineCost(l.pages, l.pages, { ...l.config, colour: "full" }, card, bulk).raw)
-    .reduce((n, v) => n + v, 0);
-  const fullColourTotal = Math.max(Math.round(fullColourRaw), Math.round(card.minOrder));
+  const fullColourSum = paise(
+    lines
+      .map((l) => paise(lineCost(l.pages, l.pages, { ...l.config, colour: "full" }, card, bulk).raw))
+      .reduce((n, v) => n + v, 0),
+  );
+  const fullColourTotal = Math.max(fullColourSum, minOrder);
 
   // The smart-colour claim only counts lines actually set to smart. A line the
   // student deliberately set to black & white saved them money, but not by
   // anything this feature did, and claiming it would be a lie.
-  const smartRaw = lines
-    .map((l) =>
-      l.config.colour === "smart"
-        ? lineCost(l.pages, l.pages, { ...l.config, colour: "full" }, card, bulk).raw
-        : lineCost(l.pages, l.colourPages, l.config, card, bulk).raw,
-    )
-    .reduce((n, v) => n + v, 0);
-  const smartTotal = Math.max(Math.round(smartRaw), Math.round(card.minOrder));
+  const smartSum = paise(
+    lines
+      .map((l) =>
+        paise(
+          l.config.colour === "smart"
+            ? lineCost(l.pages, l.pages, { ...l.config, colour: "full" }, card, bulk).raw
+            : lineCost(l.pages, l.colourPages, l.config, card, bulk).raw,
+        ),
+      )
+      .reduce((n, v) => n + v, 0),
+  );
+  const smartTotal = Math.max(smartSum, minOrder);
 
   return {
     bwPages: sum((c) => c.bwPages),
     colourPages: sum((c) => c.inkedPages),
-    paper: Math.round(sum((c) => c.paper)),
-    binding: Math.round(sum((c) => c.binding)),
-    duplexSaving: Math.round(sum((c) => c.duplexSaving)),
-    bulkSaving: Math.round(sum((c) => c.bulkSaving)),
+    paper: paise(sum((c) => c.paper)),
+    binding: paise(sum((c) => c.binding)),
+    duplexSaving: paise(sum((c) => c.duplexSaving)),
+    bulkSaving: paise(sum((c) => c.bulkSaving)),
+    lines: bills,
+    subtotal,
+    topUp,
     total,
     fullColourTotal,
-    smartSaving: Math.max(0, smartTotal - total),
-    minApplied: Math.round(raw) < Math.round(card.minOrder),
+    smartSaving: Math.max(0, paise(smartTotal - total)),
+    minApplied: subtotal < minOrder,
+    bulkApplied,
+    bulkPercent: Math.round((1 - card.bulkMultiplier) * 100),
   };
 }
 
@@ -215,7 +306,7 @@ export function quote(
 /** What one file costs on its own, for the per-item price stored on the order. */
 export function linePrice(line: QuoteLine, lines: QuoteLine[], card: RateCard): number {
   const bulk = printedPages(lines) >= card.bulkThreshold ? card.bulkMultiplier : 1;
-  return Math.round(lineCost(line.pages, line.colourPages, line.config, card, bulk).raw);
+  return paise(lineCost(line.pages, line.colourPages, line.config, card, bulk).raw);
 }
 
 /** Reads back the way a person would describe their own order. */
@@ -258,7 +349,12 @@ export function describeOrder(q: Quote, lines: QuoteLine[]): string {
 }
 
 export function money(amount: number, currency = "₹") {
-  return `${currency}${amount.toLocaleString("en-IN")}`;
+  const rounded = paise(amount);
+  const whole = Number.isInteger(rounded);
+  return `${currency}${rounded.toLocaleString("en-IN", {
+    minimumFractionDigits: whole ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 /** Per-page rate shown on a chip, trimmed of pointless decimals. */

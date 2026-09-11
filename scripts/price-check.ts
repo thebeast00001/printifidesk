@@ -1,5 +1,5 @@
 import {
-  quote, quoteOrder, linePrice, describeOrder, rateCardOf, money, DEFAULT_CONFIG,
+  quote, quoteOrder, linePrice, describeOrder, rateCardOf, money, paise, DEFAULT_CONFIG,
 } from "../lib/pricing";
 import type { QuoteLine } from "../lib/pricing";
 
@@ -26,12 +26,16 @@ for (const [name, card] of [["cheap", cheap], ["premium", premium]] as const) {
   );
 }
 
-// Hand-check the cheap operator: 44 b/w + 4 colour, duplex, stapled.
+// Hand-check the cheap operator: 44 b/w + 4 colour, duplex, stapled. To the
+// paisa — the operator wrote ₹1.00 and ₹6.00 and a 10% duplex discount, and
+// (44 + 24) × 0.9 + 3 is 64.20, not 64.
 const c = quote(48, 4, { ...DEFAULT_CONFIG, binding: "staple" }, cheap);
-const expected = Math.round((((44 * 1 + 4 * 6) * 1) * (1 - 0.10) + 3) * 1);
+const expected = paise((44 * 1 + 4 * 6) * (1 - 0.10) + 3);
 console.log(`\ncheap hand-check: engine=${c.total} expected=${expected} ${c.total === expected ? "OK" : "MISMATCH"}`);
 
 // Minimum order must lift a tiny job.
+if (c.total !== expected) process.exitCode = 1;
+
 const tiny = quote(1, 0, { ...DEFAULT_CONFIG, binding: "none" }, cheap);
 console.log(`min order: 1 page -> ${money(tiny.total, cheap.currency)} minApplied=${tiny.minApplied} ${tiny.total === 10 ? "OK" : "MISMATCH"}`);
 
@@ -130,6 +134,62 @@ check(
   !describeOrder(quoteOrder([half, half], cheap), [half, half]).includes("differ"),
   describeOrder(quoteOrder([half, half], cheap), [half, half]),
 );
+
+console.log("\n— the bill adds up (to the paisa, for every job in a grid) —");
+{
+  const awkward = rateCardOf({
+    currency: "₹", bw_per_page: "1.35", colour_per_page: "7.75", duplex_discount: "0.08",
+    staple_price: "4.50", bulk_threshold: 60, bulk_multiplier: "0.9", min_order: "10", paper_gsm: 80,
+  });
+  let jobs = 0;
+  let linesOff = 0;
+  let partsOff = 0;
+  let nonPaise = 0;
+  for (const pages of [1, 3, 7, 23, 48, 61, 120]) {
+    for (const colour of ["smart", "bw", "full"] as const) {
+      for (const sides of ["single", "double"] as const) {
+        for (const binding of ["none", "staple"] as const) {
+          for (const copies of [1, 3]) {
+            const colourPages = Math.floor(pages / 3);
+            const q = quoteOrder(
+              [
+                { pages, colourPages, config: { colour, sides, binding, copies } },
+                { pages: 5, colourPages: 1, config: DEFAULT_CONFIG },
+              ],
+              awkward,
+            );
+            jobs++;
+            // Every amount is a whole number of paise.
+            for (const v of [q.total, q.subtotal, q.topUp, ...q.lines.map((l) => l.price)]) {
+              if (Math.abs(Math.round(v * 100) - v * 100) > 1e-6) nonPaise++;
+            }
+            // Lines sum to the subtotal; subtotal plus top-up is the total.
+            const lineSum = paise(q.lines.reduce((n, l) => n + l.price, 0));
+            if (lineSum !== q.subtotal || paise(q.subtotal + q.topUp) !== q.total) linesOff++;
+            // Each line's parts sum to that line's price.
+            for (const l of q.lines) {
+              const parts = paise(l.bwCost + l.colourCost - l.bulkSaving - l.duplexSaving + l.binding);
+              if (parts !== l.price) partsOff++;
+            }
+          }
+        }
+      }
+    }
+  }
+  check("every amount is whole paise", nonPaise === 0, `${nonPaise} off`);
+  check("lines sum to the total, every job", linesOff === 0, `${linesOff} off`);
+  check("parts sum to each line, every job", partsOff === 0, `${partsOff} off`);
+  console.log(`   ${jobs} jobs checked`);
+
+  // The top-up is shown as a line, not hidden in the total.
+  const small = quoteOrder([{ pages: 1, colourPages: 0, config: DEFAULT_CONFIG }], awkward);
+  check("minimum shows as a top-up line", small.topUp === paise(10 - small.subtotal), `${small.subtotal} + ${small.topUp}`);
+  check(
+    "money shows paise only when present",
+    money(4.5) === "₹4.50" && money(5) === "₹5" && money(64.2) === "₹64.20",
+    `${money(4.5)}, ${money(5)}, ${money(64.2)}`,
+  );
+}
 
 console.log(bad === 0 ? "\nPASS - pricing" : `\nFAIL - ${bad} pricing check(s)`);
 process.exit(bad === 0 ? 0 : 1);

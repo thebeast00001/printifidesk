@@ -168,7 +168,7 @@ export async function operatorStats(operatorId: string): Promise<OperatorStats |
 }
 
 const ORDER_SELECT =
-  "*, order_items(id, name, pages, colour_pages, selected_pages, price, config)";
+  "*, order_items(id, name, pages, colour_pages, selected_pages, price, config, ordinal)";
 
 /**
  * Every live order, plus the finished ones from the last fortnight.

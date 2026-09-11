@@ -1,7 +1,7 @@
 "use client";
 
 import { ensureSession, getSupabase } from "./supabase/client";
-import type { PrintConfig } from "./pricing";
+import type { PrintConfig, RateSource } from "./pricing";
 
 export type OrderStatus =
   | "placed"
@@ -22,6 +22,8 @@ export interface OrderItemRow {
   price: number;
   /** This file's own settings. Empty on orders placed before 0013. */
   config: Partial<PrintConfig> | null;
+  /** Position in the order the student added the files. 0 before 0017. */
+  ordinal: number;
 }
 
 export interface OrderRow {
@@ -55,6 +57,11 @@ export interface OrderRow {
    * the code came from the student's own screen.
    */
   handover_code: string | null;
+  /**
+   * The operator's rates at the moment the order was priced (0017). The
+   * bill is rebuilt from this; null on orders placed before it existed.
+   */
+  rate_card: RateSource | null;
   user_id: string;
   accepted_at: string | null;
   started_at: string | null;
@@ -208,7 +215,7 @@ export const NEXT_STATUS: Partial<Record<OrderStatus, { to: OrderStatus; label: 
   ready: [{ to: "collected", label: "Handed over" }],
 };
 
-const ORDER_SELECT = "*, order_items(id, name, pages, colour_pages, selected_pages, price, config)";
+const ORDER_SELECT = "*, order_items(id, name, pages, colour_pages, selected_pages, price, config, ordinal)";
 
 export async function defaultOperatorId(): Promise<string | null> {
   return (await defaultOperator())?.id ?? null;

@@ -422,7 +422,7 @@ await scenario("place_order prices exactly what the browser showed", async () =>
   // Rates with awkward decimals, so a .5 boundary is actually reachable.
   await db.query(
     `update public.operators
-        set bw_per_page = 1.25, colour_per_page = 7.75, duplex_discount = 0.08,
+        set bw_per_page = 1.35, colour_per_page = 7.75, duplex_discount = 0.08,
             staple_price = 4.50, bulk_threshold = 60, bulk_multiplier = 0.9, min_order = 10
       where id = $1;`,
     [OPERATOR],
@@ -460,18 +460,34 @@ await scenario("place_order prices exactly what the browser showed", async () =>
             // grid can run, since this is arithmetic being tested, not the cap.
             await db.query(`delete from public.orders where user_id = 'student_test' and token <> 'A01';`);
 
+            const q = quoteOrder(lines, card);
             const { rows } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
               OPERATOR,
               JSON.stringify(items),
             ]);
-            const { rows: got } = await db.query(`select total from public.orders where id = $1;`, [
-              rows[0].id,
-            ]);
+            const { rows: got } = await db.query(
+              `select o.total, o.rate_card,
+                      (select array_agg(i.price order by i.ordinal) from public.order_items i where i.order_id = o.id) as prices
+                 from public.orders o where o.id = $1;`,
+              [rows[0].id],
+            );
             const actual = Number(got[0].total);
             if (actual !== expected) {
               throw new Error(
                 `${pages}p ${colour}/${sides}/${binding} x${copies}: SQL ${actual} vs TS ${expected}`,
               );
+            }
+            // Per line, to the paisa — the bill shown must be the bill stored.
+            const sqlPrices = (got[0].prices ?? []).map(Number);
+            q.lines.forEach((l, i) => {
+              if (sqlPrices[i] !== l.price) {
+                throw new Error(
+                  `${pages}p ${colour}/${sides}/${binding} x${copies} line ${i}: SQL ${sqlPrices[i]} vs TS ${l.price}`,
+                );
+              }
+            });
+            if (!got[0].rate_card || String(got[0].rate_card.bw_per_page) !== "1.35") {
+              throw new Error("the rate card wasn't snapshotted onto the order");
             }
             compared++;
           }
@@ -479,7 +495,7 @@ await scenario("place_order prices exactly what the browser showed", async () =>
       }
     }
   }
-  return `${compared} jobs, every total identical`;
+  return `${compared} jobs — every total and every line price identical to the paisa, rate card snapshotted`;
 });
 
 await scenario("a file that isn't yours can't go on your order", async () => {

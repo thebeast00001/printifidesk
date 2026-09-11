@@ -102,7 +102,7 @@ export function SavingsBreakdown() {
                           {order.colour_pages}/{order.pages}
                         </span>
                         <span className="w-16 text-right font-mono text-[12.5px] font-medium">
-                          {money(Math.round(saved))}
+                          {money(saved)}
                         </span>
                       </div>
                     );
@@ -111,7 +111,7 @@ export function SavingsBreakdown() {
                   <div className="flex items-center gap-3 bg-surface-sunk px-4 py-3">
                     <span className="flex-1 text-[13px] font-semibold">Total saved</span>
                     <span className="font-figure text-[20px] font-extrabold">
-                      {money(Math.round(totalSaved))}
+                      {money(totalSaved)}
                     </span>
                   </div>
                 </div>

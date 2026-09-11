@@ -37,7 +37,7 @@ import {
   type OperatorStats,
 } from "@/lib/operator";
 import { NEXT_STATUS, STATUS_LABEL, type Operator, type OrderRow, type OrderStatus } from "@/lib/orders";
-import { money, type PrintConfig } from "@/lib/pricing";
+import { money, paise, type PrintConfig } from "@/lib/pricing";
 import { summarisePages } from "@/lib/pages";
 import { openReports, resolveReport, type OrderReport } from "@/lib/reports";
 import { useAuthKey } from "@/hooks/use-auth-key";
@@ -1011,7 +1011,7 @@ function FileList({
                 {Number(item.price) > 0 && (
                   <>
                     {" \u00b7 "}
-                    <span className="text-ink">{money(Math.round(Number(item.price)), currency)}</span>
+                    <span className="text-ink">{money(Number(item.price), currency)}</span>
                   </>
                 )}
               </span>
@@ -1138,7 +1138,8 @@ function RefundRow({
   busy: boolean;
   onRefund: (amount: number, reason: string) => void;
 }) {
-  const total = Math.round(Number(order.total));
+  // To the paisa: a ₹64.20 order can be refunded ₹64.20, not ₹64.
+  const total = paise(Number(order.total));
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState(String(total));
   const [reason, setReason] = useState(REFUND_REASONS[0]);
@@ -1218,7 +1219,7 @@ function RefundRow({
                 busy={busy}
                 primary
               >
-                Refund {money(valid ? Math.round(value) : total, currency)}
+                Refund {money(valid ? paise(value) : total, currency)}
               </ActionButton>
               <ActionButton onClick={() => setOpen(false)} busy={false}>
                 Cancel

@@ -151,6 +151,7 @@ for (const column of [
   "user_id",
   "token",
   "handover_code",
+  "rate_card",
   "is_priority",
   "operator_note",
   "payment_taken_at",
