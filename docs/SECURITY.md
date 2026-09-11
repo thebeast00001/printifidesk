@@ -30,6 +30,7 @@ token can still attempt, so every rule that matters has to hold in Postgres.
 | Files | Storage RLS keyed on the path's first folder | Path is `<clerk id>/<doc id>-<name>`; `documents_path_owned` (0014) ties the row to it. |
 | Operator file access | `claim_document_access()` RPC + storage policy (0011) | Logged per open; only while the order is live. |
 | Maintenance routes | `NOTIFY_WEBHOOK_SECRET`, compared in constant time | Clerk middleware skips `/api/`; the secret is the whole gate. |
+| Desk tools (0015) | RPCs check `is_staff` themselves; tables have read policies only | Messages: staff insert, owner reads. Stock and close-outs: no client insert path at all. Staff: `add_staff` looks up by email, `remove_staff` refuses to empty the desk. |
 | Browser | Strict nonce-based CSP + the headers in `next.config.ts` | Injected script runs nothing, even where escaping fails. |
 
 ## Findings from the pass

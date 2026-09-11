@@ -557,6 +557,89 @@ await scenario("the order rate limit holds", async () => {
   return "20 allowed, the 21st refused";
 });
 
+// ---------------------------------------------------------------
+// 0015: desk tools.
+// ---------------------------------------------------------------
+await scenario("a message to the student queues a push", async () => {
+  await actingAs("op_test");
+  await db.query(
+    `insert into public.order_messages (order_id, sender, body)
+     values ($1, 'op_test', 'Page 3 is blank — print it anyway?');`,
+    [orderId],
+  );
+  const { rows } = await db.query(
+    `select channel, status, body from public.notifications
+      where order_id = $1 and body like '%blank%' order by channel;`,
+    [orderId],
+  );
+  if (rows.length !== 2) throw new Error(`expected push + whatsapp rows, got ${rows.length}`);
+  if (!rows[0].body.includes("A01")) throw new Error("the message doesn't name the order");
+  return `${rows.map((r) => `${r.channel}:${r.status}`).join(", ")}`;
+});
+
+await scenario("stock is a ledger", async () => {
+  await actingAs("op_test");
+  await db.query(`update public.operators set paper_stock = 100, toner_pages = 1000 where id = $1;`, [OPERATOR]);
+  await db.query(`select public.adjust_stock($1, 500, 0, 'New ream');`, [OPERATOR]);
+  const { rows: after } = await db.query(`select paper_stock from public.operators where id = $1;`, [OPERATOR]);
+  if (Number(after[0].paper_stock) !== 600) throw new Error(`paper is ${after[0].paper_stock}, not 600`);
+
+  // Collecting a job draws it down and writes its own ledger row.
+  await db.query(`update public.orders set status = 'collected' where id = $1;`, [orderId]).catch(() => {});
+  const { rows: log } = await db.query(
+    `select paper_delta, actor, order_id from public.stock_log where operator_id = $1 order by id;`,
+    [OPERATOR],
+  );
+  const manual = log.find((r) => r.actor === "op_test" && Number(r.paper_delta) === 500);
+  const auto = log.find((r) => r.actor === null && Number(r.paper_delta) < 0);
+  if (!manual) throw new Error("the manual adjustment wasn't logged");
+  if (!auto) throw new Error("the collection wasn't logged by the trigger");
+  return `+500 by op_test, ${auto.paper_delta} by the system on collection`;
+});
+
+await scenario("staff can be added by email and the last one can't leave", async () => {
+  await actingAs("op_test");
+  await db.query(
+    `insert into public.profiles (id, email, name) values ('colleague', 'Pat@Example.com', 'Pat')
+     on conflict (id) do nothing;`,
+  );
+  const { rows } = await db.query(`select public.add_staff($1, '  pat@example.com ') as id;`, [OPERATOR]);
+  if (rows[0].id !== "colleague") throw new Error("email lookup failed");
+
+  let refused = false;
+  try {
+    await db.query(`select public.add_staff($1, 'nobody@example.com');`, [OPERATOR]);
+  } catch (error) {
+    refused = /sign in once/.test(String(error?.message ?? error));
+  }
+  if (!refused) throw new Error("an unknown email was accepted");
+
+  await db.query(`select public.remove_staff($1, 'colleague');`, [OPERATOR]);
+  let last = false;
+  try {
+    await db.query(`select public.remove_staff($1, 'op_test');`, [OPERATOR]);
+  } catch (error) {
+    last = /nobody running/.test(String(error?.message ?? error));
+  }
+  if (!last) throw new Error("the last staff member was removed");
+  return "added by email (case-insensitive), unknown refused, last one kept";
+});
+
+await scenario("closing the desk snapshots the day and shuts it", async () => {
+  await actingAs("op_test");
+  await db.query(`update public.operators set is_open = true where id = $1;`, [OPERATOR]);
+  const { rows } = await db.query(`select * from public.close_desk($1, 250, 'Drawer counted twice');`, [OPERATOR]);
+  const out = rows[0];
+  if (out.counted_cash === null) throw new Error("counted cash not stored");
+  const { rows: op } = await db.query(`select is_open from public.operators where id = $1;`, [OPERATOR]);
+  if (op[0].is_open) throw new Error("the desk stayed open");
+  // A second close the same day replaces the count rather than adding a row.
+  await db.query(`select public.close_desk($1, 260, null);`, [OPERATOR]);
+  const { rows: n } = await db.query(`select count(*)::int as n from public.desk_closeouts where operator_id = $1;`, [OPERATOR]);
+  if (n[0].n !== 1) throw new Error(`expected one closeout row, got ${n[0].n}`);
+  return `expected ${out.expected_cash} cash, counted ${out.counted_cash}, desk closed, one row per day`;
+});
+
 await scenario("the upload ceiling holds", async () => {
   await actingAs("student_test");
   // 500 MB is the cap; one file over it must be refused.

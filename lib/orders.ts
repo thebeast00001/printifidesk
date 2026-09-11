@@ -64,6 +64,8 @@ export interface OrderEventRow {
   order_id: string;
   status: OrderStatus;
   note: string | null;
+  /** Clerk id of whoever made the change; the trigger writes it. */
+  actor: string | null;
   at: string;
 }
 

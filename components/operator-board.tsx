@@ -11,6 +11,10 @@ import { OperatorApplication } from "./operator-application";
 import { OperatorPortal } from "./operator-portal";
 import { OperatorPricing } from "./operator-pricing";
 import { OperatorDay } from "./operator-day";
+import { CloseoutPanel } from "./operator/closeout";
+import { StaffPanel } from "./operator/staff-panel";
+import { StockPanel } from "./operator/stock-panel";
+import { useAuth } from "@clerk/nextjs";
 import { useApp } from "@/lib/store";
 import { cn, spring } from "@/lib/utils";
 
@@ -21,6 +25,7 @@ import { cn, spring } from "@/lib/utils";
 export function OperatorBoard() {
   const { backend, operatorId, operator, reload } = useOperatorQueue();
   const { verdict } = useConnectionVerdict();
+  const { userId } = useAuth();
   const view = useApp((s) => s.operatorView);
   const setView = useApp((s) => s.setOperatorView);
   const setPending = useApp((s) => s.setOperatorPending);
@@ -100,9 +105,14 @@ export function OperatorBoard() {
         <div className="flex flex-col gap-4">
           <OpenSwitch operator={operator} onChanged={reload} />
           <OperatorPricing operator={operator} onSaved={reload} />
+          <StockPanel operator={operator} onChanged={reload} />
+          <StaffPanel operator={operator} me={userId ?? null} />
         </div>
       ) : view === "takings" ? (
-        <OperatorDay operator={operator} />
+        <div className="flex flex-col gap-4">
+          <OperatorDay operator={operator} />
+          <CloseoutPanel operator={operator} onClosed={reload} />
+        </div>
       ) : (
         <OperatorPortal operator={operator} />
       )}

@@ -29,6 +29,7 @@ Built and passing `npm run check` + `npm run build`:
 | 3.2 | File access audit — `document_access_log` |
 | 3.4 | Rate limiting — `enforce_upload_limits`, `0012` |
 | 5 | Realtime latency — paint from the pushed payload |
+| — | Operator round (Sept 2026): scan-to-hand-over, messages, close-out, staff, stock ledger, next-up, age badges, scheduled timeline, job slip — `0015` |
 
 Also closed while implementing 2.8: `guard_order_update()` did not pin the
 refund columns `0011` added, so a student could have written `refunded_at` on
@@ -139,7 +140,7 @@ one **Print batch** action.
 `opens_at` / `closes_at` are only changeable in SQL. They feed the pickup slot
 generator, so an operator who works evenings cannot offer correct slots.
 
-### 2.4 Staff management
+### 2.4 Staff management — done
 `staff` supports many people per operator but only SQL can add them. A desk run
 in shifts needs the owner to invite a second account from the portal.
 

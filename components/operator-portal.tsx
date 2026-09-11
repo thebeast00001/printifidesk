@@ -14,9 +14,11 @@ import {
   Loader2,
   Phone,
   Printer,
+  ScanLine,
   Search,
   Smartphone,
   Star,
+  Ticket,
   Undo2,
   X,
 } from "lucide-react";
@@ -42,6 +44,12 @@ import { useAuthKey } from "@/hooks/use-auth-key";
 import { subscribeTable, type ConnectionState } from "@/lib/realtime";
 import { AlertToggle, useNewOrderAlert } from "./new-order-alert";
 import { useApp } from "@/lib/store";
+import { AgeBadge, DueBadge, hourLabel, useNow } from "./operator/age";
+import { HandledBy } from "./operator/handled-by";
+import { MessageThread } from "./operator/messages";
+import { NextUpBar, primaryAction } from "./operator/next-up";
+import { ScanSheet } from "./operator/scan-sheet";
+import { SlipDialog } from "./operator/slip";
 import { cn, easeIos, spring } from "@/lib/utils";
 
 type Tab = "inbox" | "working" | "ready" | "scheduled" | "reports" | "history";
@@ -95,6 +103,10 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
   const [error, setError] = useState<string | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
   const [reports, setReports] = useState<OrderReport[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [slipFor, setSlipFor] = useState<OrderRow | null>(null);
+  // One clock for every age badge on the screen.
+  const now = useNow();
 
   const load = useCallback(async () => {
     const [rows, s] = await Promise.all([
@@ -211,7 +223,8 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
       }
     });
 
-    // Newest complaint first on the Reports tab; the queue's own order elsewhere.
+    // Newest complaint first on the Reports tab; soonest pickup first on
+    // Scheduled; the queue's own order everywhere else.
     const ordered =
       tab === "reports"
         ? [...byTab].sort((a, b) => {
@@ -219,7 +232,9 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
             const rb = reports.find((r) => r.order_id === b.id)?.created_at ?? "";
             return rb.localeCompare(ra);
           })
-        : byTab;
+        : tab === "scheduled"
+          ? [...byTab].sort((a, b) => (a.pickup_at ?? "").localeCompare(b.pickup_at ?? ""))
+          : byTab;
 
     if (!q) return ordered;
     return ordered.filter((o) =>
@@ -231,6 +246,13 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
 
   // Rings when the number waiting to be accepted goes up.
   const alert = useNewOrderAlert(stats ? stats.pending : null);
+
+  const nextUp =
+    !query && (tab === "inbox" || tab === "working" || tab === "ready") && filtered.length > 0
+      ? filtered[0]
+      : null;
+
+  const readyOrders = useMemo(() => (orders ?? []).filter((o) => o.status === "ready"), [orders]);
 
   // The dock shows the same number as a badge, so the operator can see a new
   // job arrive from any face of the page.
@@ -315,7 +337,19 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
           ))}
         </div>
 
-        <AlertToggle enabled={alert.enabled} onToggle={alert.toggle} />
+        <div className="flex items-center gap-2">
+          <AlertToggle enabled={alert.enabled} onToggle={alert.toggle} />
+          {readyOrders.length > 0 && (
+            <button
+              onClick={() => setScanning(true)}
+              className="flex h-11 shrink-0 items-center gap-2 rounded-xl bg-ink px-3.5 text-[12.5px] font-semibold text-paper"
+            >
+              <ScanLine size={14} strokeWidth={2.2} />
+              <span className="hidden sm:inline">Scan to hand over</span>
+              <span className="sm:hidden">Scan</span>
+            </button>
+          )}
+        </div>
 
         <label className="flex h-10 items-center gap-2 rounded-xl border border-line bg-surface px-3 sm:w-[220px]">
           <Search size={14} strokeWidth={2.2} className="shrink-0 text-faint" />
@@ -339,15 +373,28 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
       ) : (
         <div className="flex flex-col gap-2.5">
           <AnimatePresence initial={false}>
-            {filtered.map((order) => (
+            {filtered.map((order, index) => (
               <motion.div
                 key={order.id}
-                layout
+                layout="position"
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.24, ease: easeIos }}
               >
+                {/* Scheduled jobs file under the hour they're due, so the
+                    tab reads as a timeline rather than a list. */}
+                {tab === "scheduled" &&
+                  order.pickup_at &&
+                  (index === 0 ||
+                    hourLabel(order.pickup_at, now) !==
+                      hourLabel(filtered[index - 1].pickup_at ?? order.pickup_at, now)) && (
+                    <p className="label-caps m-0 mt-2 mb-2 first:mt-0">{hourLabel(order.pickup_at, now)}</p>
+                  )}
                 <OrderCard
                   order={order}
+                  operator={operator}
+                  now={now}
+                  hero={nextUp?.id === order.id}
+                  onSlip={() => setSlipFor(order)}
                   currency={operator.currency ?? "₹"}
                   busy={busy === order.id}
                   onAccept={() => run(order.id, () => acceptOrder(order.id))}
@@ -368,6 +415,33 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
           </AnimatePresence>
         </div>
       )}
+
+      <NextUpBar
+        order={nextUp}
+        busy={busy === nextUp?.id}
+        onAct={(order, to, label) =>
+          run(order.id, () => (to === "queued" && order.status === "placed" ? acceptOrder(order.id) : advance(order.id, to, label)))
+        }
+      />
+
+      <ScanSheet
+        open={scanning}
+        onOpenChange={setScanning}
+        ready={readyOrders}
+        busy={busy !== null}
+        onHandOver={(order) => {
+          void run(order.id, () => advance(order.id, "collected", "Handed over")).then(() =>
+            setScanning(false),
+          );
+        }}
+      />
+
+      <SlipDialog
+        order={slipFor}
+        operator={operator}
+        open={slipFor !== null}
+        onOpenChange={(v) => !v && setSlipFor(null)}
+      />
     </div>
   );
 }
@@ -407,6 +481,10 @@ function StatStrip({ stats, currency }: { stats: OperatorStats | null; currency:
 
 function OrderCard({
   order,
+  operator,
+  now,
+  hero,
+  onSlip,
   currency,
   busy,
   onAccept,
@@ -419,6 +497,11 @@ function OrderCard({
   onResolve,
 }: {
   order: OrderRow;
+  operator: Operator;
+  now: number;
+  /** The top of the queue: bigger token, and its own label. */
+  hero?: boolean;
+  onSlip: () => void;
   currency: string;
   busy: boolean;
   onAccept: () => void;
@@ -453,10 +536,18 @@ function OrderCard({
       className={cn(
         "rounded-[20px] border bg-surface p-4 shadow-card lg:p-5",
         order.is_priority ? "border-ink" : "border-line",
+        hero && "ring-1 ring-ink/15",
       )}
     >
+      {hero && <p className="label-caps m-0 mb-3">Next up</p>}
+
       <div className="flex flex-wrap items-start gap-4">
-        <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-surface-sunk font-mono text-base font-medium">
+        <span
+          className={cn(
+            "grid shrink-0 place-items-center rounded-2xl bg-surface-sunk font-mono font-medium",
+            hero ? "size-[72px] text-[22px] tracking-wide" : "size-14 text-base",
+          )}
+        >
           {order.token ?? "—"}
         </span>
 
@@ -475,6 +566,11 @@ function OrderCard({
             >
               {STATUS_LABEL[order.status]}
             </span>
+            {order.pickup_mode === "scheduled" && order.status !== "collected" ? (
+              <DueBadge order={order} now={now} />
+            ) : (
+              <AgeBadge order={order} operator={operator} now={now} />
+            )}
             {order.is_priority && (
               <span className="flex items-center gap-1 rounded-full bg-ink px-2.5 py-1 text-[10.5px] font-semibold text-paper">
                 <Star size={10} strokeWidth={2.6} />
@@ -612,6 +708,15 @@ function OrderCard({
           )}
 
           <button
+            onClick={onSlip}
+            aria-label="Job slip"
+            title="Job slip — print it, clip it to the pages"
+            className="grid size-10 place-items-center rounded-xl border border-line bg-surface-sunk text-muted transition-colors hover:text-ink"
+          >
+            <Ticket size={15} strokeWidth={2.2} />
+          </button>
+
+          <button
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-label="Order detail"
@@ -677,6 +782,15 @@ function OrderCard({
               <FileList items={items} order={config} currency={currency} />
 
               <CustomerLine userId={order.user_id} />
+
+              <MessageThread
+                orderId={order.id}
+                canSend={!["collected", "cancelled"].includes(order.status)}
+              />
+
+              {["collected", "cancelled", "failed"].includes(order.status) && (
+                <HandledBy orderId={order.id} operatorId={operator.id} />
+              )}
 
               <p className="label-caps m-0 mt-3.5 mb-2">Your note</p>
               <div className="flex gap-2">
@@ -844,7 +958,7 @@ function FileList({
       <p className="label-caps m-0 mb-2">Files</p>
       <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
         {items.map((item) => (
-          <li key={item.id} className="flex items-start gap-3 text-[12.5px]">
+          <li key={item.id} className="flex items-center gap-3 text-[12.5px]">
             <span className="min-w-0 flex-1">
               <span className="block truncate">{item.name}</span>
               {/* The settings for this file, not for the order. Two files in
@@ -854,17 +968,22 @@ function FileList({
                 {itemSettings(item, order)}
               </span>
             </span>
-            <span className="shrink-0 text-right font-mono text-[11px] text-muted">
-              <span className="block">
+            {/* One line, right-aligned, same baseline as the name — the stacked
+                version read as two unrelated numbers. */}
+            <span className="shrink-0 self-center text-right font-mono text-[11.5px] text-muted">
+              <span className="block whitespace-nowrap">
                 {item.pages} p
-                {item.colour_pages ? ` \u00b7 ${item.colour_pages} colour` : ""}
+                {item.colour_pages ? ` \u00b7 ${item.colour_pages} col` : ""}
+                {Number(item.price) > 0 && (
+                  <>
+                    {" \u00b7 "}
+                    <span className="text-ink">{money(Math.round(Number(item.price)), currency)}</span>
+                  </>
+                )}
               </span>
               {item.selected_pages?.length ? (
-                <span className="block">pages {summarisePages(item.selected_pages)}</span>
+                <span className="block text-[10.5px]">pages {summarisePages(item.selected_pages)}</span>
               ) : null}
-              {Number(item.price) > 0 && (
-                <span className="block">{money(Math.round(Number(item.price)), currency)}</span>
-              )}
             </span>
             <button
               disabled={busy === item.id}

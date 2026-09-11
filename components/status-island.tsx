@@ -13,6 +13,7 @@ import { useApp } from "@/lib/store";
 import type { ConnectionState } from "@/lib/realtime";
 import { PaySheet } from "./pay-sheet";
 import { ReportSheet } from "./report-sheet";
+import { DeskMessages } from "./desk-messages";
 import { cn, easeIos, spring } from "@/lib/utils";
 
 /**
@@ -187,6 +188,8 @@ function LiveOrder({
       </motion.button>
 
       {order.status === "ready" && order.token && <HandoverCode token={order.token} />}
+
+      <DeskMessages orderId={order.id} visible={open} />
 
       {/* Declined and failed were the only two states that ended in a sentence
           with nothing to do next. Both leave the student holding a job that

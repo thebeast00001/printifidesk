@@ -70,7 +70,8 @@ factual-teal-4113.clerk.accounts.dev
 [`0011_operator_files_and_ops.sql`](supabase/migrations/0011_operator_files_and_ops.sql),
 [`0012_rate_limit.sql`](supabase/migrations/0012_rate_limit.sql),
 [`0013_per_item_config_and_reports.sql`](supabase/migrations/0013_per_item_config_and_reports.sql),
-then [`0014_hardening.sql`](supabase/migrations/0014_hardening.sql).
+[`0014_hardening.sql`](supabase/migrations/0014_hardening.sql),
+then [`0015_desk_tools.sql`](supabase/migrations/0015_desk_tools.sql).
 
 These are **SQL** — they go in the Supabase dashboard's SQL editor
 (`Project → SQL Editor → New query`), not a terminal.
@@ -407,6 +408,32 @@ This closed the most serious finding of the security pass, and
 enforced by, what was found, what was fixed, and what is still open. Read it
 before changing a policy.
 
+### The desk's own tools
+
+`0015` and `components/operator/` add what a counter uses between orders:
+
+- **Scan to hand over** — the browser's `BarcodeDetector` reads the student's
+  QR (or the printed slip's); where a browser lacks it, the same sheet is a
+  token field. A scan only *finds* the order. Handing it over is still a tap,
+  because a scan of the wrong phone must never be a completed handover.
+- **Message the student** — one direction, desk → student, with a push behind
+  it. "Page 3 is blank — print it anyway?" lands on their status capsule while
+  they're still looking at it. Read receipts come back over realtime.
+- **Close out** — expected cash from today's cash orders, what's in the drawer,
+  the difference shown rather than hidden, UPI to reconcile against their own
+  app, a nudge for everything still on the shelf, then *Close the desk*. One
+  row per day.
+- **Staff** — add a colleague by their sign-in email; the last person can't
+  remove themselves. *Handled by* on finished cards puts a name to
+  `order_events.actor`, which has always been recorded.
+- **Stock as a ledger** — every change is a row with a reason and a person;
+  collected jobs write their own. A number you overwrite is a number nobody
+  trusts by Wednesday.
+- **Job slip** — token, name, files with their settings, a QR. Prints on its
+  own through a print stylesheet that hides the rest of the page.
+- **Next up**, **age badges** (amber past what the rate card promised), the
+  **Scheduled** tab grouped by hour with *due in 20 min*.
+
 ### Refunds are recorded, not sent
 
 The operator's refund control writes `refunded_at`, `refund_amount` and
@@ -535,8 +562,6 @@ Kept honest deliberately — anything listed here has no UI pretending otherwise
   supports TUS; the uploader doesn't use it yet.
 - **Batch printing.** The operator opens files order by order rather than
   merging a shift's mono jobs into one spool.
-- **Staff management.** `is_staff` supports several people per operator, but
-  there's no screen to add or remove them — it's an `insert` in the dashboard.
 - **Reorder and camera scan.** Both are real gaps in the student flow, neither
   is stubbed.
 - **Recovery when an order is declined.** The capsule now offers *Try again*,
@@ -554,12 +579,16 @@ Being specific about this matters more than a green badge:
 - `npm run check` — types, pricing, phone normalisation, pickup slots, UPI link
   format, the write-guard column list, and the SQL below. **Passes.**
 - `npm run build` — **passes.**
-- `npm run check:sql` — all fourteen migrations applied, re-applied, and their
+- `npm run check:sql` — all fifteen migrations applied, re-applied, and their
   triggers driven through a real order under a real JWT: tokens, the timeline,
   the write guard, per-file settings, the report constraint, the upload
   ceiling, the order rate limit, document ownership, push endpoint sanity, and
-  SQL-vs-TypeScript pricing across 144 jobs. **Passes.** It does not check the
-  RLS policies themselves; see above for why.
+  SQL-vs-TypeScript pricing across 144 jobs, messages queuing a push, the
+  stock ledger, staff by email, and closing the desk. **Passes.** It does not
+  check the RLS policies themselves; see above for why.
+- **Scan to hand over** — the detector path needs a camera and a real QR, so it
+  is verified by reading, not by test. The typed-token path is the same code
+  after the scan.
 - **Strict CSP** — verified in the browser: Clerk, its sign-in modal, the
   pdf.js worker, blob thumbnails and the QR all load with zero violations.
 - `npm run check:migrations` — the Docker version. **Still never executed**,

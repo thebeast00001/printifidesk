@@ -168,3 +168,25 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* The job slip prints on its own. Everything else is hidden rather than
+   removed, so layout doesn't shift and the slip stays where it was measured. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-slip,
+  .print-slip * {
+    visibility: visible;
+  }
+  .print-slip {
+    position: fixed;
+    inset: 0;
+    width: 80mm;
+    margin: 8mm;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    color: #111 !important;
+  }
+}
