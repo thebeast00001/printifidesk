@@ -7,7 +7,7 @@ import { closeDesk, recentCloseouts, sendMessage, type Closeout } from "@/lib/de
 import { operatorOrders, statsForRange, type RangeStats } from "@/lib/operator";
 import { money } from "@/lib/pricing";
 import type { Operator, OrderRow } from "@/lib/orders";
-import { cn, spring } from "@/lib/utils";
+import { clockLabel, cn, spring } from "@/lib/utils";
 
 /**
  * Closing out the day, in the order a person counts it.
@@ -215,7 +215,7 @@ function ShelfRow({ order, closesAt }: { order: OrderRow; closesAt: string }) {
   async function nudge() {
     setState("sending");
     try {
-      const closes = closesAt.slice(0, 5);
+      const closes = clockLabel(closesAt) ?? closesAt.slice(0, 5);
       await sendMessage(
         order.id,
         `Your print is ready and waiting. We close at ${closes} today — it'll still be here tomorrow if you can't make it.`,

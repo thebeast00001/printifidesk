@@ -7,6 +7,7 @@ import { secretMatches } from "../lib/server/secret";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { jwtMsRemaining } from "../lib/jwt";
+import { clockLabel } from "../lib/utils";
 
 let fails = 0;
 const check = (name: string, got: unknown, want: unknown) => {
@@ -178,6 +179,15 @@ check("longer rejected", secretMatches("s3cr3t-value-and-more", "s3cr3t-value"),
 check("empty rejected", secretMatches("", "s3cr3t-value"), false);
 check("missing header rejected", secretMatches(null, "s3cr3t-value"), false);
 check("unset secret rejects everything", secretMatches("anything", ""), false);
+
+console.log("\n— clock labels (the operator typed a time of day; the student reads one) —");
+check("evening", clockLabel("20:00:00"), "8 PM");
+check("morning with minutes", clockLabel("09:30:00"), "9:30 AM");
+check("noon", clockLabel("12:00:00"), "12 PM");
+check("midnight", clockLabel("00:00:00"), "12 AM");
+check("no seconds", clockLabel("17:45"), "5:45 PM");
+check("null stays null", clockLabel(null), null);
+check("garbage stays null", clockLabel("soon"), null);
 
 console.log("\n— token expiry (the realtime socket must refresh before it lapses) —");
 // A JWT with exp = now + 45s, built the way Clerk builds them: three

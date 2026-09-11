@@ -10,7 +10,7 @@ import { useOperatorWait } from "@/hooks/use-tracking";
 import { useApp } from "@/lib/store";
 import { perPage, rateCardOf } from "@/lib/pricing";
 import type { Operator, OperatorWait } from "@/lib/orders";
-import { cn } from "@/lib/utils";
+import { clockLabel, cn } from "@/lib/utils";
 
 export function TopBar() {
   const { scrollY } = useScroll();
@@ -123,21 +123,13 @@ function Headline({
  */
 function Status({ open, operator }: { open: boolean; operator: Operator | null }) {
   if (open) {
-    const till = operator?.closes_at ? clock(operator.closes_at) : null;
+    const till = clockLabel(operator?.closes_at);
     return <>Open now{till ? ` · till ${till}` : ""}</>;
   }
-  const opens = operator?.opens_at ? clock(operator.opens_at) : null;
+  const opens = clockLabel(operator?.opens_at);
   return <>Closed{opens ? ` · opens ${opens}` : ""}</>;
 }
 
-/** "20:00:00" → "8 PM"; "09:30:00" → "9:30 AM". */
-function clock(time: string): string {
-  const [h, m] = time.split(":").map(Number);
-  if (!Number.isFinite(h)) return time;
-  const d = new Date();
-  d.setHours(h, m || 0, 0, 0);
-  return d.toLocaleTimeString([], { hour: "numeric", minute: m ? "2-digit" : undefined });
-}
 
 /**
  * With nothing in the queue there is no wait to quote, and "No queue right
@@ -147,6 +139,10 @@ function clock(time: string): string {
  * and lands on the next line rather than restarting, so a glance always
  * catches something new.
  */
+// Twenty seconds. Fast enough that a second glance catches a new line, slow
+// enough that the heading doesn't feel like it's flickering at you.
+const TURN_EVERY_MS = 20_000;
+
 function IdleHeadline({ wait, operator }: { wait: OperatorWait; operator: Operator }) {
   const card = useMemo(() => rateCardOf(operator), [operator]);
 
@@ -156,7 +152,8 @@ function IdleHeadline({ wait, operator }: { wait: OperatorWait; operator: Operat
     if (wait.wait_minutes > 0) out.push(`Ready in about ${wait.wait_minutes} min`);
     out.push(`B&W from ${perPage(card.bwPerPage, card.currency)}`);
     if (card.colourPerPage > card.bwPerPage) out.push("Colour where needed");
-    if (operator.closes_at) out.push(`Open till ${clock(operator.closes_at)}`);
+    const till = clockLabel(operator.closes_at);
+    if (till) out.push(`Open till ${till}`);
     out.push("Print from your phone");
     return out;
   }, [wait.wait_minutes, card, operator.closes_at]);
@@ -167,7 +164,7 @@ function IdleHeadline({ wait, operator }: { wait: OperatorWait; operator: Operat
     let id: ReturnType<typeof setInterval> | null = null;
     const start = () => {
       if (id) return;
-      id = setInterval(() => setIndex((i) => (i + 1) % lines.length), 3600);
+      id = setInterval(() => setIndex((i) => (i + 1) % lines.length), TURN_EVERY_MS);
     };
     const stop = () => {
       if (id) clearInterval(id);
