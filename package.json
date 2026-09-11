@@ -1,0 +1,50 @@
+{
+  "name": "print-counter",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit --incremental false",
+    "postinstall": "node scripts/copy-pdf-worker.mjs",
+    "check:pricing": "tsx scripts/price-check.ts",
+    "check:sql": "tsx scripts/sql-check.mjs",
+    "check:migrations": "bash scripts/verify-migrations.sh",
+    "check:features": "tsx scripts/feature-check.ts",
+    "check": "npm run typecheck && npm run check:pricing && npm run check:features && npm run check:sql"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^7.9.2",
+    "@gsap/react": "^2.1.2",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.116.0",
+    "clsx": "^2.1.1",
+    "gsap": "^3.15.0",
+    "lucide-react": "^1.43.0",
+    "motion": "^13.2.0",
+    "next": "^16.3.4",
+    "next-themes": "^0.4.6",
+    "pdfjs-dist": "^6.3.289",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "server-only": "^0.0.1",
+    "tailwind-merge": "^3.6.0",
+    "vaul": "^1.1.2",
+    "web-push": "^3.6.7",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.20.2",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/web-push": "^3.6.4",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}

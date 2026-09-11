@@ -1,0 +1,170 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================================
+   Palette — bone ground, ink shells, three muted panel tones.
+   Semantic vars live here; @theme inline maps them to utilities
+   so `bg-paper` / `text-ink` follow the theme automatically.
+   ============================================================ */
+:root {
+  --paper: #edebe6;
+  --paper-deep: #e4e1da;
+  --surface: #ffffff;
+  --surface-sunk: #f6f4f0;
+
+  --ink: #17171a;
+  --ink-soft: #3a3a3e;
+  --muted: #86847e;
+  --faint: #a9a69e;
+
+  --line: #e2dfd8;
+  --line-strong: #d2cec4;
+
+  --sage: #b9c3ae;
+  --sage-ink: #33402c;
+  --clay: #e3b9a6;
+  --clay-ink: #5b3324;
+  --bone: #ddd8cb;
+
+  --shell: #17171a;
+  --shell-ink: #ffffff;
+  --shell-faint: #8e8e96;
+  --shell-line: #2f2f34;
+
+  --shadow-card: 0 1px 2px rgb(23 23 26 / 0.05), 0 6px 16px -8px rgb(23 23 26 / 0.14);
+  --shadow-lift: 0 2px 4px rgb(23 23 26 / 0.06), 0 18px 36px -14px rgb(23 23 26 / 0.28);
+  --shadow-dock: 0 2px 6px rgb(23 23 26 / 0.08), 0 16px 40px -12px rgb(23 23 26 / 0.3);
+}
+
+.dark {
+  --paper: #131316;
+  --paper-deep: #0d0d10;
+  --surface: #1d1d21;
+  --surface-sunk: #252529;
+
+  --ink: #f1efe9;
+  --ink-soft: #d3d0c8;
+  --muted: #8d8a83;
+  --faint: #6e6b65;
+
+  --line: #2c2c31;
+  --line-strong: #3a3a40;
+
+  --sage: #8e9a83;
+  --sage-ink: #161a13;
+  --clay: #c08d77;
+  --clay-ink: #22110b;
+  --bone: #a9a497;
+
+  --shell: #000000;
+  --shell-ink: #f1efe9;
+  --shell-faint: #77747d;
+  --shell-line: #26262b;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5), 0 6px 16px -8px rgb(0 0 0 / 0.6);
+  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.5), 0 18px 36px -14px rgb(0 0 0 / 0.8);
+  --shadow-dock: 0 2px 6px rgb(0 0 0 / 0.5), 0 16px 40px -12px rgb(0 0 0 / 0.8);
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-deep: var(--paper-deep);
+  --color-surface: var(--surface);
+  --color-surface-sunk: var(--surface-sunk);
+
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-sage: var(--sage);
+  --color-sage-ink: var(--sage-ink);
+  --color-clay: var(--clay);
+  --color-clay-ink: var(--clay-ink);
+  --color-bone: var(--bone);
+
+  --color-shell: var(--shell);
+  --color-shell-ink: var(--shell-ink);
+  --color-shell-faint: var(--shell-faint);
+  --color-shell-line: var(--shell-line);
+
+  --font-display: var(--font-bricolage), "Instrument Sans", sans-serif;
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-dm-mono), ui-monospace, monospace;
+
+  --shadow-card: var(--shadow-card);
+  --shadow-lift: var(--shadow-lift);
+  --shadow-dock: var(--shadow-dock);
+
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  html {
+    color-scheme: light;
+  }
+  .dark html,
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Display face carries an optical-size and width axis — the tight,
+   slightly condensed cut is what gives the widget numerals their weight. */
+@utility font-figure {
+  font-family: var(--font-bricolage), "Instrument Sans", sans-serif;
+  font-variation-settings: "wdth" 85, "opsz" 60;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.035em;
+}
+
+@utility font-heading {
+  font-family: var(--font-bricolage), "Instrument Sans", sans-serif;
+  font-variation-settings: "wdth" 92, "opsz" 24;
+  letter-spacing: -0.02em;
+}
+
+@utility label-caps {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,69 @@
+/**
+ * Service worker — web push only.
+ *
+ * Deliberately does not cache anything: a print queue that serves a stale page
+ * is worse than one that needs a network. Its whole job is receiving a push
+ * when the tab is closed and taking the reader to the order.
+ */
+
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+
+  let payload = {};
+  try {
+    payload = event.data.json();
+  } catch {
+    payload = { title: "Printify", body: event.data.text() };
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(payload.title || "Printify", {
+      body: payload.body || "",
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      // Same tag replaces an earlier notification for the same order rather
+      // than stacking three of them as a job moves through the queue.
+      tag: payload.tag || "printify-order",
+      renotify: true,
+      data: { url: payload.url || "/orders" },
+      requireInteraction: payload.requireInteraction === true,
+    }),
+  );
+});
+
+/**
+ * Only ever navigate within this origin.
+ *
+ * The payload is signed by our own server, so `url` is trusted today — but a
+ * service worker outlives the code that registered it, and a notification is
+ * the one place a stray absolute URL would open a phishing page under our
+ * name. A relative path is the only shape accepted.
+ */
+function sameOriginPath(url) {
+  if (typeof url !== "string") return "/orders";
+  if (!url.startsWith("/") || url.startsWith("//")) return "/orders";
+  return url;
+}
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = sameOriginPath(event.notification.data && event.notification.data.url);
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      // Focus a tab that's already open rather than piling up new ones.
+      for (const client of clients) {
+        if (client.url.includes(target) && "focus" in client) return client.focus();
+      }
+      for (const client of clients) {
+        if ("navigate" in client && "focus" in client) {
+          return client.navigate(target).then((c) => c && c.focus());
+        }
+      }
+      return self.clients.openWindow(target);
+    }),
+  );
+});
+
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));

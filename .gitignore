@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+build/
+.env*
+!.env.example
+next-env.d.ts
+.DS_Store
+*.tsbuildinfo
+public/pdf.worker.min.mjs
+
+# Local tool state
+.claude/settings.local.json

@@ -1,0 +1,124 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Bell, BellOff, Volume2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+const STORAGE_KEY = "printify.operator.alert";
+
+/**
+ * Tells the operator a job has arrived when they aren't looking at the screen.
+ *
+ * The portal already updates live, but that only helps somebody watching it —
+ * and an operator at the machine isn't. A short tone plus a browser
+ * notification is the difference between a two-minute response and a
+ * twenty-minute one.
+ *
+ * The tone is synthesised rather than shipped as an audio file: no asset to
+ * load, no failure if it 404s, and it can't be blocked as third-party media.
+ */
+export function useNewOrderAlert(pendingCount: number | null) {
+  const [enabled, setEnabled] = useState(false);
+  const previous = useRef<number | null>(null);
+  const audio = useRef<AudioContext | null>(null);
+
+  useEffect(() => {
+    try {
+      setEnabled(localStorage.getItem(STORAGE_KEY) === "on");
+    } catch {
+      /* private mode — the alert simply stays off */
+    }
+  }, []);
+
+  const chime = useCallback(() => {
+    try {
+      audio.current ??= new AudioContext();
+      const ctx = audio.current;
+      // Autoplay policy suspends the context until a gesture; enabling the
+      // alert is that gesture, so this only needs a nudge on later plays.
+      if (ctx.state === "suspended") void ctx.resume();
+
+      const now = ctx.currentTime;
+      // Two short notes — distinct from a phone notification, easy to hear
+      // over a printer without being startling.
+      for (const [at, freq] of [[0, 880], [0.18, 1175]] as const) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, now + at);
+        gain.gain.exponentialRampToValueAtTime(0.25, now + at + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.16);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now + at);
+        osc.stop(now + at + 0.18);
+      }
+    } catch {
+      /* no audio device, or blocked — the visual badge still updates */
+    }
+  }, []);
+
+  const notify = useCallback((count: number) => {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    new Notification("New print order", {
+      body: count === 1 ? "One order is waiting to be accepted." : `${count} orders are waiting.`,
+      tag: "printify-new-order",
+      icon: "/icon-192.png",
+    });
+  }, []);
+
+  useEffect(() => {
+    if (pendingCount === null) return;
+
+    const before = previous.current;
+    previous.current = pendingCount;
+
+    // Only a genuine increase counts: the first load and an order being
+    // accepted must both stay silent.
+    if (before === null || pendingCount <= before || !enabled) return;
+
+    chime();
+    notify(pendingCount);
+  }, [pendingCount, enabled, chime, notify]);
+
+  const toggle = useCallback(async () => {
+    const next = !enabled;
+    setEnabled(next);
+    try {
+      localStorage.setItem(STORAGE_KEY, next ? "on" : "off");
+    } catch {
+      /* ignore */
+    }
+
+    if (next) {
+      // Unlock audio on the gesture that turned it on, and play once so the
+      // operator knows what they're listening for.
+      chime();
+      if (typeof Notification !== "undefined" && Notification.permission === "default") {
+        await Notification.requestPermission();
+      }
+    }
+  }, [enabled, chime]);
+
+  return { enabled, toggle };
+}
+
+export function AlertToggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      aria-pressed={enabled}
+      title={enabled ? "Sound on for new orders" : "Sound off — you'll only see the badge"}
+      className={cn(
+        "flex h-11 shrink-0 items-center gap-2 rounded-xl border px-3.5 text-[12.5px] font-semibold transition-colors",
+        enabled
+          ? "border-sage bg-sage text-sage-ink"
+          : "border-line bg-surface text-muted hover:text-ink-soft",
+      )}
+    >
+      {enabled ? <Volume2 size={14} strokeWidth={2.2} /> : <BellOff size={14} strokeWidth={2.2} />}
+      <span className="hidden sm:inline">{enabled ? "Alerts on" : "Alerts off"}</span>
+      {!enabled && <Bell size={0} />}
+    </button>
+  );
+}

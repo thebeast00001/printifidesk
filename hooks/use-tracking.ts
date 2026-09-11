@@ -1,0 +1,324 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuthKey } from "./use-auth-key";
+import { ensureSession, getSupabase, type SessionState } from "@/lib/supabase/client";
+import { subscribeTable, type ConnectionState } from "@/lib/realtime";
+import {
+  ACTIVE_STATUSES,
+  activeOrder,
+  operatorQueue,
+  operatorWait,
+  defaultOperator,
+  getOperator,
+  listOrders,
+  myTotals,
+  orderEvents,
+  queueStatus,
+  staffOperatorId,
+  type Operator,
+  type OperatorWait,
+  type OrderEventRow,
+  type OrderRow,
+  type QueueStatus,
+  type Totals,
+} from "@/lib/orders";
+
+export type Backend =
+  | { state: "loading" }
+  | { state: "ready" }
+  | { state: "signed-out" }
+  | { state: "unconfigured"; message: string }
+  | { state: "error"; message: string };
+
+/** Null when the session is usable; otherwise the state the UI should show. */
+function blockedBy(session: SessionState): Backend | null {
+  switch (session.status) {
+    case "ready":
+      return null;
+    case "loading":
+      return { state: "loading" };
+    case "signed-out":
+      return { state: "signed-out" };
+    case "unconfigured":
+      return { state: "unconfigured", message: session.message };
+    case "error":
+      return { state: "error", message: session.message };
+  }
+}
+
+/**
+ * Re-reads whenever anything relevant changes.
+ *
+ * Kept for the hooks that only need a nudge (totals, counts). The order capsule
+ * uses the payload directly instead — see `useActiveOrder`.
+ */
+function useRealtime(onChange: () => void, enabled: boolean, filter?: string) {
+  const handler = useRef(onChange);
+  handler.current = onChange;
+
+  useEffect(() => {
+    if (!enabled) return;
+    const stop = [
+      subscribeTable({ table: "orders", filter, onChange: () => handler.current() }),
+      subscribeTable({ table: "order_events", onChange: () => handler.current() }),
+      subscribeTable({ table: "operators", onChange: () => handler.current() }),
+    ];
+    return () => stop.forEach((fn) => fn());
+  }, [enabled, filter]);
+}
+
+/** Everything the student-facing tracking UI needs about the live job. */
+export function useActiveOrder() {
+  const authKey = useAuthKey();
+  const [backend, setBackend] = useState<Backend>({ state: "loading" });
+  const [order, setOrder] = useState<OrderRow | null>(null);
+  const [events, setEvents] = useState<OrderEventRow[]>([]);
+  const [queue, setQueue] = useState<QueueStatus | null>(null);
+  const [connection, setConnection] = useState<ConnectionState>("connecting");
+  const [userId, setUserId] = useState<string | null>(null);
+
+  // Read inside realtime callbacks, which outlive the render that created them.
+  const orderRef = useRef<OrderRow | null>(null);
+  orderRef.current = order;
+
+  const load = useCallback(async () => {
+    const session = await ensureSession();
+    const blocked = blockedBy(session);
+    if (blocked) {
+      setOrder(null);
+      return setBackend(blocked);
+    }
+    setUserId(session.status === "ready" ? session.userId : null);
+
+    try {
+      const current = await activeOrder();
+      setOrder(current);
+      if (current) {
+        const [timeline, position] = await Promise.all([
+          orderEvents(current.id),
+          queueStatus(current.id),
+        ]);
+        setEvents(timeline);
+        setQueue(position);
+      } else {
+        setEvents([]);
+        setQueue(null);
+      }
+      setBackend({ state: "ready" });
+    } catch (error) {
+      setBackend({
+        state: "error",
+        message: error instanceof Error ? error.message : "Couldn't reach the database.",
+      });
+    }
+  }, [authKey]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  /** Queue position and the timeline are derived; fetch them after painting. */
+  const reconcile = useCallback(async (orderId: string) => {
+    const [timeline, position] = await Promise.all([orderEvents(orderId), queueStatus(orderId)]);
+    setEvents(timeline);
+    setQueue(position);
+  }, []);
+
+  useEffect(() => {
+    if (backend.state !== "ready" || !userId) return;
+
+    const stop = [
+      subscribeTable<OrderRow>({
+        table: "orders",
+        // Narrowed server-side: without it every order in the system wakes
+        // this subscriber up just to be filtered away on the client.
+        filter: `user_id=eq.${userId}`,
+        onState: setConnection,
+        onChange: ({ eventType, row }) => {
+          if (!row) return;
+
+          const current = orderRef.current;
+
+          // A different order than the one on screen — a new job, or the
+          // current one finishing — needs the full "which is active now" query.
+          if (eventType === "INSERT" || !current || current.id !== row.id) {
+            void load();
+            return;
+          }
+
+          // The status the operator just set, painted this tick. No round trip.
+          setOrder({ ...current, ...row });
+          void reconcile(row.id);
+        },
+      }),
+      subscribeTable<OrderEventRow>({
+        table: "order_events",
+        onChange: ({ row }) => {
+          const current = orderRef.current;
+          if (!row || !current || row.order_id !== current.id) return;
+          // Append rather than refetch; the timeline is append-only.
+          setEvents((prev) => (prev.some((e) => e.id === row.id) ? prev : [...prev, row]));
+        },
+      }),
+    ];
+
+    return () => stop.forEach((fn) => fn());
+  }, [backend.state, userId, load, reconcile]);
+
+  /* If the socket is down we're showing stale data, so fall back to polling
+     rather than silently freezing. */
+  useEffect(() => {
+    if (connection !== "down" || backend.state !== "ready") return;
+    const id = setInterval(() => void load(), 10_000);
+    return () => clearInterval(id);
+  }, [connection, backend.state, load]);
+
+  return { backend, order, events, queue, connection, reload: load };
+}
+
+export function useOrderHistory() {
+  const authKey = useAuthKey();
+  const [backend, setBackend] = useState<Backend>({ state: "loading" });
+  const [orders, setOrders] = useState<OrderRow[]>([]);
+
+  const load = useCallback(async () => {
+    const blocked = blockedBy(await ensureSession());
+    if (blocked) {
+      setOrders([]);
+      return setBackend(blocked);
+    }
+    setOrders(await listOrders());
+    setBackend({ state: "ready" });
+  }, [authKey]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useRealtime(load, backend.state === "ready");
+
+  return { backend, orders, reload: load };
+}
+
+export function useTotals() {
+  const authKey = useAuthKey();
+  const [totals, setTotals] = useState<Totals | null>(null);
+  const [ready, setReady] = useState(false);
+
+  const load = useCallback(async () => {
+    if (blockedBy(await ensureSession())) {
+      setTotals(null);
+      return setReady(true);
+    }
+    setTotals(await myTotals());
+    setReady(true);
+  }, [authKey]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useRealtime(load, ready);
+
+  return { totals, ready };
+}
+
+/**
+ * The operator's current wait.
+ *
+ * Deliberately does *not* require a session: how busy the operator is right now
+ * is public information, and it's the first thing a visitor wants to know. The
+ * `operators` table is world-readable and `operator_wait()` is security-definer,
+ * so this works on the anon role too.
+ */
+export function useOperatorWait() {
+  const authKey = useAuthKey();
+  const [operator, setOperator] = useState<Operator | null>(null);
+  const [wait, setWait] = useState<OperatorWait | null>(null);
+  const [ready, setReady] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const found = await defaultOperator();
+      setOperator(found);
+      setWait(found ? await operatorWait(found.id) : null);
+    } catch {
+      setOperator(null);
+      setWait(null);
+    }
+    setReady(true);
+  }, [authKey]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useRealtime(load, ready);
+
+  return { operator, wait, ready };
+}
+
+/** How many jobs are still with the operator — the badge on the Orders tab. */
+export function useActiveCount() {
+  const authKey = useAuthKey();
+  const [count, setCount] = useState<number | null>(null);
+  const [ready, setReady] = useState(false);
+
+  const load = useCallback(async () => {
+    if (blockedBy(await ensureSession())) {
+      setCount(null);
+      return setReady(true);
+    }
+    const supabase = getSupabase();
+    const { count: n } = await supabase!
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .in("status", ACTIVE_STATUSES);
+    setCount(n ?? 0);
+    setReady(true);
+  }, [authKey]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useRealtime(load, ready);
+
+  return count;
+}
+
+/** Operator console. Empty operatorId means "you aren't staff anywhere". */
+export function useOperatorQueue() {
+  const authKey = useAuthKey();
+  const [backend, setBackend] = useState<Backend>({ state: "loading" });
+  const [operatorId, setOperatorId] = useState<string | null>(null);
+  const [operator, setOperator] = useState<Operator | null>(null);
+  const [queue, setQueue] = useState<OrderRow[]>([]);
+
+  const load = useCallback(async () => {
+    const blocked = blockedBy(await ensureSession());
+    if (blocked) return setBackend(blocked);
+
+    try {
+      const id = await staffOperatorId();
+      setOperatorId(id);
+      setOperator(id ? await getOperator(id) : null);
+      setQueue(id ? await operatorQueue(id) : []);
+      setBackend({ state: "ready" });
+    } catch (error) {
+      setBackend({
+        state: "error",
+        message: error instanceof Error ? error.message : "Couldn't reach the database.",
+      });
+    }
+  }, [authKey]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useRealtime(load, backend.state === "ready");
+
+  return { backend, operatorId, operator, queue, reload: load };
+}
