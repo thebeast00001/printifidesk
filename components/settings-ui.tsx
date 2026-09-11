@@ -43,7 +43,11 @@ export function SettingsRow({
           </p>
         )}
       </div>
-      <div className="shrink-0 sm:self-center">{control}</div>
+      {/* `self-start` matters on a phone: the row stacks, and a flex child
+          in a column stretches to the full width by default — so a
+          three-option pill grew to the edge of the card with a long empty
+          tail. Every control here is a pill or a button; none wants that. */}
+      <div className="shrink-0 self-start sm:self-center">{control}</div>
     </div>
   );
 }
