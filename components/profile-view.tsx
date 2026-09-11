@@ -157,12 +157,17 @@ export function ProfileView() {
           onClick={() => openSheet("upload")}
         />
         <NavRow href="/orders" icon={Receipt} label="Your orders" hint="Tokens and live status" />
-        <NavRow
-          href="/operator"
-          icon={Printer}
-          label={isStaff ? "Printify Operator" : "Run a Printify desk"}
-          hint={isStaff ? "Your queue, prices and hours" : "Apply to print for your campus"}
-        />
+        {/* Only people who already run a desk get a way to it from here.
+            Advertising "apply to be an operator" on every student's profile
+            invited applications nobody had asked for. */}
+        {isStaff && (
+          <NavRow
+            href="/operator"
+            icon={Printer}
+            label="Printify Operator"
+            hint="Your queue, prices and hours"
+          />
+        )}
         {admin && (
           <NavRow
             href="/admin"
