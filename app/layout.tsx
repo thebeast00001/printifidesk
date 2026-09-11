@@ -60,7 +60,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       suppressHydrationWarning
       className={`${bricolage.variable} ${instrument.variable} ${dmMono.variable}`}
     >
-      <body>
+      {/* suppressHydrationWarning on <body>, not just <html>: browser
+          extensions (ColorZilla stamps `cz-shortcut-listen`, Grammarly and
+          password managers do similar) add attributes to the body before
+          React hydrates, and React reports the difference as our bug. It is
+          scoped to this one element's attributes — children still hydrate
+          strictly. */}
+      <body suppressHydrationWarning>
         {/* Both providers inject a script tag; both need this request's nonce
             or the strict CSP blocks them. */}
         <ClerkProvider nonce={nonce}>

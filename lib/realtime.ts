@@ -36,8 +36,21 @@ interface Entry {
   listeners: Set<(change: Change<unknown>) => void>;
   states: Set<(state: ConnectionState) => void>;
   retry: ReturnType<typeof setTimeout> | null;
+  /** Pending "we're really down" announcement; cleared if the channel comes back first. */
+  grace: ReturnType<typeof setTimeout> | null;
   attempts: number;
 }
+
+/**
+ * How long a channel may be gone before anyone is told.
+ *
+ * supabase-js reconnects a dropped socket and rejoins its channels by itself,
+ * usually inside a second. Announcing "down" the instant a channel closes made
+ * the operator's banner flash on every one of those — a warning about a
+ * problem that had already fixed itself. Six seconds is longer than a
+ * reconnect and shorter than an operator will tolerate a stale queue.
+ */
+const GRACE_MS = 6_000;
 
 const entries = new Map<string, Entry>();
 
@@ -94,12 +107,23 @@ export function subscribeTable<T>(params: {
 
           if (status === "SUBSCRIBED") {
             current.attempts = 0;
+            if (current.grace) {
+              clearTimeout(current.grace);
+              current.grace = null;
+            }
             announce("live");
             return;
           }
 
           if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-            announce("down");
+            // Say nothing yet. If it isn't back inside the grace window, then
+            // it's real, and the pollers that key off "down" should start.
+            if (!current.grace) {
+              current.grace = setTimeout(() => {
+                current.grace = null;
+                if (entries.has(key)) announce("down");
+              }, GRACE_MS);
+            }
             // supabase-js reconnects the socket, but a channel that errored
             // stays dead until it is rebuilt.
             if (current.retry) clearTimeout(current.retry);
@@ -107,7 +131,6 @@ export function subscribeTable<T>(params: {
               if (!entries.has(key)) return;
               void supabase.removeChannel(current.channel);
               current.attempts += 1;
-              announce("connecting");
               current.channel = build();
             }, backoffMs(current.attempts));
           }
@@ -116,7 +139,14 @@ export function subscribeTable<T>(params: {
       return channel;
     };
 
-    entry = { channel: null as unknown as RealtimeChannel, listeners, states, retry: null, attempts: 0 };
+    entry = {
+      channel: null as unknown as RealtimeChannel,
+      listeners,
+      states,
+      retry: null,
+      grace: null,
+      attempts: 0,
+    };
     entries.set(key, entry);
     entry.channel = build();
     announce("connecting");
@@ -134,6 +164,7 @@ export function subscribeTable<T>(params: {
 
     if (current.listeners.size === 0) {
       if (current.retry) clearTimeout(current.retry);
+      if (current.grace) clearTimeout(current.grace);
       void supabase.removeChannel(current.channel);
       entries.delete(key);
     }

@@ -47,6 +47,15 @@ export function getSupabase(): SupabaseClient | null {
       // several orders in the same second, and a dropped frame there is a
       // status the student never sees.
       params: { eventsPerSecond: 40 },
+      // The operator's tab is usually in the background — they're at the
+      // machine. Browsers throttle a background tab's timers to once a minute,
+      // which is longer than a Clerk token lives, so a main-thread heartbeat
+      // silently stops refreshing it and the socket drops. A Web Worker's
+      // timers aren't throttled. Built from an inline blob, which the CSP's
+      // `worker-src blob:` allows.
+      worker: true,
+      // Under the thirty seconds of token leeway the bridge asks Clerk for.
+      heartbeatIntervalMs: 20_000,
     },
   });
 

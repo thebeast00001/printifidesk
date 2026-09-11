@@ -42,15 +42,20 @@ import { useAuthKey } from "@/hooks/use-auth-key";
 import { subscribeTable, type ConnectionState } from "@/lib/realtime";
 import { AlertToggle, useNewOrderAlert } from "./new-order-alert";
 import { OperatorDay } from "./operator-day";
+import { useApp } from "@/lib/store";
 import { cn, easeIos, spring } from "@/lib/utils";
 
-type Tab = "inbox" | "working" | "ready" | "scheduled" | "history";
+type Tab = "inbox" | "working" | "ready" | "scheduled" | "reports" | "history";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "inbox", label: "New" },
   { id: "working", label: "Printing" },
   { id: "ready", label: "Ready" },
   { id: "scheduled", label: "Scheduled" },
+  // A report lands on an order that is usually already collected — which is
+  // to say, in History, inside a collapsed card. Nobody looked there. This
+  // tab gathers them whatever their status.
+  { id: "reports", label: "Reports" },
   { id: "history", label: "History" },
 ];
 
@@ -102,7 +107,13 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
     setStats(s);
     // Scoped to this operator's own orders. RLS would refuse the rest anyway,
     // but asking for them would still be wrong.
-    setReports(await openReports(rows.map((o) => o.id)));
+    try {
+      setReports(await openReports(rows.map((o) => o.id)));
+    } catch (e) {
+      // A failing reports query must not take the queue down with it, but it
+      // must not be silent either — that is how "not showing" happens.
+      setError(e instanceof Error ? e.message : "Couldn't load student reports.");
+    }
   }, [operator.id, authKey]);
 
   useEffect(() => {
@@ -144,7 +155,13 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
       table: "order_reports",
       onChange: () => {
         setOrders((rows) => {
-          if (rows) void openReports(rows.map((o) => o.id)).then(setReports);
+          if (rows) {
+            void openReports(rows.map((o) => o.id))
+              .then(setReports)
+              .catch(() => {
+                /* the next load() will say why */
+              });
+          }
           return rows;
         });
       },
@@ -172,6 +189,9 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
     }
   }
 
+  // Orders with something a student said about them, still unanswered.
+  const reported = useMemo(() => new Set(reports.map((r) => r.order_id)), [reports]);
+
   const filtered = useMemo(() => {
     const all = orders ?? [];
     const q = query.trim().toLowerCase();
@@ -186,21 +206,40 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
           return o.status === "ready";
         case "scheduled":
           return o.pickup_mode === "scheduled" && ["placed", "queued"].includes(o.status);
+        case "reports":
+          return reported.has(o.id);
         case "history":
           return ["collected", "cancelled", "failed"].includes(o.status);
       }
     });
 
-    if (!q) return byTab;
-    return byTab.filter((o) =>
+    // Newest complaint first on the Reports tab; the queue's own order elsewhere.
+    const ordered =
+      tab === "reports"
+        ? [...byTab].sort((a, b) => {
+            const ra = reports.find((r) => r.order_id === a.id)?.created_at ?? "";
+            const rb = reports.find((r) => r.order_id === b.id)?.created_at ?? "";
+            return rb.localeCompare(ra);
+          })
+        : byTab;
+
+    if (!q) return ordered;
+    return ordered.filter((o) =>
       `${o.token ?? ""} ${o.order_items?.map((i) => i.name).join(" ") ?? ""}`
         .toLowerCase()
         .includes(q),
     );
-  }, [orders, tab, query]);
+  }, [orders, tab, query, reported, reports]);
 
   // Rings when the number waiting to be accepted goes up.
   const alert = useNewOrderAlert(stats ? stats.pending : null);
+
+  // The dock shows the same number as a badge, so the operator can see a new
+  // job arrive from any face of the page.
+  const setPending = useApp((s) => s.setOperatorPending);
+  useEffect(() => {
+    setPending(stats ? stats.pending : null);
+  }, [stats, setPending]);
 
   const counts = useMemo(() => {
     const all = orders ?? [];
@@ -211,9 +250,10 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
       scheduled: all.filter(
         (o) => o.pickup_mode === "scheduled" && ["placed", "queued"].includes(o.status),
       ).length,
+      reports: all.filter((o) => reported.has(o.id)).length,
       history: all.filter((o) => ["collected", "cancelled", "failed"].includes(o.status)).length,
     } as Record<Tab, number>;
-  }, [orders]);
+  }, [orders, reported]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -221,6 +261,21 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
 
       <LowStock operator={operator} />
       <LiveDot connection={connection} />
+
+      {/* A student's complaint is the one thing on this screen that isn't in
+          the queue's own flow, so it gets said out loud until it's looked at. */}
+      {reports.length > 0 && tab !== "reports" && (
+        <button
+          onClick={() => setTab("reports")}
+          className="flex items-center gap-2.5 rounded-[14px] bg-clay px-4 py-3 text-left text-[12.5px] font-semibold text-clay-ink"
+        >
+          <Flag size={15} strokeWidth={2.2} className="shrink-0" />
+          {reports.length === 1
+            ? "A student has reported a problem with a print"
+            : `${reports.length} students have reported problems with their prints`}
+          <span className="ml-auto font-normal underline-offset-2 hover:underline">See them</span>
+        </button>
+      )}
 
       {error && (
         <p className="m-0 flex items-start gap-2 rounded-[14px] bg-clay px-4 py-3 text-[12.5px] text-clay-ink">
@@ -720,6 +775,7 @@ function emptyTitle(tab: Tab) {
     working: "Nothing printing",
     ready: "Nothing waiting to be collected",
     scheduled: "No scheduled orders",
+    reports: "Nothing reported",
     history: "No finished orders yet",
   }[tab];
 }
@@ -730,6 +786,7 @@ function emptyBody(tab: Tab) {
     working: "Accept an order from New to start.",
     ready: "Finished jobs appear here until they're handed over.",
     scheduled: "Students can book a pickup time when they order.",
+    reports: "When a student says a print came out wrong, it shows here — whatever the order's status.",
     history: undefined,
   }[tab];
 }

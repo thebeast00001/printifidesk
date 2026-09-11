@@ -68,17 +68,26 @@ export async function reportsFor(orderId: string): Promise<OrderReport[]> {
   return (data ?? []) as OrderReport[];
 }
 
-/** Everything still open across an operator's orders, newest first. */
+/**
+ * Everything still open across an operator's orders, newest first.
+ *
+ * RLS already scopes the rows to orders this caller runs (or placed), so the
+ * query asks for every open report and the order ids are matched here. The
+ * earlier version sent the ids in the URL — two hundred UUIDs is seven
+ * kilobytes, which is about where a proxy starts refusing the request, and a
+ * refused request looked exactly like "no reports".
+ */
 export async function openReports(orderIds: string[]): Promise<OrderReport[]> {
   const supabase = getSupabase();
   if (!supabase || orderIds.length === 0) return [];
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("order_reports")
     .select("*")
-    .in("order_id", orderIds)
     .eq("status", "open")
     .order("created_at", { ascending: false });
-  return (data ?? []) as OrderReport[];
+  if (error) throw new Error(explain(error.message));
+  const mine = new Set(orderIds);
+  return ((data ?? []) as OrderReport[]).filter((r) => mine.has(r.order_id));
 }
 
 /**

@@ -170,14 +170,26 @@ export async function operatorStats(operatorId: string): Promise<OperatorStats |
 const ORDER_SELECT =
   "*, order_items(id, name, pages, colour_pages, selected_pages, price, config)";
 
-/** Everything this operator has, newest first — the portal filters locally. */
-export async function operatorOrders(operatorId: string, limit = 200): Promise<OrderRow[]> {
+/**
+ * Every live order, plus the finished ones from the last fortnight.
+ *
+ * The earlier version took the oldest two hundred rows, so the day an operator
+ * passed two hundred lifetime orders, every new one silently stopped showing
+ * up. Live orders are never cut; history is bounded by time, not by count.
+ * Oldest first, because that is the order a queue is served in.
+ */
+export async function operatorOrders(
+  operatorId: string,
+  { limit = 1000, sinceDays = 14 }: { limit?: number; sinceDays?: number } = {},
+): Promise<OrderRow[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
+  const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
   const { data } = await supabase
     .from("orders")
     .select(ORDER_SELECT)
     .eq("operator_id", operatorId)
+    .or(`status.in.(placed,queued,printing,finishing,ready),created_at.gte.${since}`)
     .order("is_priority", { ascending: false })
     .order("created_at", { ascending: true })
     .limit(limit);

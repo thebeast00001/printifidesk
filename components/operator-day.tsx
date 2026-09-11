@@ -75,7 +75,10 @@ export function OperatorDay({ operator }: { operator: Operator }) {
   async function exportCsv() {
     setExporting(true);
     try {
-      const all = await operatorOrders(operator.id, 1000);
+      // The window's own reach, not the portal's fortnight — a thirty-day
+      // export that quietly held fourteen would be a wrong number in a ledger.
+      const days = WINDOWS.find((w) => w.id === window)?.days ?? 0;
+      const all = await operatorOrders(operator.id, { limit: 5000, sinceDays: Math.max(days, 1) });
       const since = from.getTime();
       const scoped = all.filter((o) => new Date(o.created_at).getTime() >= since);
 

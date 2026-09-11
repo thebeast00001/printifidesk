@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { AlertCircle, Loader2, Power, SlidersHorizontal } from "lucide-react";
 import { useOperatorQueue } from "@/hooks/use-tracking";
@@ -10,6 +10,7 @@ import { useConnectionVerdict } from "./connection-banner";
 import { OperatorApplication } from "./operator-application";
 import { OperatorPortal } from "./operator-portal";
 import { OperatorPricing } from "./operator-pricing";
+import { useApp } from "@/lib/store";
 import { cn, spring } from "@/lib/utils";
 
 /**
@@ -19,7 +20,19 @@ import { cn, spring } from "@/lib/utils";
 export function OperatorBoard() {
   const { backend, operatorId, operator, reload } = useOperatorQueue();
   const { verdict } = useConnectionVerdict();
-  const [showSettings, setShowSettings] = useState(false);
+  const view = useApp((s) => s.operatorView);
+  const setView = useApp((s) => s.setOperatorView);
+  const setPending = useApp((s) => s.setOperatorPending);
+  const showSettings = view === "settings";
+
+  // Leaving the page resets both, so coming back always lands on the queue
+  // and the student-side dock never shows a stale operator badge.
+  useEffect(() => {
+    return () => {
+      setView("queue");
+      setPending(null);
+    };
+  }, [setView, setPending]);
 
   if (backend.state === "loading") {
     return <Notice icon={<Loader2 size={16} className="animate-spin" />} title="Opening…" />;
@@ -67,7 +80,7 @@ export function OperatorBoard() {
         <div className="flex items-center gap-2">
           <OpenSwitch operator={operator} onChanged={reload} compact />
           <button
-            onClick={() => setShowSettings((v) => !v)}
+            onClick={() => setView(showSettings ? "queue" : "settings")}
             aria-expanded={showSettings}
             className={cn(
               "flex h-11 items-center gap-2 rounded-xl border px-4 text-[13px] font-semibold transition-colors",

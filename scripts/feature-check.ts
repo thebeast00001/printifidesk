@@ -6,6 +6,7 @@ import type { Operator } from "../lib/orders";
 import { secretMatches } from "../lib/server/secret";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { jwtMsRemaining } from "../lib/jwt";
 
 let fails = 0;
 const check = (name: string, got: unknown, want: unknown) => {
@@ -177,6 +178,21 @@ check("longer rejected", secretMatches("s3cr3t-value-and-more", "s3cr3t-value"),
 check("empty rejected", secretMatches("", "s3cr3t-value"), false);
 check("missing header rejected", secretMatches(null, "s3cr3t-value"), false);
 check("unset secret rejects everything", secretMatches("anything", ""), false);
+
+console.log("\n— token expiry (the realtime socket must refresh before it lapses) —");
+// A JWT with exp = now + 45s, built the way Clerk builds them: three
+// base64url segments. The signature is nonsense on purpose — nothing here
+// verifies it, and a helper that needed a real one would be testing the
+// wrong thing.
+const b64url = (s: string) => Buffer.from(s).toString("base64url");
+const at = 1_800_000_000_000; // a fixed "now"
+const tokenExpiring = (secs: number) =>
+  `${b64url('{"alg":"RS256"}')}.${b64url(JSON.stringify({ sub: "user_x", exp: at / 1000 + secs }))}.sig`;
+check("45s left reads as 45000", jwtMsRemaining(tokenExpiring(45), at), 45_000);
+check("expired reads negative", (jwtMsRemaining(tokenExpiring(-5), at) ?? 0) < 0, true);
+check("no exp reads unknown", jwtMsRemaining(`${b64url("{}")}.${b64url('{"sub":"x"}')}.s`, at), null);
+check("garbage reads unknown", jwtMsRemaining("not-a-token", at), null);
+check("two segments reads unknown", jwtMsRemaining("a.b", at), null);
 
 const done = fails === 0 ? "\nPASS - all checks passed" : `\nFAIL - ${fails} check(s) failed`;
 console.log(done);
