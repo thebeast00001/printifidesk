@@ -587,9 +587,13 @@ Being specific about this matters more than a green badge:
   SQL-vs-TypeScript pricing across 144 jobs, messages queuing a push, the
   stock ledger, staff by email, and closing the desk. **Passes.** It does not
   check the RLS policies themselves; see above for why.
-- **Scan to hand over** — the detector path needs a camera and a real QR, so it
-  is verified by reading, not by test. The typed-token path is the same code
-  after the scan.
+- **Scan to hand over** — decoding is jsQR wherever the browser's own
+  `BarcodeDetector` can't actually read QR codes (Windows Chrome has the
+  constructor and none of the formats). `npm run check:features` rasterises the
+  island's exact payload with `qrcode` and reads it back with jsQR, inverted
+  too. The live camera itself needs a secure context — `localhost` or
+  `https`; over plain `http` on a LAN the sheet says so and offers a photo
+  through the native camera instead, decoded the same way.
 - **Strict CSP** — verified in the browser: Clerk, its sign-in modal, the
   pdf.js worker, blob thumbnails and the QR all load with zero violations.
 - `npm run check:migrations` — the Docker version. **Still never executed**,

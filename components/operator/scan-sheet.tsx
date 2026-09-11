@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Drawer } from "vaul";
 import { motion } from "motion/react";
-import { Camera, Check, Keyboard, Loader2, ScanLine, ShieldAlert, ShieldCheck } from "lucide-react";
+import jsQR from "jsqr";
+import { Camera, Check, ImageUp, Keyboard, Loader2, ScanLine, ShieldAlert, ShieldCheck } from "lucide-react";
 import { orderCustomer, type Customer } from "@/lib/operator";
 import { listOperators, type OrderRow } from "@/lib/orders";
 import { cn, spring } from "@/lib/utils";
@@ -11,12 +12,20 @@ import { cn, spring } from "@/lib/utils";
 /**
  * The student holds up their code; the desk points a phone at it.
  *
- * Uses the browser's own `BarcodeDetector` — no library, nothing to load,
- * nothing that could be swapped for something else on a CDN. Chrome and
- * Android have it; Safari and Firefox mostly don't, and there the sheet is a
- * token field with the same result. The one thing it decides is *which* order
- * is in front of you; handing it over is still a tap, because a scan of the
- * wrong student's phone must not be a completed handover.
+ * Decoding: the browser's own `BarcodeDetector` where it genuinely reads QR
+ * codes, and jsQR — a small pure-JS decoder bundled with the app — everywhere
+ * else. "Genuinely" matters: on Windows Chrome the constructor exists but
+ * supports no formats, and the first version of this trusted the constructor,
+ * started the camera, and decoded nothing for as long as you cared to wait.
+ *
+ * Where the live camera can't run at all — the API needs a secure context,
+ * and a phone opening the dev server over plain http on the LAN doesn't have
+ * one — the native camera can still take a photo through a file input, and
+ * that photo is decoded the same way.
+ *
+ * The one thing any of this decides is *which* order is in front of you;
+ * handing it over is still a tap, because a scan of the wrong student's phone
+ * must not be a completed handover.
  */
 
 /**
@@ -56,19 +65,55 @@ export function tokenFromScan(raw: string): string | null {
 type Proof = "verified" | "unverified" | "wrong";
 
 interface Detector {
-  detect(source: HTMLVideoElement): Promise<{ rawValue: string }[]>;
+  detect(source: HTMLVideoElement | HTMLCanvasElement | ImageBitmap): Promise<{ rawValue: string }[]>;
 }
 
-function detectorFor(): Detector | null {
-  const ctor = (globalThis as { BarcodeDetector?: new (o: { formats: string[] }) => Detector })
-    .BarcodeDetector;
+interface DetectorCtor {
+  new (o: { formats: string[] }): Detector;
+  getSupportedFormats?: () => Promise<string[]>;
+}
+
+/**
+ * The native detector, only if it can actually read QR codes on this
+ * platform. Resolves null otherwise, and jsQR takes over.
+ */
+async function nativeDetector(): Promise<Detector | null> {
+  const ctor = (globalThis as { BarcodeDetector?: DetectorCtor }).BarcodeDetector;
   if (!ctor) return null;
   try {
+    const formats = ctor.getSupportedFormats ? await ctor.getSupportedFormats() : [];
+    if (!formats.includes("qr_code")) return null;
     return new ctor({ formats: ["qr_code"] });
   } catch {
     return null;
   }
 }
+
+/**
+ * Reads a QR from pixels. Used for every camera frame when the native
+ * detector isn't there, and for a photo whichever detector is there — a
+ * photo is a still, and this is simpler than wrapping one for the API.
+ */
+function decodePixels(source: HTMLVideoElement | HTMLImageElement, scratch: HTMLCanvasElement): string | null {
+  const w = source instanceof HTMLVideoElement ? source.videoWidth : source.naturalWidth;
+  const h = source instanceof HTMLVideoElement ? source.videoHeight : source.naturalHeight;
+  if (!w || !h) return null;
+
+  // Downscale big frames: a 4K still is slow to search and a QR the size of a
+  // phone screen is still hundreds of pixels wide at 800.
+  const scale = Math.min(1, 800 / Math.max(w, h));
+  scratch.width = Math.round(w * scale);
+  scratch.height = Math.round(h * scale);
+  const ctx = scratch.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.drawImage(source, 0, 0, scratch.width, scratch.height);
+  const image = ctx.getImageData(0, 0, scratch.width, scratch.height);
+  const hit = jsQR(image.data, image.width, image.height, { inversionAttempts: "attemptBoth" });
+  return hit?.data ?? null;
+}
+
+/** Whether `getUserMedia` can run here at all. */
+const secure = () => typeof window !== "undefined" && window.isSecureContext;
 
 export function ScanSheet({
   open,
@@ -89,8 +134,12 @@ export function ScanSheet({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const [supported] = useState(() => typeof window !== "undefined" && Boolean(detectorFor()));
+  const scratchRef = useRef<HTMLCanvasElement | null>(null);
+  const photoRef = useRef<HTMLInputElement>(null);
+  // The live camera needs a secure context; a photo through a file input does not.
+  const [supported] = useState(() => secure());
   const [camera, setCamera] = useState<"idle" | "starting" | "on" | "denied">("idle");
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [typed, setTyped] = useState("");
   const [match, setMatch] = useState<{ order: OrderRow; proof: Proof } | null>(null);
   /** Two ready orders with the same token — yesterday's and today's. */
@@ -176,11 +225,12 @@ export function ScanSheet({
 
     let cancelled = false;
     let raf = 0;
-    const detector = detectorFor();
-    if (!detector) return;
 
     (async () => {
       setCamera("starting");
+      const detector = await nativeDetector();
+      if (cancelled) return;
+      const scratch = (scratchRef.current ??= document.createElement("canvas"));
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: "environment" } },
@@ -197,18 +247,25 @@ export function ScanSheet({
         await video.play();
         setCamera("on");
 
-        // Poll at the display rate; `detect` is quick and a missed frame is
-        // just the next one.
+        // A few frames a second is plenty for a code held still, and jsQR
+        // on the main thread wants the breathing room.
+        const every = detector ? 120 : 180;
         let last = 0;
         const tick = async (t: number) => {
           if (cancelled) return;
-          if (t - last > 120 && video.readyState >= 2) {
+          if (t - last > every && video.readyState >= 2) {
             last = t;
             try {
-              const codes = await detector.detect(video);
-              const hit = codes.find((c) => tokenFromScan(c.rawValue));
-              if (hit) {
-                resolve(hit.rawValue);
+              let raw: string | null = null;
+              if (detector) {
+                const codes = await detector.detect(video);
+                raw = codes.find((c) => tokenFromScan(c.rawValue))?.rawValue ?? null;
+              } else {
+                const text = decodePixels(video, scratch);
+                raw = text && tokenFromScan(text) ? text : null;
+              }
+              if (raw) {
+                resolve(raw);
                 return;
               }
             } catch {
@@ -239,6 +296,34 @@ export function ScanSheet({
     }
   }, [open]);
 
+  /** A still from the native camera app, decoded like a frame. */
+  async function readPhoto(file: File) {
+    setPhotoBusy(true);
+    setMiss(null);
+    try {
+      const url = URL.createObjectURL(file);
+      try {
+        const img = new Image();
+        await new Promise<void>((ok, fail) => {
+          img.onload = () => ok();
+          img.onerror = () => fail(new Error("unreadable"));
+          img.src = url;
+        });
+        const scratch = (scratchRef.current ??= document.createElement("canvas"));
+        const text = decodePixels(img, scratch);
+        if (text && tokenFromScan(text)) resolve(text);
+        else setMiss("No Printify code in that photo. Get the whole square in frame and try again.");
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    } catch {
+      setMiss("Couldn't read that photo.");
+    } finally {
+      setPhotoBusy(false);
+      if (photoRef.current) photoRef.current.value = "";
+    }
+  }
+
   return (
     <Drawer.Root open={open} onOpenChange={onOpenChange}>
       <Drawer.Portal>
@@ -256,7 +341,7 @@ export function ScanSheet({
             <Drawer.Description className="m-0 mb-4 text-[13px] text-muted">
               {supported
                 ? "Point the camera at the student's code, or type the token."
-                : "Type the token the student shows you."}
+                : "Take a photo of the student's code, or type the token."}
             </Drawer.Description>
 
             {match ? (
@@ -331,10 +416,42 @@ export function ScanSheet({
                 {camera === "denied" && (
                   <p className="m-0 flex items-start gap-2 rounded-xl bg-clay px-3 py-2.5 text-[12px] leading-relaxed text-clay-ink">
                     <Camera size={14} strokeWidth={2.2} className="mt-px shrink-0" />
-                    The camera was refused. Type the token instead, or allow it in the address bar
-                    and reopen this.
+                    The camera was refused. Allow it in the address bar and reopen this, or take a
+                    photo of the code below.
                   </p>
                 )}
+
+                {!supported && (
+                  <p className="m-0 flex items-start gap-2 rounded-xl bg-surface-sunk px-3 py-2.5 text-[12px] leading-relaxed text-muted">
+                    <Camera size={14} strokeWidth={2.2} className="mt-px shrink-0" />
+                    The live camera only runs over https (or on localhost) — this page is open over
+                    plain http. A photo still works.
+                  </p>
+                )}
+
+                {/* The native camera app, through a file input. Works where the
+                    live camera can't — no secure context needed — and is a
+                    second route on phones that block getUserMedia in a PWA. */}
+                <input
+                  ref={photoRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void readPhoto(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => photoRef.current?.click()}
+                  disabled={photoBusy}
+                  className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-line bg-surface text-[13px] font-semibold text-ink-soft disabled:opacity-60"
+                >
+                  {photoBusy ? <Loader2 size={14} className="animate-spin" /> : <ImageUp size={14} strokeWidth={2.2} />}
+                  {photoBusy ? "Reading…" : "Take a photo of the code"}
+                </button>
 
                 <form
                   onSubmit={(e) => {

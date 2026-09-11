@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { jwtMsRemaining } from "../lib/jwt";
 import { clockLabel } from "../lib/utils";
 import { deskPrefix, parseScan } from "../components/operator/scan-sheet";
+import QRCode from "qrcode";
+import jsQR from "jsqr";
 
 let fails = 0;
 const check = (name: string, got: unknown, want: unknown) => {
@@ -205,6 +207,41 @@ check("code is upper-cased", parseScan("printify:order:a03:7f3a9c21")?.code, "7F
 check("a short code is not a code", parseScan("printify:order:A03:7F3")?.code ?? "rejected", "rejected");
 check("garbage rejected", parseScan("https://evil.example/A03"), null);
 check("a bare number is not a token", parseScan("12345"), null);
+
+console.log("\n— the QR round trip (what the island draws, the desk's decoder must read) —");
+// Rasterise with the same `qrcode` library the island uses, then decode the
+// pixels with jsQR — the path the scanner takes wherever the browser has no
+// native detector, which on Windows Chrome is "always, despite appearances".
+{
+  const payload = "printify:order:A03:7F3A9C21:5E9A1C2B";
+  const qr = QRCode.create(payload, { errorCorrectionLevel: "M" });
+  const modules = qr.modules;
+  const scale = 6;
+  const quiet = 4 * scale;
+  const size = modules.size * scale + quiet * 2;
+  const rgba = new Uint8ClampedArray(size * size * 4).fill(255);
+  for (let y = 0; y < modules.size; y++) {
+    for (let x = 0; x < modules.size; x++) {
+      if (!modules.get(y, x)) continue;
+      for (let dy = 0; dy < scale; dy++) {
+        for (let dx = 0; dx < scale; dx++) {
+          const i = ((quiet + y * scale + dy) * size + (quiet + x * scale + dx)) * 4;
+          rgba[i] = rgba[i + 1] = rgba[i + 2] = 0;
+        }
+      }
+    }
+  }
+  const read = jsQR(rgba, size, size, { inversionAttempts: "attemptBoth" });
+  check("decodes what the island draws", read?.data, payload);
+  check("and the parser reads it back", parseScan(read?.data ?? ""), {
+    token: "A03",
+    code: "7F3A9C21",
+    desk: "5E9A1C2B",
+  });
+  // Dark-mode phones show the island's code light-on-dark; inversion must hold.
+  const inverted = rgba.map((v, i) => (i % 4 === 3 ? v : 255 - v));
+  check("reads an inverted (dark mode) code", jsQR(inverted, size, size, { inversionAttempts: "attemptBoth" })?.data, payload);
+}
 
 console.log("\n— token expiry (the realtime socket must refresh before it lapses) —");
 // A JWT with exp = now + 45s, built the way Clerk builds them: three

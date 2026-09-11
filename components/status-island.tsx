@@ -624,6 +624,16 @@ function HandoverCode({
   const [src, setSrc] = useState<string | null>(null);
   const [shown, setShown] = useState(false);
 
+  // What the code says. If any part of it changes — the secret arriving a
+  // beat after the row, say — the image is drawn again rather than kept.
+  const payload = `printify:order:${token}${code ? `:${code}` : ""}${
+    code ? `:${operatorId.replace(/-/g, "").slice(0, 8).toUpperCase()}` : ""
+  }`;
+
+  useEffect(() => {
+    setSrc(null);
+  }, [payload]);
+
   useEffect(() => {
     if (!shown || src) return;
     let cancelled = false;
@@ -632,17 +642,17 @@ function HandoverCode({
       // desk's id. The token alone is on every slip on the shelf and is
       // sequential; the secret is what makes this code yours; the desk is so
       // that a scanner at the wrong counter can say so instead of guessing.
-      QRCode.toDataURL(
-        `printify:order:${token}${code ? `:${code}` : ""}${code ? `:${operatorId.replace(/-/g, "").slice(0, 8).toUpperCase()}` : ""}`,
-        { margin: 1, width: 420 },
-      )
+      // Two modules of quiet zone and a generous raster: a phone camera at
+      // arm's length reads a 200px code with room to spare, and jsQR wants the
+      // white border.
+      QRCode.toDataURL(payload, { margin: 2, width: 480, errorCorrectionLevel: "M" })
         .then((url) => !cancelled && setSrc(url))
         .catch(() => undefined),
     );
     return () => {
       cancelled = true;
     };
-  }, [shown, src, token]);
+  }, [shown, src, payload]);
 
   return (
     <div className="mt-3">
@@ -665,9 +675,9 @@ function HandoverCode({
             <div className="mt-3 flex flex-col items-center gap-2 rounded-2xl bg-white p-3">
               {src ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={src} alt={`Pickup code ${token}`} className="size-[180px]" />
+                <img src={src} alt={`Pickup code ${token}`} className="size-[200px]" />
               ) : (
-                <span className="grid size-[180px] place-items-center">
+                <span className="grid size-[200px] place-items-center">
                   <Loader2 size={18} className="animate-spin text-[#17171a]" />
                 </span>
               )}
