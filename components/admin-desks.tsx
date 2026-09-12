@@ -2,13 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertCircle, Loader2, Plus, ShieldAlert, Ticket, Users, X } from "lucide-react";
-import { adminDesks, adminsExist, createDesk, isAdmin, type Desk } from "@/lib/operator";
+import { AlertCircle, Loader2, Plus, Ticket, Users, X } from "lucide-react";
+import { adminDesks, createDesk, type Desk } from "@/lib/operator";
 import { createInvite } from "@/lib/desk";
 import { InviteCard } from "./operator/invite-card";
-import { AdminFees } from "./admin-fees";
 import { useAuthKey } from "@/hooks/use-auth-key";
-import { ensureSession } from "@/lib/supabase/client";
 import { cn, easeIos } from "@/lib/utils";
 
 /**
@@ -18,15 +16,11 @@ import { cn, easeIos } from "@/lib/utils";
  * for a stranger. Creating one gives you an owner code to hand over on
  * WhatsApp or across a counter — the owner's own sign-in claims it, and from
  * then on they add their own staff the same way. Only admins can call any of
- * this, enforced in the functions rather than in this component.
+ * this, enforced in the functions rather than in this component; the gate
+ * around the page only decides what to draw.
  */
 export function AdminDesks() {
   const authKey = useAuthKey();
-  const [admin, setAdmin] = useState<boolean | null>(null);
-  const [signedIn, setSignedIn] = useState(true);
-  const [clerkId, setClerkId] = useState<string | null>(null);
-  const [seatTaken, setSeatTaken] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [desks, setDesks] = useState<Desk[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -35,23 +29,11 @@ export function AdminDesks() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const session = await ensureSession();
-    if (session.status !== "ready") {
-      setSignedIn(session.status !== "signed-out");
-      setAdmin(false);
-      return;
-    }
-    setClerkId(session.userId);
-    setSeatTaken(await adminsExist());
-    const allowed = await isAdmin();
-    setAdmin(allowed);
-    if (allowed) {
-      try {
-        setDesks(await adminDesks());
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Couldn't list desks.");
-        setDesks([]);
-      }
+    try {
+      setDesks(await adminDesks());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't list desks.");
+      setDesks([]);
     }
   }, [authKey]);
 
@@ -92,38 +74,8 @@ export function AdminDesks() {
     }
   }
 
-  if (admin === null) {
-    return (
-      <Panel>
-        <Loader2 size={15} className="animate-spin" />
-        Checking access…
-      </Panel>
-    );
-  }
-
-  if (!admin) {
-    return (
-      <div className="rounded-[20px] border border-clay bg-clay/25 p-5">
-        <p className="m-0 flex items-center gap-2 text-[15px] font-semibold">
-          <ShieldAlert size={17} strokeWidth={2.2} />
-          {signedIn ? "You're not an admin" : "Sign in to continue"}
-        </p>
-        <p className="m-0 mt-1.5 max-w-[60ch] text-[12.5px] leading-relaxed text-ink-soft">
-          {!signedIn
-            ? "Admins sign in with the same account everyone else uses."
-            : seatTaken
-              ? "Someone else holds admin. Admin is granted only in the Supabase SQL editor, by whoever owns the project — if that row was filled in by mistake, they replace it with this:"
-              : "Nobody is an admin yet. Admin is granted only in the Supabase SQL editor, by whoever owns the project — if that's you, run this:"}
-        </p>
-        {signedIn && clerkId && <AdminFixSql clerkId={clerkId} seatTaken={seatTaken} copied={copied} setCopied={setCopied} />}
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-4">
-      <AdminFees />
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="m-0 text-[12.5px] text-muted">
           {desks === null ? "" : desks.length === 0 ? "No desks yet." : `${desks.length} desk${desks.length === 1 ? "" : "s"}.`}
@@ -275,56 +227,6 @@ function Panel({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2.5 rounded-[20px] border border-line bg-surface p-4 text-[13px] text-muted lg:p-5">
       {children}
-    </div>
-  );
-}
-
-/**
- * The repair statement, with the signed-in user's real id already in it.
- *
- * This block previously printed a `<your id>` placeholder, which is exactly how
- * a literal placeholder ends up in the admins table — blocking both the button
- * and access. Never show a fill-in-the-blank for something copied into a SQL
- * editor.
- */
-function AdminFixSql({
-  clerkId,
-  seatTaken,
-  copied,
-  setCopied,
-}: {
-  clerkId: string;
-  seatTaken: boolean;
-  copied: boolean;
-  setCopied: (v: boolean) => void;
-}) {
-  const sql = seatTaken
-    ? `-- see who holds it
-select * from public.admins;
-
--- drop any row that isn't a real Clerk id, then take the seat
-delete from public.admins where user_id not like 'user\\_%';
-insert into public.admins (user_id)
-values ('${clerkId}')
-on conflict (user_id) do nothing;`
-    : `insert into public.admins (user_id)
-values ('${clerkId}');`;
-
-  return (
-    <div className="relative mt-3">
-      <pre className="overflow-x-auto rounded-xl border border-line bg-surface p-3 pr-24 font-mono text-[11px] leading-relaxed">
-        {sql}
-      </pre>
-      <button
-        onClick={async () => {
-          await navigator.clipboard?.writeText(sql);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1600);
-        }}
-        className="absolute top-2 right-2 rounded-lg border border-line bg-surface-sunk px-2.5 py-1.5 text-[11px] font-semibold text-ink-soft"
-      >
-        {copied ? "Copied" : "Copy SQL"}
-      </button>
     </div>
   );
 }

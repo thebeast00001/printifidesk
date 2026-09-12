@@ -49,7 +49,7 @@ routing table the middleware, the server layout and the browser all read, and
 
 | | Student site | Desk site |
 |---|---|---|
-| Pages | `/`, `/orders`, `/profile`, `/settings` | `/` (queue), `/takings`, `/settings`, `/join`, `/admin` |
+| Pages | `/`, `/orders`, `/profile`, `/settings` | `/` (queue), `/takings`, `/settings`, `/join` — and the admin's `/admin` (fees), `/admin/desks`, `/diagnostics`, with a dock of their own |
 | Sign-in | one **Google** button, nothing else | **email + password**; create account; forgot password by emailed code — or a PIN on a paired device |
 | Chrome | status island, rotating headline, student dock | desk header, desk dock, no student anything |
 | Installs as | "Printify", portrait, `/icon-*.png` | "Printify Desk", any orientation, `/desk-icon-*.png` |

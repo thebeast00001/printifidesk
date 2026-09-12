@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import { House, Printer, Receipt, Settings2, SlidersHorizontal, Wallet } from "lucide-react";
+import { Activity, House, Printer, Receipt, Settings2, SlidersHorizontal, Store, Wallet } from "lucide-react";
 import { useActiveCount } from "@/hooks/use-tracking";
 import { useApp } from "@/lib/store";
 import { useSurface } from "./surface-provider";
@@ -34,7 +34,30 @@ export function FloatingDock() {
   // A door has nowhere else to go.
   if (pathname.startsWith("/sign-in") || pathname.startsWith("/sso-callback")) return null;
 
+  // The admin's pages get the admin's dock, on either host.
+  if (pathname.startsWith("/admin") || pathname.startsWith("/diagnostics")) {
+    return <AdminDock pathname={pathname} />;
+  }
+
   return isDeskPath(pathname) ? <OperatorDock pathname={pathname} /> : <StudentDock pathname={pathname} />;
+}
+
+const ADMIN_NAV = [
+  { href: "/admin", label: "Fees", icon: Receipt },
+  { href: "/admin/desks", label: "Desks", icon: Store },
+  { href: "/diagnostics", label: "Diagnostics", icon: Activity },
+] as const;
+
+/** Money, desks, and whether the wiring is right. Nothing that leaves the admin. */
+function AdminDock({ pathname }: { pathname: string }) {
+  return (
+    <DockShell>
+      {ADMIN_NAV.map(({ href, label, icon: Icon }) => {
+        const active = href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
+        return <DockItem key={href} href={href} label={label} icon={Icon} active={active} />;
+      })}
+    </DockShell>
+  );
 }
 
 function StudentDock({ pathname }: { pathname: string }) {
