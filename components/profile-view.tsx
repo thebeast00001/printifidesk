@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Figure } from "./figure";
 import { SettingsGroup } from "./settings-ui";
+import { InstallRow } from "./install-app";
 import { useTotals } from "@/hooks/use-tracking";
 import { useAuthKey } from "@/hooks/use-auth-key";
 import { ensureSession, getSupabase, type SessionState } from "@/lib/supabase/client";
@@ -149,6 +150,7 @@ export function ProfileView() {
           label="Details and preferences"
           hint="Roll number, hostel, default print settings"
         />
+        <InstallRow />
       </SettingsGroup>
 
       <SettingsGroup title="Printing">

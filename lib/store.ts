@@ -74,6 +74,9 @@ interface AppState {
   setSearchOpen: (open: boolean) => void;
   breakdownOpen: boolean;
   setBreakdownOpen: (open: boolean) => void;
+  /** The install sheet — opened from the header pill or the profile row. */
+  installOpen: boolean;
+  setInstallOpen: (open: boolean) => void;
   /** Which file's pages are being reviewed, if any. */
   reviewFileId: string | null;
   setReviewFileId: (id: string | null) => void;
@@ -127,6 +130,8 @@ export const useApp = create<AppState>((set) => ({
   setSearchOpen: (searchOpen) => set({ searchOpen }),
   breakdownOpen: false,
   setBreakdownOpen: (breakdownOpen) => set({ breakdownOpen }),
+  installOpen: false,
+  setInstallOpen: (installOpen) => set({ installOpen }),
   reviewFileId: null,
   setReviewFileId: (reviewFileId) => set({ reviewFileId }),
 

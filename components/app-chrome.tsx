@@ -3,6 +3,7 @@
 import { FloatingDock } from "./floating-dock";
 import { PrintSheet } from "./print-sheet";
 import { SearchDialog } from "./search-dialog";
+import { InstallDrawer } from "./install-app";
 import { SavingsBreakdown } from "./savings-breakdown";
 import { PageReview } from "./page-review";
 
@@ -18,6 +19,7 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
       <PrintSheet />
       <SearchDialog />
       <SavingsBreakdown />
+      <InstallDrawer />
       <PageReview />
     </>
   );

@@ -7,6 +7,7 @@ import { AnimatePresence, motion, useMotionValueEvent, useScroll } from "motion/
 import { LogIn, MapPin, Search, User } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Container } from "./container";
+import { InstallPill } from "./install-app";
 import { useOperatorWait } from "@/hooks/use-tracking";
 import { useApp } from "@/lib/store";
 import { perPage, rateCardOf } from "@/lib/pricing";
@@ -218,35 +219,42 @@ function HeaderActions() {
 
   if (!isSignedIn) {
     return (
-      <button
-        onClick={() => void google.go()}
-        disabled={google.busy}
-        className="flex h-11 shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-4 text-[13px] font-semibold shadow-card transition-colors hover:bg-surface-sunk disabled:opacity-60"
-      >
-        <LogIn size={15} strokeWidth={2.2} />
-        Sign in
-      </button>
+      <div className="flex shrink-0 items-center gap-2">
+        <InstallPill />
+        <button
+          onClick={() => void google.go()}
+          disabled={google.busy}
+          className="flex h-11 shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-4 text-[13px] font-semibold shadow-card transition-colors hover:bg-surface-sunk disabled:opacity-60"
+        >
+          <LogIn size={15} strokeWidth={2.2} />
+          Sign in
+        </button>
+      </div>
     );
   }
 
   /* One account control, ours. Clerk's <UserButton> is deliberately not here —
      two avatars side by side is confusing; its account management is reached
-     from inside /profile instead. */
+     from inside /profile instead. The install pill only draws when the
+     browser has something to install with. */
   return (
-    <motion.div whileTap={{ scale: 0.92 }} className="shrink-0">
-      <Link
-        href="/profile"
-        aria-label="Your account"
-        className="grid size-11 place-items-center overflow-hidden rounded-full border border-line bg-surface shadow-card transition-colors hover:bg-surface-sunk"
-      >
-        {user?.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={user.imageUrl} alt="" className="size-full object-cover" />
-        ) : (
-          <User size={17} strokeWidth={2} />
-        )}
-      </Link>
-    </motion.div>
+    <div className="flex shrink-0 items-center gap-2">
+      <InstallPill />
+      <motion.div whileTap={{ scale: 0.92 }} className="shrink-0">
+        <Link
+          href="/profile"
+          aria-label="Your account"
+          className="grid size-11 place-items-center overflow-hidden rounded-full border border-line bg-surface shadow-card transition-colors hover:bg-surface-sunk"
+        >
+          {user?.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={user.imageUrl} alt="" className="size-full object-cover" />
+          ) : (
+            <User size={17} strokeWidth={2} />
+          )}
+        </Link>
+      </motion.div>
+    </div>
   );
 }
 

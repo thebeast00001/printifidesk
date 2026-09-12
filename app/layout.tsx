@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { AppChrome } from "@/components/app-chrome";
 import { SupabaseBridge } from "@/components/supabase-bridge";
 import { SurfaceProvider } from "@/components/surface-provider";
+import { PARKED, PARKED_EVENT } from "@/lib/install-names";
 import { HOSTS, requestSurface } from "@/lib/server/surface";
 import { isSingleHost } from "@/lib/surface";
 import "./globals.css";
@@ -44,6 +45,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title: { default: "Printify Desk", template: "%s · Printify Desk" },
       description: "The counter's side of Printify: the queue, the prices, the hours, the handover.",
       manifest: "/desk.webmanifest",
+      icons: { icon: "/desk-icon-192.png", apple: "/desk-icon-192.png" },
       appleWebApp: { capable: true, statusBarStyle: "default", title: "Printify Desk" },
     };
   }
@@ -52,6 +54,9 @@ export async function generateMetadata(): Promise<Metadata> {
     description:
       "Upload from your phone, pay with UPI, collect a printed set. Campus printing without the queue.",
     manifest: "/manifest.webmanifest",
+    // apple-touch-icon: without it iOS puts a screenshot of the page on the
+    // home screen instead of the icon.
+    icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
     appleWebApp: { capable: true, statusBarStyle: "default", title: "Printify" },
   };
 }
@@ -66,6 +71,11 @@ export const viewport: Viewport = {
   maximumScale: 1,
   viewportFit: "cover",
 };
+
+// Kept as one line of plain script so it runs before anything else loads.
+const PARK_INSTALL_PROMPT =
+  `window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();` +
+  `window.${PARKED}=e;window.dispatchEvent(new Event("${PARKED_EVENT}"))});`;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // The CSP nonce Clerk's middleware minted for this request. Reading headers
@@ -88,6 +98,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           scoped to this one element's attributes — children still hydrate
           strictly. */}
       <body suppressHydrationWarning>
+        {/* Chrome's install event can fire before React has hydrated. Park it
+            here and stop the browser's own bar; lib/install.ts picks it up. */}
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: PARK_INSTALL_PROMPT }} />
         {/* Both providers inject a script tag; both need this request's nonce
             or the strict CSP blocks them. */}
         <ClerkProvider

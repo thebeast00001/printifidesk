@@ -623,6 +623,32 @@ Also in `0025`: every push subscription records the VAPID public key it
 was made with, and the dispatcher names a mismatch ("subscribed with a
 different VAPID key") instead of retrying a push the service will refuse.
 
+### Installing it as an app
+
+The site installs to the home screen on the student's say-so, not the
+browser's. Chrome (Android, desktop, Edge, Samsung) fires
+`beforeinstallprompt` once the manifest, icons and service worker qualify,
+and left alone it shows its own "Add to Home screen" bar whenever it likes
+— that was the random prompt. A one-line inline script in the root layout
+now catches the event first, `preventDefault()`s it and parks it on
+`window`; `lib/install.ts` picks it up. From then on there is an **Install**
+pill in the header and an *Install the app* row on the profile, and both
+open one sheet (`components/install-app.tsx`) that does the right thing for
+the browser at hand:
+
+- **Chrome's prompt in hand:** an *Install* button that fires the browser's
+  own dialog. Accepted, the sheet says you're set and the pill goes.
+- **iPhone / iPad:** Safari has no dialog, so the three Share-sheet steps.
+  iPadOS calls itself a Mac; a touch screen tells them apart.
+- **Turned the dialog down:** Chrome hands out one event per page load, so
+  the tap then shows the menu route instead of doing nothing.
+- **Already installed, or a browser that can't** (desktop Firefox, desktop
+  Safari): nothing is drawn. The site never nags.
+
+The layout also sends `apple-touch-icon`; without it iOS puts a screenshot
+of the page on the home screen instead of the icon. `platformFrom()` and
+`canInstall()` are pure and checked in `check:features`.
+
 ### The admin can shut a desk
 
 `0026`: the one lever the admin has over a running desk, whatever state

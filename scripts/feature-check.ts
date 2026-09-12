@@ -1,3 +1,4 @@
+import { canInstall, platformFrom, type InstallState } from "../lib/install";
 import { normalisePhone } from "../lib/phone";
 import { summarisePages } from "../lib/pages";
 import { buildSlots } from "../components/pickup-picker";
@@ -288,6 +289,26 @@ check("desk /admin passes", routeFor("desk", "/admin", two), { kind: "pass" });
 check("desk /sign-in passes", routeFor("desk", "/sign-in", two), { kind: "pass" });
 check("desk /api passes", routeFor("desk", "/api/desk", two), { kind: "pass" });
 check("desk /privacy passes", routeFor("desk", "/privacy", two), { kind: "pass" });
+
+/* ---------- installing: who gets offered what ---------- */
+const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Version/17.5 Mobile/15E148 Safari/604.1";
+const IPAD_AS_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.5 Safari/605.1.15";
+const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/128.0 Mobile Safari/537.36";
+const WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128.0 Safari/537.36";
+check("iPhone is ios", platformFrom(IPHONE, 5, "iPhone"), "ios");
+check("iPad posing as a Mac is ios", platformFrom(IPAD_AS_MAC, 5, "MacIntel"), "ios");
+check("a real Mac is desktop", platformFrom(IPAD_AS_MAC, 0, "MacIntel"), "desktop");
+check("Android is android", platformFrom(ANDROID, 5, "Linux armv8l"), "android");
+check("Windows is desktop", platformFrom(WINDOWS, 0, "Win32"), "desktop");
+const base = { installed: false, prompt: null, platform: "desktop" as const, dismissed: false, ready: true };
+const fakePrompt = {} as unknown as NonNullable<InstallState["prompt"]>;
+check("nothing offered before the first client read", canInstall({ ...base, ready: false, prompt: fakePrompt }), false);
+check("nothing offered once installed", canInstall({ ...base, installed: true, prompt: fakePrompt }), false);
+check("Chrome's prompt is offered", canInstall({ ...base, prompt: fakePrompt }), true);
+check("iOS is offered the steps", canInstall({ ...base, platform: "ios" }), true);
+check("desktop Firefox is offered nothing", canInstall(base), false);
+check("Android that turned the dialog down still gets the menu route", canInstall({ ...base, platform: "android", dismissed: true }), true);
+check("desktop that turned it down gets nothing", canInstall({ ...base, dismissed: true }), false);
 check("student /terms passes", routeFor("student", "/terms", two), { kind: "pass" });
 check("desk /orders → student site", routeFor("desk", "/orders", two), { kind: "redirect", to: "/orders", host: "student" });
 check("desk /orders, single → the queue", routeFor("desk", "/orders", one), { kind: "redirect", to: "/" });
