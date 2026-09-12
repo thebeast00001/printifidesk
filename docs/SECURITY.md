@@ -378,11 +378,12 @@ orders placed afterwards — verified.
 
 ## Still open
 
-- **The SQL harness cannot prove RLS.** It runs PGlite as superuser, and
-  superusers bypass row-level security. Every policy in this document has been
-  read; none has been executed against a non-superuser role. The honest way to
-  close this is a real Supabase project with two test accounts and a script
-  that tries to cross them.
+- **RLS, partly.** `npm run check:rls` now runs the policies against the
+  real project as real roles — anonymous, and a signed-in account minted a
+  token through Clerk's Backend API — and 21 probes hold. What remains is
+  the same run with a non-admin student and a desk account on a desk, which
+  needs two ordinary accounts signed in; until then the four admin-only
+  refusals and the cross-desk probes are exercised only in PGlite.
 - **Page counts are client-reported** (finding 1). Server-side counting needs
   the server to open the file, which needs Gotenberg or pdf.js on a server.
 - **No abuse reporting** for a student who fills their quota with junk; the
@@ -415,3 +416,4 @@ The security-relevant scenarios in `check:sql`, by name:
 - admin: shut out of a staffed desk's codes; no function or policy writes `admins`
 - a new order pushes to staff with a desk device, and only them
 - the platform fee: to the paisa on top of the minimum; floored; student refused the rate; pinned; ledger excludes a full refund; settlements admin-only
+- an overdue fee locks the desk closed until it's settled; within grace it opens

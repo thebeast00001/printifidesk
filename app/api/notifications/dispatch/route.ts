@@ -35,6 +35,8 @@ interface PushRow {
   endpoint: string;
   p256dh: string;
   auth: string;
+  /** The public key the browser subscribed with; null before 0025. */
+  vapid_key: string | null;
 }
 
 function vapidReady(): boolean {
@@ -93,7 +95,7 @@ export async function POST(request: Request) {
       const desk = row.audience === "desk";
       let query = supabase
         .from("push_subscriptions")
-        .select("id, endpoint, p256dh, auth")
+        .select("id, endpoint, p256dh, auth, vapid_key")
         .eq("user_id", row.user_id);
       if (desk) query = query.eq("desk", true);
       const { data: subs } = await query;
@@ -109,6 +111,15 @@ export async function POST(request: Request) {
       const problems: string[] = [];
 
       for (const device of devices) {
+        // A subscription made with a different public key can never be
+        // signed by this private key — the push service refuses it. Naming
+        // the cause beats a 403 that reads like a network blip; it means the
+        // two deployments don't share one VAPID pair.
+        const ourKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+        if (device.vapid_key && device.vapid_key !== ourKey) {
+          problems.push("subscribed with a different VAPID key — every deployment must share one pair");
+          continue;
+        }
         try {
           await webpush.sendNotification(
             { endpoint: device.endpoint, keys: { p256dh: device.p256dh, auth: device.auth } },
@@ -183,9 +194,14 @@ export async function POST(request: Request) {
 }
 
 /** Readiness check — tells you which half of the setup is missing. */
+/**
+ * `GET ?run=1` drains the queue the same way POST does — Vercel Cron can
+ * only GET. Without `run`, it reports what's configured.
+ */
 export async function GET(request: Request) {
   const denied = requireSecret(request);
   if (denied) return denied;
+  if (new URL(request.url).searchParams.get("run") === "1") return POST(request);
   return Response.json({
     webhookSecret: Boolean(process.env.NOTIFY_WEBHOOK_SECRET),
     serviceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),

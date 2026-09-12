@@ -12,6 +12,8 @@
     "check:sql": "tsx scripts/sql-check.mjs",
     "check:migrations": "bash scripts/verify-migrations.sh",
     "check:features": "tsx scripts/feature-check.ts",
+    "check:rls": "tsx scripts/rls-check.ts",
+    "sync:desk": "node scripts/sync-desk.mjs",
     "check": "npm run typecheck && npm run check:pricing && npm run check:features && npm run check:sql"
   },
   "dependencies": {

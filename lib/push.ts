@@ -104,6 +104,9 @@ export async function enablePush({ desk = false }: { desk?: boolean } = {}): Pro
       user_agent: navigator.userAgent.slice(0, 200),
       failed_at: null,
       desk,
+      // The key this subscription was made with. A push signed with any other
+      // private key is refused by the push service, so the dispatcher checks.
+      vapid_key: PUSH_PUBLIC_KEY,
     },
     { onConflict: "endpoint" },
   );

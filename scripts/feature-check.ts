@@ -288,7 +288,7 @@ check("desk /admin passes", routeFor("desk", "/admin", two), { kind: "pass" });
 check("desk /sign-in passes", routeFor("desk", "/sign-in", two), { kind: "pass" });
 check("desk /api passes", routeFor("desk", "/api/desk", two), { kind: "pass" });
 check("desk /orders → student site", routeFor("desk", "/orders", two), { kind: "redirect", to: "/orders", host: "student" });
-check("desk /orders, single → served", routeFor("desk", "/orders", one), { kind: "pass" });
+check("desk /orders, single → the queue", routeFor("desk", "/orders", one), { kind: "redirect", to: "/" });
 
 // student site
 check("student / passes", routeFor("student", "/", two), { kind: "pass" });

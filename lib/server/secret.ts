@@ -26,6 +26,11 @@ function digest(value: string): Buffer {
  * The one check both maintenance routes make, in one place, so they can't
  * drift: is the endpoint enabled, and did the caller prove they may use it?
  * Returns a Response to send when they may not, or null when they may.
+ *
+ * Two ways to prove it: the `x-notify-secret` header (a scheduler you
+ * configure), or `Authorization: Bearer …` (what Vercel Cron sends, from its
+ * `CRON_SECRET` variable). Either must equal `NOTIFY_WEBHOOK_SECRET`, or the
+ * Bearer may equal `CRON_SECRET` if that is set separately.
  */
 export function requireSecret(request: Request): Response | null {
   const secret = process.env.NOTIFY_WEBHOOK_SECRET;
@@ -35,7 +40,14 @@ export function requireSecret(request: Request): Response | null {
       { status: 503 },
     );
   }
-  if (!secretMatches(request.headers.get("x-notify-secret"), secret)) {
+  const header = request.headers.get("x-notify-secret");
+  const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
+  const cron = process.env.CRON_SECRET;
+  const ok =
+    secretMatches(header, secret) ||
+    secretMatches(bearer, secret) ||
+    (cron ? secretMatches(bearer, cron) : false);
+  if (!ok) {
     return Response.json({ ok: false, error: "Bad or missing secret" }, { status: 401 });
   }
   return null;

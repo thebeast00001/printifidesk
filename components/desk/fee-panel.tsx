@@ -6,12 +6,14 @@ import QRCode from "qrcode";
 import { Loader2, Receipt } from "lucide-react";
 import {
   feeBalance,
+  feeStatus,
   feeWindow,
   listSettlements,
   periodStart,
   platformSettings,
   type FeeBalance,
   type FeePeriod,
+  type FeeStatus,
   type FeeWindow,
   type PlatformSettings,
   type Settlement,
@@ -42,6 +44,7 @@ export function FeePanel({ operator }: { operator: Operator }) {
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
   const [window, setWindow] = useState<FeeWindow | null>(null);
   const [balance, setBalance] = useState<FeeBalance | null>(null);
+  const [status, setStatus] = useState<FeeStatus | null>(null);
   const [paid, setPaid] = useState<Settlement[]>([]);
   const [qr, setQr] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,16 +54,19 @@ export function FeePanel({ operator }: { operator: Operator }) {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [ps, w, b, s] = await Promise.all([
+      const [ps, w, b, s, st] = await Promise.all([
         platformSettings(),
         feeWindow(operator.id, from),
         feeBalance(operator.id),
         listSettlements(operator.id),
+        // A project between 0022 and 0025 still gets the rest of the panel.
+        feeStatus(operator.id).catch(() => null),
       ]);
       setSettings(ps);
       setWindow(w);
       setBalance(b);
       setPaid(s);
+      setStatus(st);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't read the fee ledger.");
     }
@@ -151,6 +157,31 @@ export function FeePanel({ operator }: { operator: Operator }) {
             collected orders that weren&apos;t fully refunded
           </p>
 
+          {status && status.due > 0 && (
+            // What's due from earlier months, and the day it starts to matter.
+            <p
+              className={cn(
+                "m-0 mt-2.5 rounded-xl px-3 py-2.5 text-[12.5px] leading-relaxed",
+                status.overdue ? "bg-clay text-clay-ink" : "bg-bone text-ink",
+              )}
+            >
+              {status.overdue ? (
+                <>
+                  <b className="font-semibold">Overdue:</b> {money(status.due, currency)} for{" "}
+                  {monthName(status.due_month)} and earlier. The desk can&apos;t be opened until this is
+                  settled — pay it below and Printify records it.
+                </>
+              ) : (
+                <>
+                  <b className="font-semibold">Due:</b> {money(status.due, currency)} for{" "}
+                  {monthName(status.due_month)} and earlier. Settle by{" "}
+                  {new Date(status.locks_on).toLocaleDateString([], { day: "numeric", month: "long" })} — after
+                  that the desk can&apos;t open until it&apos;s paid.
+                </>
+              )}
+            </p>
+          )}
+
           {settings && Number(settings.fee_percent) > 0 && (
             <div className="mt-3.5 rounded-[16px] border border-line bg-surface-sunk p-4">
               {!settings.payee_vpa ? (
@@ -209,6 +240,10 @@ export function FeePanel({ operator }: { operator: Operator }) {
       )}
     </section>
   );
+}
+
+function monthName(firstDay: string): string {
+  return new Date(firstDay).toLocaleDateString([], { month: "long", year: "numeric" });
 }
 
 function Stat({ label, value, sub, strong }: { label: string; value: string; sub?: string; strong?: boolean }) {

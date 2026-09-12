@@ -76,10 +76,14 @@ export async function POST(request: Request) {
   return Response.json({ ok: true, removed: expired.length });
 }
 
-/** How much is currently waiting to be purged. */
+/**
+ * How much is currently waiting to be purged — or, with `?run=1`, the purge
+ * itself, since Vercel Cron can only GET.
+ */
 export async function GET(request: Request) {
   const denied = requireSecret(request);
   if (denied) return denied;
+  if (new URL(request.url).searchParams.get("run") === "1") return POST(request);
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

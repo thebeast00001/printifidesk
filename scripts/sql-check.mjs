@@ -1222,6 +1222,68 @@ await scenario("the desk's ledger: owed on collected orders, minus what was sett
   return `owed ${winFee} in the window; refunded order excluded; settled 0.25; outstanding ${bal2[0].outstanding}; admin sees the same`;
 });
 
+/* ---------- 0025: the fee has a due date ---------- */
+
+await scenario("an overdue fee locks the desk closed until it's settled", async () => {
+  // One of the collected orders is from last month, so its fee is due now.
+  // As staff: the write guard pins collected_at for anyone else, superuser
+  // or not — triggers don't care who you are.
+  await actingAs("op_test");
+  const { rows: old } = await db.query(
+    `update public.orders set collected_at = date_trunc('month', now()) - interval '3 days'
+      where operator_id = $1 and status = 'collected'
+        and (refund_amount is null or refund_amount < total)
+        and platform_fee > 0
+      returning platform_fee;`,
+    [OPERATOR],
+  );
+  if (old.length === 0) throw new Error("no collected order with a fee to backdate");
+  const backdated = old.reduce((n, r) => n + Number(r.platform_fee), 0);
+  await actingAs(null);
+  await db.query(`update public.operators set is_open = false where id = $1;`, [OPERATOR]);
+
+  // With no grace at all, it's overdue the moment the month turns.
+  await actingAs("admin_test");
+  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printify', 0);`);
+  await actingAs("op_test");
+  const { rows: st } = await db.query(`select * from public.fee_status($1);`, [OPERATOR]);
+  if (!st[0]?.overdue || Number(st[0].due) <= 0) {
+    throw new Error(`fee_status: ${JSON.stringify(st[0])} (backdated ${backdated.toFixed(2)} across ${old.length} orders)`);
+  }
+  let refused = "";
+  try {
+    await db.query(`update public.operators set is_open = true where id = $1;`, [OPERATOR]);
+  } catch (error) {
+    refused = String(error?.message ?? error);
+  }
+  if (!/overdue/.test(refused)) throw new Error(`opening wasn't refused: ${refused || "no error"}`);
+  // Closing is always allowed, whatever is owed.
+  await db.query(`update public.operators set is_open = false where id = $1;`, [OPERATOR]);
+
+  // Inside the grace period it's due but not overdue, and the desk opens.
+  await actingAs("admin_test");
+  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printify', 90);`);
+  await actingAs("op_test");
+  const { rows: st2 } = await db.query(`select * from public.fee_status($1);`, [OPERATOR]);
+  if (st2[0].overdue || Number(st2[0].due) !== Number(st[0].due)) throw new Error(`within grace: ${JSON.stringify(st2[0])}`);
+  await db.query(`update public.operators set is_open = true where id = $1;`, [OPERATOR]);
+  await db.query(`update public.operators set is_open = false where id = $1;`, [OPERATOR]);
+
+  // Settling what's due unlocks it even with no grace.
+  await actingAs("admin_test");
+  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printify', 0);`);
+  await db.query(`select public.record_settlement($1, $2, 'August, in full');`, [OPERATOR, Number(st[0].due)]);
+  await actingAs("op_test");
+  const { rows: st3 } = await db.query(`select * from public.fee_status($1);`, [OPERATOR]);
+  if (st3[0].overdue || Number(st3[0].due) !== 0) throw new Error(`after settling: ${JSON.stringify(st3[0])}`);
+  await db.query(`update public.operators set is_open = true where id = $1;`, [OPERATOR]);
+  const { rows: open } = await db.query(`select is_open from public.operators where id = $1;`, [OPERATOR]);
+  if (!open[0].is_open) throw new Error("the desk didn't open after settling");
+  await actingAs("admin_test");
+  await db.query(`select public.set_platform_fee(3, 0, null, null, 15);`);
+  return `due ${st[0].due} for ${String(st[0].due_month).slice(0, 7)}; refused at 0 days grace, allowed at 90, open again once settled`;
+});
+
 /* ---------- 0021: the desk hears about new orders ---------- */
 
 await scenario("a new order pushes to staff with a desk device, and only them", async () => {

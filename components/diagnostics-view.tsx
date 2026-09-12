@@ -15,6 +15,7 @@ import {
 import { useProfileSync } from "@/lib/profile-sync";
 import { staffOperatorId } from "@/lib/orders";
 import { adminsExist, isAdmin } from "@/lib/operator";
+import { useSurface } from "./surface-provider";
 import { cn } from "@/lib/utils";
 
 /**
@@ -58,6 +59,8 @@ export function DiagnosticsView() {
 
   return (
     <div className="flex max-w-[720px] flex-col gap-7">
+      <DeploymentGroup />
+
       <SettingsGroup title="Services">
         <SettingsRow
           label="Supabase"
@@ -258,3 +261,42 @@ values ('${clerkId ?? "user_..."}');`}
     </SettingsGroup>
   );
 }
+
+/**
+ * What this deployment thinks it is. Two of the ways the two-site setup
+ * fails are silent — a desk project without the student host, or two
+ * projects with different VAPID pairs — and both are visible here: compare
+ * this block on the two sites.
+ */
+function DeploymentGroup() {
+  const { surface, split } = useSurface();
+  const desk = process.env.NEXT_PUBLIC_DESK_HOST || "";
+  const site = process.env.NEXT_PUBLIC_SITE_HOST || "";
+  const pin = process.env.NEXT_PUBLIC_SURFACE || "";
+  const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
+  const pinnedDeskWithoutSite = pin === "desk" && !site;
+
+  return (
+    <SettingsGroup
+      title="This deployment"
+      note="Compare with the other site's page: the hosts should match, and the VAPID key must be identical or pushes from one will be refused for the other."
+    >
+      <SettingsRow
+        label="Site"
+        description={`${surface === "desk" ? "The desk" : "The student site"}${pin ? " — pinned by NEXT_PUBLIC_SURFACE" : split ? " — by host" : " — single host, nothing pinned"}`}
+        control={<Pill ok={!pinnedDeskWithoutSite} okLabel={surface} badLabel="pinned desk, no student host" />}
+      />
+      <SettingsRow
+        label="Hosts"
+        description={split ? `desk ${desk} · student ${site || "(derived)"}` : "NEXT_PUBLIC_DESK_HOST not set — both sites share this host"}
+        control={<Pill ok={split || surface === "student"} okLabel={split ? "split" : "single"} badLabel="unset" />}
+      />
+      <SettingsRow
+        label="VAPID key"
+        description={vapid ? `…${vapid.slice(-12)}` : "NEXT_PUBLIC_VAPID_PUBLIC_KEY is not set — no push"}
+        control={<Pill ok={Boolean(vapid)} okLabel="set" badLabel="missing" />}
+      />
+    </SettingsGroup>
+  );
+}
+

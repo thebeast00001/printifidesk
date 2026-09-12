@@ -13,10 +13,19 @@ export interface PlatformSettings {
   fee_min: number;
   payee_vpa: string | null;
   payee_name: string | null;
+  /** Days past month-end before an unsettled fee locks the desk closed. */
+  grace_days: number;
   updated_at: string;
 }
 
-const EMPTY: PlatformSettings = { fee_percent: 0, fee_min: 0, payee_vpa: null, payee_name: null, updated_at: "" };
+const EMPTY: PlatformSettings = {
+  fee_percent: 0,
+  fee_min: 0,
+  payee_vpa: null,
+  payee_name: null,
+  grace_days: 15,
+  updated_at: "",
+};
 
 let cache: { at: number; value: PlatformSettings } | null = null;
 let pending: Promise<PlatformSettings> | null = null;
@@ -42,7 +51,7 @@ async function fetchSettings(): Promise<PlatformSettings> {
   if (!supabase) return EMPTY;
   const { data, error } = await supabase
     .from("platform_settings")
-    .select("fee_percent, fee_min, payee_vpa, payee_name, updated_at")
+    .select("fee_percent, fee_min, payee_vpa, payee_name, grace_days, updated_at")
     .eq("id", true)
     .maybeSingle();
   // A project that hasn't run 0022 prices as it did before: no fee.
@@ -53,6 +62,7 @@ async function fetchSettings(): Promise<PlatformSettings> {
         fee_min: Number(data.fee_min),
         payee_vpa: data.payee_vpa ?? null,
         payee_name: data.payee_name ?? null,
+        grace_days: Number(data.grace_days ?? 15),
         updated_at: data.updated_at,
       };
   cache = { at: Date.now(), value };
@@ -65,6 +75,7 @@ export async function setPlatformFee(input: {
   min: number;
   vpa: string;
   name: string;
+  graceDays: number;
 }): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) throw new Error("No database connection.");
@@ -73,6 +84,7 @@ export async function setPlatformFee(input: {
     p_min: input.min,
     p_vpa: input.vpa.trim() || null,
     p_name: input.name.trim() || null,
+    p_grace_days: input.graceDays,
   });
   if (error) throw new Error(explain(error.message));
   cache = null;
@@ -89,6 +101,36 @@ export interface FeeBalance {
   accrued: number;
   settled: number;
   outstanding: number;
+}
+
+/** What's due, and whether the desk is locked for it. */
+export interface FeeStatus {
+  outstanding: number;
+  /** Fee on orders collected before this month, minus everything settled. */
+  due: number;
+  /** The month that fee belongs to (its first day). */
+  due_month: string;
+  grace_days: number;
+  /** The day an unsettled `due` starts locking the desk. */
+  locks_on: string;
+  overdue: boolean;
+}
+
+export async function feeStatus(operatorId: string): Promise<FeeStatus | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("fee_status", { p_operator: operatorId });
+  if (error) throw new Error(explain(error.message));
+  const row = data?.[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return {
+    outstanding: Number(row.outstanding),
+    due: Number(row.due),
+    due_month: String(row.due_month),
+    grace_days: Number(row.grace_days),
+    locks_on: String(row.locks_on),
+    overdue: Boolean(row.overdue),
+  };
 }
 
 export interface Settlement {
@@ -207,6 +249,9 @@ export function periodStart(period: FeePeriod, now: Date = new Date()): Date {
 function explain(message: string): string {
   const m = message.toLowerCase();
   if (m.includes("does not exist") || m.includes("schema cache")) {
+    if (m.includes("fee_status") || m.includes("grace")) {
+      return "This needs migration 0025 — run supabase/migrations/0025_fee_lock.sql.";
+    }
     return "This needs migration 0022 — run supabase/migrations/0022_platform_fee.sql.";
   }
   return message;

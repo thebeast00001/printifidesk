@@ -62,6 +62,19 @@ Both doors are Clerk custom flows, so Clerk still does the hashing, the
 breach check, the emailed codes and the session. Signing out of the desk
 lands on the desk's door.
 
+### Keeping the two repos identical
+
+If the desk is deployed from a second repository, that repository must only
+ever be pulled into. From the desk checkout:
+
+```bash
+npm run sync:desk
+```
+
+It refuses to run with uncommitted changes or with commits the student
+repo lacks, then fast-forwards from `upstream` and pushes to `origin`.
+(Two Vercel projects from one repo need none of this.)
+
 ### Two Clerk applications
 
 The code never names an instance — it reads `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
@@ -142,7 +155,8 @@ factual-teal-4113.clerk.accounts.dev
 [`0021_desk_push.sql`](supabase/migrations/0021_desk_push.sql),
 [`0022_platform_fee.sql`](supabase/migrations/0022_platform_fee.sql),
 [`0023_owner_code.sql`](supabase/migrations/0023_owner_code.sql),
-then [`0024_applications.sql`](supabase/migrations/0024_applications.sql).
+then [`0024_applications.sql`](supabase/migrations/0024_applications.sql),
+then [`0025_fee_lock.sql`](supabase/migrations/0025_fee_lock.sql).
 
 These are **SQL** — they go in the Supabase dashboard's SQL editor
 (`Project → SQL Editor → New query`), not a terminal.
@@ -595,6 +609,20 @@ balance, and *Record payment*). Calendar windows, in the viewer's own time.
 `supabase/reset.sql` deliberately keeps `platform_settings` — the rate and
 the VPA are configuration, not data — and the harness knows it does.
 
+### The fee has a due date
+
+`0025`: fees on a month's orders are due when the month ends. The admin
+sets a grace period (fifteen days by default); once it's past, a desk with
+anything unsettled from earlier months **can't flip to Open** until it
+settles — a trigger on `operators` refuses the switch with the amount and
+the month in the sentence, and the Takings panel says *Due … settle by …*
+before that and *Overdue* after. Closing is always allowed, and a desk that
+is already open stays open; the lock catches the next morning.
+
+Also in `0025`: every push subscription records the VAPID public key it
+was made with, and the dispatcher names a mismatch ("subscribed with a
+different VAPID key") instead of retrying a push the service will refuse.
+
 ### The desk hears about new orders
 
 `0021`: a device that turns on *New-order alerts* in the desk's settings gets
@@ -766,6 +794,37 @@ Kept honest deliberately — anything listed here has no UI pretending otherwise
 - **Shared notes library and campus templates.** Both were removed rather than
   shipped with invented content.
 
+## Marked for you
+
+Things the code can't do on its own, in the order they bite:
+
+1. **Supabase Pro (or keep it busy).** A free project pauses after about a
+   week idle, and a paused project is the whole app gone. Nothing in the
+   code protects against this.
+2. **Run 0022 → 0025** in the SQL editor, pasted from the files. Until
+   0025, the fee panel shows no due date; until 0024, the join page shows a
+   migration message in the application panel.
+3. **`npm run check:rls` with two ordinary accounts** — a student who is
+   *not* the admin and a desk account that *is* on a desk, both signed in
+   recently. The run so far (anonymous + the admin account) passed 21 probes;
+   the four admin-only refusals need a non-admin account to mean anything.
+4. **One VAPID pair, one cron.** Both Vercel projects get the same
+   `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`; only one of them
+   keeps `vercel.json`'s crons (delete the file's `crons` on the other, or
+   the queue is drained twice — harmless, but noisy). Vercel's Hobby plan
+   runs crons once a day, which is useless for pushes; use Pro, or point
+   cron-job.org at the two URLs with the `x-notify-secret` header every
+   minute. `/diagnostics` shows the key's last twelve characters on each
+   site so you can compare.
+5. **Both Clerk domains in Supabase → Third-Party Auth**, and both apps on
+   production instances before launch (dev instances are capped).
+6. **All three host variables on both projects** — `/diagnostics` flags a
+   pinned desk with no student host.
+7. **Page counts are client-reported.** A claimed page count prices the
+   order; the operator opens the file before printing, which is where a
+   wrong one is caught. Server-side counting needs a server that opens
+   PDFs — not built.
+
 ## Verification status
 
 Being specific about this matters more than a green badge:
@@ -776,7 +835,7 @@ Being specific about this matters more than a green badge:
   column list, the two-site routing table, the fee's calendar windows, and
   the SQL below. **Passes.**
 - `npm run build` — **passes.**
-- `npm run check:sql` — all twenty-four migrations applied, re-applied, and their
+- `npm run check:sql` — all twenty-five migrations applied, re-applied, and their
   triggers driven through a real order under a real JWT: tokens, the timeline,
   the write guard, per-file settings, the report constraint, the upload
   ceiling, the order rate limit, document ownership, push endpoint sanity, and
@@ -792,7 +851,15 @@ Being specific about this matters more than a green badge:
   ledger with a settlement and a fully refunded order excluded, and
   applications — one pending per person, admin-only approval that makes the
   desk and a code bound to the applicant, another account refused, rejection
-  needs a reason, withdrawal). **Passes.** It does not check the RLS policies
+  needs a reason, withdrawal, and the fee lock — overdue refuses Open,
+  within grace allows it, settling unlocks). **Passes.**
+- `npm run check:rls` — the policies against the **real project**, as real
+  roles: anonymous reads nothing from seven tables and can read the fee
+  rate; a signed-in account sees only its own orders, documents, staff row
+  and profile, nothing from the desk-only tables, can't insert a settlement
+  or a staff row, can't rewrite its total. **21 probes pass** on the live
+  project; the four admin-only refusals are skipped until a non-admin
+  account runs it. It does not check the RLS policies
   themselves; see above for why.
 - **Two sites** — the routing table is unit-tested row by row (38 checks),
   and a split-mode production server was probed on both hosts: every student

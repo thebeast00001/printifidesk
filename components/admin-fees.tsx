@@ -229,6 +229,7 @@ function SettingsForm({ settings, onSaved }: { settings: PlatformSettings; onSav
   const [min, setMin] = useState(String(settings.fee_min));
   const [vpa, setVpa] = useState(settings.payee_vpa ?? "");
   const [name, setName] = useState(settings.payee_name ?? "");
+  const [grace, setGrace] = useState(String(settings.grace_days));
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -238,13 +239,15 @@ function SettingsForm({ settings, onSaved }: { settings: PlatformSettings; onSav
     setMin(String(settings.fee_min));
     setVpa(settings.payee_vpa ?? "");
     setName(settings.payee_name ?? "");
+    setGrace(String(settings.grace_days));
   }, [settings]);
 
   const dirty =
     Number(percent) !== settings.fee_percent ||
     Number(min) !== settings.fee_min ||
     vpa.trim() !== (settings.payee_vpa ?? "") ||
-    name.trim() !== (settings.payee_name ?? "");
+    name.trim() !== (settings.payee_name ?? "") ||
+    Number(grace) !== settings.grace_days;
   const vpaOk = vpa.trim() === "" || isValidVpa(vpa);
 
   async function save() {
@@ -252,7 +255,7 @@ function SettingsForm({ settings, onSaved }: { settings: PlatformSettings; onSav
     setError(null);
     setSaved(false);
     try {
-      await setPlatformFee({ percent: Number(percent), min: Number(min), vpa, name });
+      await setPlatformFee({ percent: Number(percent), min: Number(min), vpa, name, graceDays: Number(grace) });
       await onSaved();
       setSaved(true);
       setTimeout(() => setSaved(false), 1800);
@@ -275,9 +278,10 @@ function SettingsForm({ settings, onSaved }: { settings: PlatformSettings; onSav
       <p className="m-0 mt-1 mb-3 max-w-[60ch] text-[12.5px] leading-relaxed text-muted">
         A percentage of each order after the desk&apos;s minimum, shown on the student&apos;s bill. Changing it
         touches orders placed from now on — every order keeps the rate it was priced at. Desks settle to the
-        VPA below; it appears on their Takings page with a QR.
+        VPA below; it appears on their Takings page with a QR. Fees on a month&apos;s orders are due when the
+        month ends; a desk that hasn&apos;t settled by the grace day can&apos;t open until it does.
       </p>
-      <div className="grid gap-2 sm:grid-cols-[auto_auto_1fr_1fr_auto]">
+      <div className="grid gap-2 sm:grid-cols-[auto_auto_auto_1fr_1fr_auto]">
         <label className="flex h-11 items-center gap-2 rounded-xl border border-line bg-surface px-3 text-[13px]">
           <input
             value={percent}
@@ -297,6 +301,17 @@ function SettingsForm({ settings, onSaved }: { settings: PlatformSettings; onSav
             aria-label="Minimum fee"
             className="w-12 bg-transparent font-mono text-[14px] outline-none"
           />
+        </label>
+        <label className="flex h-11 items-center gap-2 rounded-xl border border-line bg-surface px-3 text-[13px]">
+          <span className="text-muted">grace</span>
+          <input
+            value={grace}
+            onChange={(e) => setGrace(e.target.value.replace(/\D/g, "").slice(0, 2))}
+            inputMode="numeric"
+            aria-label="Grace days"
+            className="w-8 bg-transparent font-mono text-[14px] outline-none"
+          />
+          <span className="text-muted">days</span>
         </label>
         <input
           value={vpa}
@@ -319,7 +334,7 @@ function SettingsForm({ settings, onSaved }: { settings: PlatformSettings; onSav
         />
         <button
           type="submit"
-          disabled={busy || !dirty || !vpaOk || percent === "" || min === ""}
+          disabled={busy || !dirty || !vpaOk || percent === "" || min === "" || grace === ""}
           className={cn(
             "flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-[13px] font-semibold disabled:opacity-40",
             dirty ? "bg-ink text-paper" : "border border-line text-faint",

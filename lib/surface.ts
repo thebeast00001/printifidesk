@@ -112,9 +112,10 @@ export function routeFor(surface: Surface, path: string, hosts: Hosts): Routing 
     if (path === "/") return { kind: "rewrite", to: "/operator" };
     // `/settings` on the desk is the desk's settings, not the student's; the
     // other student pages belong to the student site — or, with no student
-    // host to send them to, are simply served.
+    // host to send them to, go to the queue rather than render a student
+    // page under the desk's chrome.
     if (STUDENT_PREFIXES.some((p) => under(path, p)) && !under(path, "/settings")) {
-      return isSingleHost(hosts) ? { kind: "pass" } : { kind: "redirect", to: path, host: "student" };
+      return isSingleHost(hosts) ? { kind: "redirect", to: "/" } : { kind: "redirect", to: path, host: "student" };
     }
     return { kind: "rewrite", to: "/operator" + path };
   }
