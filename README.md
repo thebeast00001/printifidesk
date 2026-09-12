@@ -110,7 +110,8 @@ factual-teal-4113.clerk.accounts.dev
 [`0019_join_codes.sql`](supabase/migrations/0019_join_codes.sql),
 [`0020_admin_by_hand.sql`](supabase/migrations/0020_admin_by_hand.sql),
 [`0021_desk_push.sql`](supabase/migrations/0021_desk_push.sql),
-then [`0022_platform_fee.sql`](supabase/migrations/0022_platform_fee.sql).
+[`0022_platform_fee.sql`](supabase/migrations/0022_platform_fee.sql),
+then [`0023_owner_code.sql`](supabase/migrations/0023_owner_code.sql).
 
 These are **SQL** — they go in the Supabase dashboard's SQL editor
 (`Project → SQL Editor → New query`), not a terminal.
@@ -295,7 +296,9 @@ nothing goes live until the owner has joined and opened it.
 **Join codes** (`staff_invites`, `0019`): made by staff of the desk or an
 admin; eight characters from an alphabet without 0/O or 1/I, typed in any
 case with or without the dash; one use; 24 hours; revocable; ten open per
-desk at most. Claiming is a tap, never a page load — a code can be burned by
+desk at most. A lost **owner code** is re-read, not recovered: it stays on
+the desk's row in `/admin` until the owner joins, and making a new one
+cancels the old (`0023`) — an empty desk has exactly one live code. Claiming is a tap, never a page load — a code can be burned by
 the wrong person. Twenty wrong guesses in an hour and that account waits an
 hour; the guess limiter is a row per attempt that survives the refusal, which
 is why `claim_invite` returns a verdict instead of raising. After joining, the
@@ -732,7 +735,7 @@ Being specific about this matters more than a green badge:
   column list, the two-site routing table, the fee's calendar windows, and
   the SQL below. **Passes.**
 - `npm run build` — **passes.**
-- `npm run check:sql` — all twenty-two migrations applied, re-applied, and their
+- `npm run check:sql` — all twenty-three migrations applied, re-applied, and their
   triggers driven through a real order under a real JWT: tokens, the timeline,
   the write guard, per-file settings, the report constraint, the upload
   ceiling, the order rate limit, document ownership, push endpoint sanity, and

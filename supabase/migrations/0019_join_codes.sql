@@ -245,7 +245,10 @@ end;
 $$;
 
 /** Every desk with how many people run it and how many codes are open. */
-create or replace function public.admin_desks()
+-- Dropped first: 0023 adds columns to this RETURNS TABLE, and CREATE OR
+-- REPLACE cannot change a return type — a replay would fail here otherwise.
+drop function if exists public.admin_desks();
+create function public.admin_desks()
 returns table (
   id uuid, name text, campus text, is_open boolean, created_at timestamptz,
   staff_count bigint, open_invites bigint

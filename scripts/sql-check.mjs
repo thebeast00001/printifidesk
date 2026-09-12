@@ -861,7 +861,17 @@ await scenario("an admin creates a desk and gets an owner code", async () => {
   if (!mine || Number(mine.staff_count) !== 0 || Number(mine.open_invites) !== 1) {
     throw new Error(`admin_desks reports ${JSON.stringify(mine)}`);
   }
-  return `${joinCode.slice(0, 4)}-${joinCode.slice(4)}, 24 h, desk listed with 0 staff and 1 open code`;
+  // The admin can read the live code again; a second one replaces it.
+  if (mine.owner_code !== joinCode) throw new Error(`admin_desks shows owner_code ${mine.owner_code}`);
+  const { rows: again } = await db.query(`select * from public.create_invite($1, 'Owner');`, [newDesk]);
+  const { rows: old } = await db.query(`select revoked_at from public.staff_invites where code = $1;`, [joinCode]);
+  if (!old[0].revoked_at) throw new Error("a second owner code left the first alive");
+  const { rows: list2 } = await db.query(`select owner_code, open_invites from public.admin_desks() where id = $1;`, [newDesk]);
+  if (list2[0].owner_code !== again[0].code || Number(list2[0].open_invites) !== 1) {
+    throw new Error(`after a new code: ${JSON.stringify(list2[0])}`);
+  }
+  joinCode = again[0].code;
+  return `${joinCode.slice(0, 4)}-${joinCode.slice(4)}, 24 h, readable on the desk's row; a new one cancelled the first`;
 });
 
 await scenario("a join code adds whoever claims it, exactly once", async () => {
@@ -883,6 +893,11 @@ await scenario("a join code adds whoever claims it, exactly once", async () => {
   await actingAs("someone_else");
   const { rows: again } = await db.query(`select * from public.claim_invite($1);`, [joinCode]);
   if (again[0].ok || !/already been used/.test(again[0].message)) throw new Error("a used code worked twice");
+
+  // With someone on the desk, the admin's view no longer carries a code.
+  await actingAs("admin_test");
+  const { rows: staffed } = await db.query(`select owner_code from public.admin_desks() where id = $1;`, [newDesk]);
+  if (staffed[0].owner_code !== null) throw new Error("owner_code still shown for a staffed desk");
 
   // The owner, now staff, makes the next code — and from here the admin is
   // shut out of this desk's staff entirely.

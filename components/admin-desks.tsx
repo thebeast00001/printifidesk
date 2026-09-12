@@ -33,8 +33,6 @@ export function AdminDesks() {
   const [campus, setCampus] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // The code just made, shown under the desk it belongs to.
-  const [fresh, setFresh] = useState<{ deskId: string; code: string; expires_at: string } | null>(null);
 
   const load = useCallback(async () => {
     const session = await ensureSession();
@@ -66,8 +64,7 @@ export function AdminDesks() {
     setError(null);
     try {
       const id = await createDesk(name, campus);
-      const made = await createInvite(id, "Owner");
-      setFresh({ deskId: id, ...made });
+      await createInvite(id, "Owner");
       setName("");
       setCampus("");
       setCreating(false);
@@ -80,13 +77,13 @@ export function AdminDesks() {
   }
 
   // Only for a desk nobody is on yet. Once the owner has joined, staff is the
-  // desk's business; the database refuses an admin's code from then on.
+  // desk's business; the database refuses an admin's code from then on. A
+  // new code cancels the desk's earlier one — there's only ever one live.
   async function ownerCode(desk: Desk) {
     setBusy(desk.id);
     setError(null);
     try {
-      const made = await createInvite(desk.id, "Owner");
-      setFresh({ deskId: desk.id, ...made });
+      await createInvite(desk.id, "Owner");
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't make a code.");
@@ -249,17 +246,19 @@ export function AdminDesks() {
                   className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface-sunk px-3.5 text-[12.5px] font-semibold text-ink-soft disabled:opacity-50"
                 >
                   {busy === desk.id ? <Loader2 size={13} className="animate-spin" /> : <Ticket size={14} strokeWidth={2.2} />}
-                  Owner code
+                  {desk.owner_code ? "New owner code" : "Owner code"}
                 </button>
               ) : (
                 <p className="m-0 shrink-0 text-[11.5px] text-muted">Staff is theirs to manage.</p>
               )}
             </div>
 
-            {fresh?.deskId === desk.id && desk.staff_count === 0 && (
+            {/* The live owner code stays readable here until the owner joins —
+                a lost message is re-read, not re-minted. */}
+            {desk.staff_count === 0 && desk.owner_code && desk.owner_code_expires_at && (
               <InviteCard
-                code={fresh.code}
-                expiresAt={fresh.expires_at}
+                code={desk.owner_code}
+                expiresAt={desk.owner_code_expires_at}
                 label="Owner code"
                 who="The owner"
                 className="mt-3.5"

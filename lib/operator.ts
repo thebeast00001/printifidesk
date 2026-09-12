@@ -32,6 +32,9 @@ export interface Desk {
   created_at: string;
   staff_count: number;
   open_invites: number;
+  /** The live owner code while nobody is on the desk yet; null after. */
+  owner_code: string | null;
+  owner_code_expires_at: string | null;
 }
 
 /** Every desk, with how many people run it. Admins only, enforced in SQL. */
@@ -44,6 +47,8 @@ export async function adminDesks(): Promise<Desk[]> {
     ...d,
     staff_count: Number(d.staff_count),
     open_invites: Number(d.open_invites),
+    owner_code: d.owner_code ?? null,
+    owner_code_expires_at: d.owner_code_expires_at ?? null,
   }));
 }
 
