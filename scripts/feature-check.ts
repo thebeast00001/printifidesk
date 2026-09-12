@@ -273,6 +273,9 @@ check("student host is the student", surfaceFor("printify.app", two), "student")
 check("desk.localhost is the desk, even single", surfaceFor("desk.localhost:3000", one), "desk");
 check("localhost is the student", surfaceFor("localhost:3000", one), "student");
 check("host case-insensitive", surfaceFor("DESK.Printify.app", two), "desk");
+check("a pinned deployment is the desk anywhere", surfaceFor("printify-desk-abc.vercel.app", one, "desk"), "desk");
+check("a pinned deployment is the student anywhere", surfaceFor("desk.printify.app", two, "student"), "student");
+check("an unknown pin is ignored", surfaceFor("localhost:3000", one, "banana"), "student");
 
 // desk site
 check("desk / → queue", routeFor("desk", "/", two), { kind: "rewrite", to: "/operator" });

@@ -15,7 +15,7 @@ export const HOSTS: Hosts = hostsFrom({
  */
 export async function requestSurface(): Promise<Surface> {
   const h = await headers();
-  return surfaceFor(h.get("x-forwarded-host") ?? h.get("host"), HOSTS);
+  return surfaceFor(h.get("x-forwarded-host") ?? h.get("host"), HOSTS, process.env.NEXT_PUBLIC_SURFACE);
 }
 
 /** `https://desk.printify.app` — scheme and host of this request, no path. */

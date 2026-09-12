@@ -42,10 +42,12 @@ realtime update lands before the last tween finished.
 ## Two sites
 
 Students use **`printify.app`**; the desk uses **`desk.printify.app`**. One
-codebase, one database, one Clerk instance, one deployment — the host picks
-the site. [`lib/surface.ts`](lib/surface.ts) is the whole rule: a pure
-routing table the middleware, the server layout and the browser all read, and
-`check:features` exercises every row of it.
+codebase, one database, **two Clerk applications, two deployments** — a
+student account and a desk account are different accounts, in different
+user lists, with different sign-up rules, and signing in on one site says
+nothing to the other. [`lib/surface.ts`](lib/surface.ts) is the whole
+routing rule: a pure table the middleware, the server layout and the
+browser all read, and `check:features` exercises every row of it.
 
 | | Student site | Desk site |
 |---|---|---|
@@ -57,19 +59,47 @@ routing table the middleware, the server layout and the browser all read, and
 | Stray page | `/operator…`, `/join`, `/admin` → desk host | `/orders`, `/profile` → student host |
 
 Both doors are Clerk custom flows, so Clerk still does the hashing, the
-breach check, the emailed codes and the session; the instance just has both
-Google and password enabled, and each site shows only its own. Signing out
-of the desk lands on the desk's door.
+breach check, the emailed codes and the session. Signing out of the desk
+lands on the desk's door.
 
-With `NEXT_PUBLIC_DESK_HOST` unset both sites share one host and the desk
-lives under `/operator` — that is how a bare `localhost:3000` runs, and
-`desk.localhost:3000` shows the desk site there without any config. Nothing
-about the pages differs between the modes, only where they are addressed
-from: `/operator/takings` on one host is `/takings` on the desk's.
+### Two Clerk applications
 
-On Vercel: add both domains to the one project, set the two variables, and
-put the Clerk production instance on the apex — its session cookie sits on
-`.printify.app`, so the subdomain shares it with no satellite setup.
+The code never names an instance — it reads `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+and `CLERK_SECRET_KEY` — so the desk site is the same repo deployed again
+with a second Clerk application's keys. Nothing is copied, so nothing
+drifts. `staff`, `admins`, RLS and the PIN route only ever see a `sub`, and
+a desk user's `sub` comes from the desk application.
+
+1. **Clerk:** create a second application, *Printify Desk*. Turn on email +
+   password (and email verification codes); leave Google off. Sessions →
+   lifetime ~30 days. Configure → Integrations → **Supabase**, same as the
+   student one, so its tokens carry `"role": "authenticated"`.
+2. **Supabase → Authentication → Third-Party Auth:** add the desk
+   application's Clerk domain as a second Clerk entry. The hosted dashboard
+   accepts more than one; the local CLI's `config.toml` doesn't yet
+   ([supabase/cli#4679](https://github.com/supabase/cli/issues/4679)), which
+   only matters for `supabase start`.
+3. **Vercel:** two projects from this one repo.
+   - *printify* — the student site: the existing Clerk keys,
+     `NEXT_PUBLIC_DESK_HOST=desk.printify.app`,
+     `NEXT_PUBLIC_SITE_HOST=printify.app`.
+   - *printify-desk* — the desk site: the desk application's keys, the same
+     two host variables, and **`NEXT_PUBLIC_SURFACE=desk`** so its preview
+     URLs are the desk too. Same Supabase, VAPID and notify-secret values.
+   Clerk namespaces its cookies per application, so the two can share a
+   root domain ([changelog](https://clerk.com/changelog/2024-09-09-multiple-apps-same-domain)).
+4. **Locally**, a second checkout of the same repo (e.g. `../printifydesk`)
+   with its own `.env.local` — the desk keys and `NEXT_PUBLIC_SURFACE=desk`
+   — runs as `npm run dev -- -p 3100` next to the student one on 3000.
+   Next.js allows one dev server per directory, which is the only reason
+   for the second folder; `git pull` in both keeps them identical.
+
+With `NEXT_PUBLIC_DESK_HOST` unset and nothing pinned, both sites share one
+host and one Clerk application, with the desk under `/operator` — that is
+how a bare `localhost:3000` runs, and `desk.localhost:3000` shows the desk
+site there without any config. Nothing about the pages differs between the
+modes, only where they are addressed from: `/operator/takings` on one host
+is `/takings` on the desk's.
 
 ## Setup
 

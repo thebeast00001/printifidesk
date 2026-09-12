@@ -47,7 +47,7 @@ export default clerkMiddleware(
     if (request.nextUrl.pathname.startsWith("/api/")) return;
 
     const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-    const surface = surfaceFor(host, HOSTS);
+    const surface = surfaceFor(host, HOSTS, process.env.NEXT_PUBLIC_SURFACE);
     const route = routeFor(surface, request.nextUrl.pathname, HOSTS);
 
     if (route.kind === "redirect") {

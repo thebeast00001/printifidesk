@@ -1,11 +1,13 @@
 /**
  * Two sites, one codebase.
  *
- * Students use `printify.app`; the desk uses `desk.printify.app`. Same
- * database, same Clerk instance, same deployment — the host decides which
- * site a request gets, and the middleware refuses the other one's pages. The
- * cookie Clerk sets lives on the parent domain, so a person signed in on one
- * is signed in on both; what they can *do* is still decided by RLS.
+ * Students use `printify.app`; the desk uses `desk.printify.app`. One
+ * database; the host (or a pinned deployment) decides which site a request
+ * gets, and the middleware refuses the other one's pages. Deployed twice
+ * with two Clerk applications — the intended production shape — a student
+ * account and a desk account are different accounts, and signing in on one
+ * site says nothing to the other. What anyone can *do* is still decided by
+ * RLS, which only ever sees a `sub`.
  *
  * With no desk host configured (a bare `localhost:3000`, or a preview URL)
  * both sites share one host and the desk lives under `/operator` — the
@@ -49,10 +51,18 @@ export function isSingleHost(hosts: Hosts): boolean {
 /**
  * Which site a request host belongs to.
  *
- * `desk.localhost:3000` counts as the desk in single-host mode too, so a
- * developer can see both sites without touching the environment.
+ * A deployment can pin itself with `pinned` ("desk" or "student"): the desk
+ * deployed on its own with its own Clerk application is the desk on every
+ * host it answers on, preview URLs included. Otherwise the host decides,
+ * and `desk.localhost:3000` counts as the desk in single-host mode too, so
+ * a developer can see both sites without touching the environment.
  */
-export function surfaceFor(host: string | null | undefined, hosts: Hosts): Surface {
+export function surfaceFor(
+  host: string | null | undefined,
+  hosts: Hosts,
+  pinned?: string | null,
+): Surface {
+  if (pinned === "desk" || pinned === "student") return pinned;
   const h = clean(host ?? "");
   if (!h) return "student";
   if (hosts.desk && h === hosts.desk) return "desk";
