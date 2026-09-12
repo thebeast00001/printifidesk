@@ -131,3 +131,18 @@ export async function disablePush(): Promise<PushState> {
 
   return "off";
 }
+
+/**
+ * Asks the server to send whatever was just queued. Fire-and-forget: a
+ * failure here changes nothing the user can see — the scheduled drain will
+ * get to it — so nothing is awaited and nothing is shown.
+ */
+export function pokeDispatch(): void {
+  if (typeof window === "undefined") return;
+  try {
+    void fetch("/api/notifications/poke", { method: "POST", keepalive: true }).catch(() => {});
+  } catch {
+    // Nothing to do; the backstop cron covers it.
+  }
+}
+

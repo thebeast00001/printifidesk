@@ -2,6 +2,7 @@
 
 import { ensureSession, getSupabase } from "./supabase/client";
 import { platformSettings } from "./platform";
+import { pokeDispatch } from "./push";
 import type { PrintConfig, RateSource } from "./pricing";
 
 export type OrderStatus =
@@ -402,6 +403,8 @@ export async function createOrder(input: NewOrderInput): Promise<OrderRow> {
   });
 
   if (error) throw new Error(friendly(error.message));
+  // The desk's "new order" push was just queued; send it now.
+  pokeDispatch();
 
   const { data: order, error: readError } = await supabase
     .from("orders")

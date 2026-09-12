@@ -1,6 +1,7 @@
 "use client";
 
 import { ensureSession, getSupabase } from "./supabase/client";
+import { pokeDispatch } from "./push";
 import type { OrderRow, OrderStatus } from "./orders";
 
 /* ============================================================
@@ -266,6 +267,9 @@ async function patchOrder(orderId: string, patch: Record<string, unknown>) {
   if (!supabase) return;
   const { error } = await supabase.from("orders").update(patch).eq("id", orderId);
   if (error) throw new Error(explain(error.message));
+  // A status change queues the student's push; send it now, not at the
+  // next scheduled run.
+  if ("status" in patch) pokeDispatch();
 }
 
 function explain(message: string): string {

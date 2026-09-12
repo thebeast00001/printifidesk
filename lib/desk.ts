@@ -1,6 +1,7 @@
 "use client";
 
 import { ensureSession, getSupabase } from "./supabase/client";
+import { pokeDispatch } from "./push";
 
 /**
  * The desk's own tools — everything from migration 0015. Each is a thin call
@@ -42,6 +43,7 @@ export async function sendMessage(orderId: string, body: string): Promise<void> 
     .from("order_messages")
     .insert({ order_id: orderId, sender: session.userId, body: text });
   if (error) throw new Error(explain(error.message));
+  pokeDispatch();
 }
 
 /** The student has seen it. Silent on failure — it's a courtesy, not a record. */

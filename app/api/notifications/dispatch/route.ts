@@ -54,7 +54,16 @@ function vapidReady(): boolean {
 export async function POST(request: Request) {
   const denied = requireSecret(request);
   if (denied) return denied;
+  return drain();
+}
 
+/**
+ * The drain itself, shared with the poke route: claim a batch, send, write
+ * the outcome back. Safe to call from anywhere at any time — every row is
+ * claimed with `for update skip locked`, so two overlapping calls can't send
+ * the same message twice.
+ */
+export async function drain(): Promise<Response> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) {
@@ -201,7 +210,7 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   const denied = requireSecret(request);
   if (denied) return denied;
-  if (new URL(request.url).searchParams.get("run") === "1") return POST(request);
+  if (new URL(request.url).searchParams.get("run") === "1") return drain();
   return Response.json({
     webhookSecret: Boolean(process.env.NOTIFY_WEBHOOK_SECRET),
     serviceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),

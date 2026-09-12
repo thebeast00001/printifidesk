@@ -623,6 +623,17 @@ Also in `0025`: every push subscription records the VAPID public key it
 was made with, and the dispatcher names a mismatch ("subscribed with a
 different VAPID key") instead of retrying a push the service will refuse.
 
+### Sending happens when something is queued, not on a timer
+
+`POST /api/notifications/poke` drains the queue for any signed-in caller —
+it can't choose what's sent, only that the queue is drained, and every row
+is claimed atomically, so a stampede of pokes sends nothing twice. The app
+calls it after the three things that queue a notification: a student
+placing an order (the desk's push), a desk moving an order along (the
+student's push), and a desk messaging a student. The scheduled
+`dispatch?run=1` stays as a daily backstop — the only cadence Vercel's
+Hobby plan allows, and enough for anything queued by hand.
+
 ### The desk hears about new orders
 
 `0021`: a device that turns on *New-order alerts* in the desk's settings gets
@@ -808,14 +819,16 @@ Things the code can't do on its own, in the order they bite:
    *not* the admin and a desk account that *is* on a desk, both signed in
    recently. The run so far (anonymous + the admin account) passed 21 probes;
    the four admin-only refusals need a non-admin account to mean anything.
-4. **One VAPID pair, one cron.** Both Vercel projects get the same
-   `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`; only one of them
-   keeps `vercel.json`'s crons (delete the file's `crons` on the other, or
-   the queue is drained twice — harmless, but noisy). Vercel's Hobby plan
-   runs crons once a day, which is useless for pushes; use Pro, or point
-   cron-job.org at the two URLs with the `x-notify-secret` header every
-   minute. `/diagnostics` shows the key's last twelve characters on each
-   site so you can compare.
+4. **One VAPID pair.** Both Vercel projects get the same
+   `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`, and both need
+   `SUPABASE_SERVICE_ROLE_KEY` and `NOTIFY_WEBHOOK_SECRET`, because either
+   site may be the one that sends: the app **pokes the dispatcher itself**
+   the moment it queues something (an order placed, a status moved, a
+   message sent), so pushes go out in seconds with no scheduler. The
+   `vercel.json` crons are daily backstops, which is all the Hobby plan
+   allows; they run on whichever project keeps the file — both is harmless.
+   `/diagnostics` shows the key's last twelve characters on each site so
+   you can compare.
 5. **Both Clerk domains in Supabase → Third-Party Auth**, and both apps on
    production instances before launch (dev instances are capped).
 6. **All three host variables on both projects** — `/diagnostics` flags a
