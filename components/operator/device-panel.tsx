@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
  * Pairing and PINs.
  *
  * Pair the phone or tablet that lives at the counter once; after that a
- * shift starts with a name and a PIN instead of a Google sign-in. The token
+ * shift starts with a name and a PIN instead of a password. The token
  * that makes a device "paired" is shown to nobody — it goes straight into
  * this browser's storage and only its hash is kept on the server.
  */
@@ -98,14 +98,16 @@ export function DevicePanel({
       <h2 className="font-heading m-0 text-[18px] font-bold">Desk sign-in</h2>
       <p className="m-0 mt-1 mb-4 max-w-[60ch] text-[12.5px] leading-relaxed text-muted">
         Pair the phone or tablet at the counter once. After that, whoever&apos;s on shift taps their
-        name and types a PIN — no Google, no email. Nothing else about who can do what changes.
+        name and types a PIN — no password, no email. Nothing else about who can do what changes.
       </p>
 
       {/* ---- your PIN ---- */}
       <div className="rounded-[16px] border border-line bg-surface-sunk p-4">
         <p className="label-caps m-0">Your PIN</p>
         <p className="m-0 mt-1 text-[12.5px] text-muted">
-          {hasPin ? "Set. Enter a new one to change it." : "Not set yet — you can't use desk sign-in until it is."}
+          {hasPin
+            ? "Set. Forgotten it? Enter a new one — it replaces the old one on every paired device and clears any lockout."
+            : "Not set yet — you can't use desk sign-in until it is."}
         </p>
         <form
           onSubmit={(e) => {

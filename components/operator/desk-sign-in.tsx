@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useClerk } from "@clerk/nextjs";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowLeft, Delete, Loader2, LockKeyhole } from "lucide-react";
@@ -16,7 +17,7 @@ import { useSurface } from "../surface-provider";
  * keypad, and nothing else — a counter at nine in the morning, not a login
  * form. The PIN goes to the server, the server comes back with a Clerk
  * ticket, and the ticket becomes a normal session; from that moment the app
- * is exactly what it is after a Google sign-in.
+ * is exactly what it is after an email-and-password sign-in.
  */
 export function DeskSignIn() {
   const router = useRouter();
@@ -24,7 +25,9 @@ export function DeskSignIn() {
   // signal-shaped wrapper whose create() reports only an error, and the
   // ticket flow needs the resulting session id to activate it.
   const clerk = useClerk();
-  const { desk } = useSurface();
+  const { desk, surface } = useSurface();
+  // The desk's own door, and back to the desk afterwards.
+  const door = `/sign-in?${surface === "desk" ? "" : "desk=1&"}redirect_url=${encodeURIComponent(desk("/operator"))}`;
 
   const [staff, setStaff] = useState<DeskStaff[] | null>(null);
   const [broken, setBroken] = useState<string | null>(null);
@@ -98,7 +101,7 @@ export function DeskSignIn() {
       <div className="rounded-[20px] border border-line bg-surface p-5 text-center shadow-card">
         <p className="m-0 text-[14px] font-semibold">{broken}</p>
         <p className="m-0 mt-1.5 text-[12.5px] text-muted">
-          Sign in with Google and pair it again from Settings, or use another device.
+          Sign in with your email and password and pair it again from Settings, or use another device.
         </p>
         <button
           onClick={() => {
@@ -164,8 +167,12 @@ export function DeskSignIn() {
             </div>
 
             <p className="m-0 mt-4 text-[11px] leading-relaxed text-muted">
-              Not on the list? Ask whoever runs the desk to add you in Staff. No PIN yet? Sign in
-              with Google once and set one there.
+              Not on the list? Ask whoever runs the desk for a join code. No PIN yet, or forgotten
+              it?{" "}
+              <Link href={door} className="font-semibold text-ink-soft underline-offset-2 hover:underline">
+                Sign in with your email and password
+              </Link>{" "}
+              and set one under Settings → Desk sign-in. A new PIN replaces the old one everywhere.
             </p>
           </motion.div>
         ) : (
@@ -190,7 +197,23 @@ export function DeskSignIn() {
 
             <h2 className="font-heading m-0 text-[24px] font-bold">Hi, {who.name.split(" ")[0]}</h2>
             <p className="m-0 mt-1 text-[12.5px] text-muted">
-              {who.has_pin ? "Your PIN, then you're in." : "You haven't set a PIN yet — sign in with Google once and set one in Staff."}
+              {who.has_pin ? (
+                <>
+                  Your PIN, then you&apos;re in. Forgotten it?{" "}
+                  <Link href={door} className="font-semibold text-ink-soft underline-offset-2 hover:underline">
+                    Sign in with your email
+                  </Link>{" "}
+                  and set a new one.
+                </>
+              ) : (
+                <>
+                  You haven&apos;t set a PIN yet —{" "}
+                  <Link href={door} className="font-semibold text-ink-soft underline-offset-2 hover:underline">
+                    sign in with your email
+                  </Link>{" "}
+                  once and set one under Settings → Desk sign-in.
+                </>
+              )}
             </p>
 
             {/* Dots, not digits: a PIN typed at a counter is typed in front of people. */}
