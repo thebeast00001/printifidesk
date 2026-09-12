@@ -498,9 +498,15 @@ export async function staffOperatorId(): Promise<string | null> {
 export async function staffOperatorIds(): Promise<string[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
+  const session = await ensureSession();
+  if (session.status !== "ready") return [];
+  // Filtered by name as well as by RLS. The policy already returns only the
+  // caller's rows; asking for them explicitly means a stray permissive
+  // policy added in a dashboard can't make everyone look like staff.
   const { data } = await supabase
     .from("staff")
     .select("operator_id")
+    .eq("user_id", session.userId)
     .order("created_at", { ascending: true });
   return ((data ?? []) as { operator_id: string }[]).map((r) => r.operator_id);
 }
