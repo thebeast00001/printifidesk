@@ -1,7 +1,7 @@
 /**
  * Two sites, one codebase.
  *
- * Students use `printify.app`; the desk uses `desk.printify.app`. One
+ * Students use `printifi.store`; the desk uses `desk.printifi.store`. One
  * database; the host (or a pinned deployment) decides which site a request
  * gets, and the middleware refuses the other one's pages. Deployed twice
  * with two Clerk applications — the intended production shape — a student
@@ -22,9 +22,9 @@
 export type Surface = "student" | "desk";
 
 export interface Hosts {
-  /** e.g. `desk.printify.app`. Empty means single-host mode. */
+  /** e.g. `desk.printifi.store`. Empty means single-host mode. */
   desk: string;
-  /** e.g. `printify.app`. Derived from `desk` when not given. */
+  /** e.g. `printifi.store`. Derived from `desk` when not given. */
   student: string;
 }
 

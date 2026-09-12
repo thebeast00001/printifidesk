@@ -187,7 +187,7 @@ desk sees the same for itself. Priced in `place_order()`, snapshotted,
 pinned, proven against the JS engine at 3.25%.
 
 ### 2.11 Two sites — done
-The desk is its own site: `desk.printify.app`, its own door (email and
+The desk is its own site: `desk.printifi.store`, its own door (email and
 password, or a PIN on a paired device), its own installable app with its own
 mark, new-order pushes to its own devices, and no student chrome anywhere.
 The student site never shows a desk link. One codebase, one database; the

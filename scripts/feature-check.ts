@@ -263,18 +263,18 @@ check("garbage reads unknown", jwtMsRemaining("not-a-token", at), null);
 check("two segments reads unknown", jwtMsRemaining("a.b", at), null);
 
 console.log("\n— two sites: which host serves what —");
-const two = hostsFrom({ desk: "desk.printify.app" });
+const two = hostsFrom({ desk: "desk.printifi.store" });
 const one = hostsFrom({});
-check("student host derived from desk.", two.student, "printify.app");
-check("scheme and path stripped", hostsFrom({ desk: "https://desk.printify.app/x" }).desk, "desk.printify.app");
+check("student host derived from desk.", two.student, "printifi.store");
+check("scheme and path stripped", hostsFrom({ desk: "https://desk.printifi.store/x" }).desk, "desk.printifi.store");
 check("no desk host → single", isSingleHost(one), true);
-check("desk host is the desk", surfaceFor("desk.printify.app", two), "desk");
-check("student host is the student", surfaceFor("printify.app", two), "student");
+check("desk host is the desk", surfaceFor("desk.printifi.store", two), "desk");
+check("student host is the student", surfaceFor("printifi.store", two), "student");
 check("desk.localhost is the desk, even single", surfaceFor("desk.localhost:3000", one), "desk");
 check("localhost is the student", surfaceFor("localhost:3000", one), "student");
-check("host case-insensitive", surfaceFor("DESK.Printify.app", two), "desk");
+check("host case-insensitive", surfaceFor("DESK.Printifi.store", two), "desk");
 check("a pinned deployment is the desk anywhere", surfaceFor("printify-desk-abc.vercel.app", one, "desk"), "desk");
-check("a pinned deployment is the student anywhere", surfaceFor("desk.printify.app", two, "student"), "student");
+check("a pinned deployment is the student anywhere", surfaceFor("desk.printifi.store", two, "student"), "student");
 check("an unknown pin is ignored", surfaceFor("localhost:3000", one, "banana"), "student");
 
 // desk site

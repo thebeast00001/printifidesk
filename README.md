@@ -41,7 +41,7 @@ realtime update lands before the last tween finished.
 
 ## Two sites
 
-Students use **`printify.app`**; the desk uses **`desk.printify.app`**. One
+Students use **`printifi.store`**; the desk uses **`desk.printifi.store`**. One
 codebase, one database, **two Clerk applications, two deployments** — a
 student account and a desk account are different accounts, in different
 user lists, with different sign-up rules, and signing in on one site says
@@ -94,8 +94,8 @@ a desk user's `sub` comes from the desk application.
    only matters for `supabase start`.
 3. **Vercel:** two projects from this one repo.
    - *printify* — the student site: the existing Clerk keys,
-     `NEXT_PUBLIC_DESK_HOST=desk.printify.app`,
-     `NEXT_PUBLIC_SITE_HOST=printify.app`.
+     `NEXT_PUBLIC_DESK_HOST=desk.printifi.store`,
+     `NEXT_PUBLIC_SITE_HOST=printifi.store`.
    - *printify-desk* — the desk site: the desk application's keys, the same
      two host variables, and **`NEXT_PUBLIC_SURFACE=desk`** so its preview
      URLs are the desk too. Same Supabase, VAPID and notify-secret values.
