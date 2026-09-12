@@ -114,6 +114,14 @@ export function DeskShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
+      {operator.shut_at && (
+        <Notice
+          tone="clay"
+          title={`Closed by Printify on ${new Date(operator.shut_at).toLocaleDateString("en-IN", { day: "numeric", month: "long" })}`}
+          body={`${operator.shut_reason ?? ""} — Students can't see this desk or send it anything new. Orders already placed are still yours to hand over or refund; the Printify fee on them is still settled from Takings. Nobody can be added and the desk can't be opened until Printify restores it.`}
+        />
+      )}
+
       {children}
 
       {!split && surface === "student" && (

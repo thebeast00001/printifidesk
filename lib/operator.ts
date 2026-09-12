@@ -152,6 +152,11 @@ export interface Desk {
   /** The live owner code while nobody is on the desk yet; null after. */
   owner_code: string | null;
   owner_code_expires_at: string | null;
+  /** Shut by the admin, with the reason kept; null while it runs. */
+  shut_at: string | null;
+  shut_reason: string | null;
+  /** Orders not yet collected or cancelled — what a shut desk is left holding. */
+  live_orders: number;
 }
 
 /** Every desk, with how many people run it. Admins only, enforced in SQL. */
@@ -166,7 +171,35 @@ export async function adminDesks(): Promise<Desk[]> {
     open_invites: Number(d.open_invites),
     owner_code: d.owner_code ?? null,
     owner_code_expires_at: d.owner_code_expires_at ?? null,
+    shut_at: d.shut_at ?? null,
+    shut_reason: d.shut_reason ?? null,
+    live_orders: Number(d.live_orders),
   }));
+}
+
+/**
+ * Shuts a desk, whatever state it's in: unlisted, closed, its open join
+ * codes revoked, and pinned there so its staff can't undo any of it. Orders
+ * already placed stay live for the desk to finish. Returns how many those
+ * are. Admin only, in SQL.
+ */
+export async function shutDesk(operatorId: string, reason: string): Promise<number> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { data, error } = await supabase.rpc("shut_operator", {
+    p_operator: operatorId,
+    p_reason: reason.trim(),
+  });
+  if (error) throw new Error(explain(error.message));
+  return Number(data ?? 0);
+}
+
+/** The reverse: listed again, closed, for its own staff to open. */
+export async function restoreDesk(operatorId: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { error } = await supabase.rpc("restore_operator", { p_operator: operatorId });
+  if (error) throw new Error(explain(error.message));
 }
 
 /**

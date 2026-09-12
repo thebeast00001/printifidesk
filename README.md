@@ -623,6 +623,23 @@ Also in `0025`: every push subscription records the VAPID public key it
 was made with, and the dispatcher names a mismatch ("subscribed with a
 different VAPID key") instead of retrying a push the service will refuse.
 
+### The admin can shut a desk
+
+`0026`: the one lever the admin has over a running desk, whatever state
+it's in. *Shut this desk* on `/admin/desks` asks for a reason — required,
+kept with the desk, shown to its staff — and then, in one transaction:
+unlists it, closes it, revokes its open join codes, and pins it there.
+Triggers refuse the desk's own staff at every door: they can't open it,
+list it, add anyone or make a code, by the app or by a direct update.
+Students can't see it or place an order at it.
+
+What's already in the queue stays the desk's to finish: a student who has
+paid can still collect or be refunded, and the fee on those orders is still
+settled from Takings. The desk site shows a banner with the date and the
+reason on every page. *Restore* reverses it — listed again, closed, for its
+own staff to open. `admin_desks()` carries `shut_at`, `shut_reason` and
+`live_orders` so the confirmation says what the desk is left holding.
+
 ### Sending happens when something is queued, not on a timer
 
 `POST /api/notifications/poke` drains the queue for any signed-in caller —
@@ -812,9 +829,10 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0025** in the SQL editor, pasted from the files. Until
+2. **Run 0022 → 0026** in the SQL editor, pasted from the files. Until
    0025, the fee panel shows no due date; until 0024, the join page shows a
-   migration message in the application panel.
+   migration message in the application panel; until 0026, *Shut this
+   desk* on `/admin/desks` errors with a missing function.
 3. **`npm run check:rls` with two ordinary accounts** — a student who is
    *not* the admin and a desk account that *is* on a desk, both signed in
    recently. The run so far (anonymous + the admin account) passed 21 probes;

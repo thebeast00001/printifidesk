@@ -130,6 +130,11 @@ export interface Operator {
   opens_at: string;
   closes_at: string;
 
+  /* Shut by the admin (0026): unlisted and pinned closed, with the reason.
+     Null for every desk that's running. */
+  shut_at: string | null;
+  shut_reason: string | null;
+
   /* Printify's share, from platform_settings — merged onto every fetched
      row so rateCardOf() prices with it. Not the desk's to edit. */
   platform_fee_percent?: number;
@@ -168,7 +173,8 @@ const OPERATOR_SELECT =
   "id, name, campus, is_open, status_note, status_changed_at, currency, bw_per_page, " +
   "colour_per_page, duplex_discount, staple_price, bulk_threshold, bulk_multiplier, " +
   "min_order, paper_gsm, pages_per_minute, handling_minutes, short_name, is_listed, opens_at, closes_at, " +
-  "upi_vpa, upi_name, accepts_cash, paper_stock, low_paper_at, toner_pages, low_toner_at";
+  "upi_vpa, upi_name, accepts_cash, paper_stock, low_paper_at, toner_pages, low_toner_at, " +
+  "shut_at, shut_reason";
 
 export interface OperatorWait {
   open: boolean;
@@ -273,8 +279,10 @@ export async function defaultOperator(): Promise<Operator | null> {
 
     const chosen = (profile as { default_operator_id?: string | null } | null)?.default_operator_id;
     if (chosen) {
+      // A saved desk that has since been unlisted — or shut by the admin —
+      // isn't one they can order from; fall through to the first that is.
       const operator = await getOperator(chosen);
-      if (operator) return operator;
+      if (operator?.is_listed) return operator;
     }
   }
 

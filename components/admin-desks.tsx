@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertCircle, Loader2, Plus, Ticket, UserRoundCheck, Users, X } from "lucide-react";
-import { adminDesks, createDesk, type Desk } from "@/lib/operator";
+import { AlertCircle, Loader2, Plus, RotateCcw, ShieldOff, Ticket, UserRoundCheck, Users, X } from "lucide-react";
+import { adminDesks, createDesk, restoreDesk, shutDesk, type Desk } from "@/lib/operator";
 import { createInvite, runDeskMyself } from "@/lib/desk";
 import { useRouter } from "next/navigation";
 import { useSurface } from "./surface-provider";
@@ -20,6 +20,11 @@ import { cn, easeIos } from "@/lib/utils";
  * then on they add their own staff the same way. Only admins can call any of
  * this, enforced in the functions rather than in this component; the gate
  * around the page only decides what to draw.
+ *
+ * The one thing the admin can do to a running desk is shut it — for a
+ * reason, kept with the desk. Shut, it disappears from students, its codes
+ * die, and its staff can only finish what's already in the queue. Restoring
+ * it puts it back listed and closed.
  */
 export function AdminDesks() {
   const authKey = useAuthKey();
@@ -31,6 +36,10 @@ export function AdminDesks() {
   const [campus, setCampus] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Which desk has its shut form open, and the reason being typed.
+  const [shutting, setShutting] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -88,6 +97,40 @@ export function AdminDesks() {
       router.push(deskPath("/operator"));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't take the desk.");
+      setBusy(null);
+    }
+  }
+
+  async function shut(desk: Desk) {
+    setBusy(`shut:${desk.id}`);
+    setError(null);
+    try {
+      const live = await shutDesk(desk.id, reason);
+      setShutting(null);
+      setReason("");
+      setNote(
+        live === 0
+          ? `${desk.name} is shut. Nothing was in its queue.`
+          : `${desk.name} is shut. ${live} live order${live === 1 ? "" : "s"} stay with it to hand over or refund.`,
+      );
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't shut the desk.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function restore(desk: Desk) {
+    setBusy(`restore:${desk.id}`);
+    setError(null);
+    try {
+      await restoreDesk(desk.id);
+      setNote(`${desk.name} is listed again, closed until its staff open it.`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't restore the desk.");
+    } finally {
       setBusy(null);
     }
   }
@@ -176,6 +219,9 @@ export function AdminDesks() {
           {error}
         </p>
       )}
+      {note && !error && (
+        <p className="m-0 rounded-[14px] bg-sage px-4 py-3 text-[12.5px] text-sage-ink">{note}</p>
+      )}
 
       {desks === null ? (
         <Panel>
@@ -192,14 +238,22 @@ export function AdminDesks() {
                   <span
                     className={cn(
                       "rounded-full px-2.5 py-1 text-[10.5px] font-semibold",
-                      desk.staff_count === 0
-                        ? "bg-bone text-ink"
-                        : desk.is_open
-                          ? "bg-sage text-sage-ink"
-                          : "bg-surface-sunk text-muted",
+                      desk.shut_at
+                        ? "bg-clay text-clay-ink"
+                        : desk.staff_count === 0
+                          ? "bg-bone text-ink"
+                          : desk.is_open
+                            ? "bg-sage text-sage-ink"
+                            : "bg-surface-sunk text-muted",
                     )}
                   >
-                    {desk.staff_count === 0 ? "waiting for owner" : desk.is_open ? "open" : "closed"}
+                    {desk.shut_at
+                      ? "shut by Printify"
+                      : desk.staff_count === 0
+                        ? "waiting for owner"
+                        : desk.is_open
+                          ? "open"
+                          : "closed"}
                   </span>
                 </div>
                 <p className="m-0 mt-1.5 text-[12.5px] text-muted">{desk.campus}</p>
@@ -207,9 +261,26 @@ export function AdminDesks() {
                   <Users size={12} strokeWidth={2.2} />
                   {desk.staff_count} on staff
                   {desk.open_invites > 0 && ` · ${desk.open_invites} code${desk.open_invites === 1 ? "" : "s"} open`}
+                  {desk.live_orders > 0 && ` · ${desk.live_orders} live order${desk.live_orders === 1 ? "" : "s"}`}
                 </p>
+                {desk.shut_at && (
+                  <p className="m-0 mt-2 max-w-[60ch] text-[12.5px] leading-relaxed text-clay-ink">
+                    Shut {new Date(desk.shut_at).toLocaleDateString("en-IN", { day: "numeric", month: "long" })}:{" "}
+                    {desk.shut_reason}
+                  </p>
+                )}
               </div>
-              {desk.staff_count === 0 ? (
+              {desk.shut_at ? (
+                <button
+                  onClick={() => restore(desk)}
+                  disabled={busy !== null}
+                  title="Listed again, closed until its staff open it"
+                  className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface-sunk px-3.5 text-[12.5px] font-semibold text-ink-soft disabled:opacity-50"
+                >
+                  {busy === `restore:${desk.id}` ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={14} strokeWidth={2.2} />}
+                  Restore
+                </button>
+              ) : desk.staff_count === 0 ? (
                 <div className="flex shrink-0 flex-wrap gap-2">
                   <button
                     onClick={() => ownerCode(desk)}
@@ -233,6 +304,78 @@ export function AdminDesks() {
                 <p className="m-0 shrink-0 text-[11.5px] text-muted">Staff is theirs to manage.</p>
               )}
             </div>
+
+            {/* The admin's only lever on a running desk. A reason is required
+                and kept; the confirmation shows what the desk is left holding. */}
+            {!desk.shut_at && shutting !== desk.id && (
+              <button
+                onClick={() => {
+                  setShutting(desk.id);
+                  setReason("");
+                  setError(null);
+                  setNote(null);
+                }}
+                disabled={busy !== null}
+                className="mt-3 flex items-center gap-1.5 text-[11.5px] font-semibold text-muted underline-offset-2 hover:text-clay-ink hover:underline disabled:opacity-50"
+              >
+                <ShieldOff size={12} strokeWidth={2.2} />
+                Shut this desk
+              </button>
+            )}
+            <AnimatePresence initial={false}>
+              {!desk.shut_at && shutting === desk.id && (
+                <motion.form
+                  key="shut"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.22, ease: easeIos }}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void shut(desk);
+                  }}
+                  className="overflow-hidden"
+                >
+                  <div className="mt-3 rounded-[16px] border border-clay bg-clay/25 p-3.5">
+                    <p className="m-0 text-[13px] font-semibold text-clay-ink">Shut {desk.name}?</p>
+                    <p className="m-0 mt-1 max-w-[62ch] text-[12.5px] leading-relaxed text-ink-soft">
+                      It vanishes from students at once and its open join codes die. Its staff can&apos;t
+                      open it, list it or add anyone; they keep the queue only to hand over or refund{" "}
+                      {desk.live_orders === 0
+                        ? "— it is empty right now."
+                        : `the ${desk.live_orders} live order${desk.live_orders === 1 ? "" : "s"} in it.`}{" "}
+                      The fee ledger stays. You can restore it later.
+                    </p>
+                    <div className="mt-2.5 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+                      <input
+                        autoFocus
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                        maxLength={500}
+                        placeholder="Why — kept with the desk, shown to its staff"
+                        className="h-11 min-w-0 rounded-xl border border-line bg-surface px-3 text-[13px] outline-none focus:border-ink"
+                      />
+                      <button
+                        type="submit"
+                        disabled={busy !== null || !reason.trim()}
+                        className="flex h-11 items-center justify-center gap-2 rounded-xl bg-clay-ink px-4 text-[13px] font-semibold text-paper disabled:opacity-40"
+                      >
+                        {busy === `shut:${desk.id}` ? <Loader2 size={14} className="animate-spin" /> : <ShieldOff size={14} strokeWidth={2.2} />}
+                        Shut it
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShutting(null)}
+                        aria-label="Cancel"
+                        className="grid h-11 w-11 place-items-center justify-self-start rounded-xl border border-line text-muted"
+                      >
+                        <X size={15} strokeWidth={2.2} />
+                      </button>
+                    </div>
+                  </div>
+                </motion.form>
+              )}
+            </AnimatePresence>
 
             {/* The live owner code stays readable here until the owner joins —
                 a lost message is re-read, not re-minted. */}

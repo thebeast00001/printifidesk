@@ -1324,6 +1324,129 @@ await scenario("a new order pushes to staff with a desk device, and only them", 
   return `"${rows[0].body}" → op_test only; op_two's phone stays quiet`;
 });
 
+/* ---------- 0026: the admin can shut a desk ---------- */
+
+await scenario("the admin shuts a desk; its staff finish the queue and nothing else", async () => {
+  // A desk of its own, so the others above keep their state.
+  await actingAs("admin_test");
+  const { rows: made } = await db.query(`select public.create_operator('Pop-up Print, Gate 2', 'CEC') as id;`);
+  const desk = made[0].id;
+  const { rows: code } = await db.query(`select code from public.create_invite($1, 'Owner');`, [desk]);
+  await actingAs("shut_owner");
+  const { rows: claimed } = await db.query(`select ok from public.claim_invite($1);`, [code[0].code]);
+  if (!claimed[0].ok) throw new Error("the owner couldn't claim the desk");
+  await db.query(`update public.operators set is_open = true where id = $1;`, [desk]);
+  await db.query(`select public.create_invite($1, 'Second person');`, [desk]);
+
+  // A student with a paid job in the queue before the shutter comes down.
+  await actingAs("student_shut");
+  const { rows: placed } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    desk,
+    JSON.stringify([{ name: "cv.pdf", pages: 2, colour_pages: 0, config: { copies: 1, sides: "single" } }]),
+  ]);
+
+  // Not the owner's verb, and not a student's.
+  for (const who of ["shut_owner", "student_shut"]) {
+    await actingAs(who);
+    let refused = "";
+    try {
+      await db.query(`select public.shut_operator($1, 'trying');`, [desk]);
+    } catch (error) {
+      refused = String(error?.message ?? error);
+    }
+    if (!/Only the admin/.test(refused)) throw new Error(`${who} could shut the desk: ${refused || "no error"}`);
+  }
+
+  await actingAs("admin_test");
+  let noReason = "";
+  try {
+    await db.query(`select public.shut_operator($1, '  ');`, [desk]);
+  } catch (error) {
+    noReason = String(error?.message ?? error);
+  }
+  if (!/Say why/.test(noReason)) throw new Error(`a blank reason went through: ${noReason || "no error"}`);
+  const { rows: shut } = await db.query(`select public.shut_operator($1, 'Charged students twice, twice.') as live;`, [desk]);
+  if (Number(shut[0].live) !== 1) throw new Error(`live orders reported as ${shut[0].live}, expected 1`);
+
+  const { rows: row } = await db.query(
+    `select is_open, is_listed, shut_at, shut_reason, shut_by, status_note from public.operators where id = $1;`,
+    [desk],
+  );
+  if (row[0].is_open || row[0].is_listed || !row[0].shut_at || row[0].shut_by !== "admin_test") {
+    throw new Error(`after shutting: ${JSON.stringify(row[0])}`);
+  }
+  const { rows: invites } = await db.query(
+    `select count(*)::int as n from public.staff_invites where operator_id = $1 and revoked_at is null and claimed_at is null;`,
+    [desk],
+  );
+  if (invites[0].n !== 0) throw new Error(`${invites[0].n} join code(s) still open`);
+  const { rows: seen } = await db.query(
+    `select shut_reason, live_orders, staff_count from public.admin_desks() where id = $1;`,
+    [desk],
+  );
+  if (seen[0].shut_reason !== "Charged students twice, twice." || Number(seen[0].live_orders) !== 1 || Number(seen[0].staff_count) !== 1) {
+    throw new Error(`admin_desks shows ${JSON.stringify(seen[0])}`);
+  }
+
+  // The desk's own hands are tied: no reopening, no relisting, no new codes,
+  // no new staff — each refused by a trigger, so a direct update is no way round.
+  await actingAs("shut_owner");
+  const attempts = [
+    ["open", `update public.operators set is_open = true where id = $1;`, /closed by Printify: Charged/],
+    ["relist", `update public.operators set is_listed = true where id = $1;`, /cannot be listed/],
+    ["unmark", `update public.operators set shut_at = null where id = $1;`, /Only the admin shuts/],
+    ["code", `select public.create_invite($1, 'Sneaky');`, /closed by Printify/],
+    ["staff", `insert into public.staff (user_id, operator_id) values ('shut_friend', $1);`, /closed by Printify/],
+  ];
+  for (const [what, sql, expect] of attempts) {
+    let refused = "";
+    try {
+      await db.query(sql, [desk]);
+    } catch (error) {
+      refused = String(error?.message ?? error);
+    }
+    if (!expect.test(refused)) throw new Error(`${what} wasn't refused: ${refused || "no error"}`);
+  }
+  // A student can't start anything new there.
+  await actingAs("student_shut");
+  let noOrder = "";
+  try {
+    await db.query(`select public.place_order($1, $2::jsonb);`, [
+      desk,
+      JSON.stringify([{ name: "again.pdf", pages: 1, colour_pages: 0, config: { copies: 1, sides: "single" } }]),
+    ]);
+  } catch (error) {
+    noOrder = String(error?.message ?? error);
+  }
+  if (!/not taking orders/.test(noOrder)) throw new Error(`a new order got in: ${noOrder || "no error"}`);
+
+  // But the job already paid for is still the desk's to finish.
+  await actingAs("shut_owner");
+  for (const to of ["queued", "printing", "ready", "collected"]) {
+    await db.query(`update public.orders set status = $2 where id = $1;`, [placed[0].id, to]);
+  }
+  const { rows: done } = await db.query(`select status from public.orders where id = $1;`, [placed[0].id]);
+  if (done[0].status !== "collected") throw new Error(`the live order ended as ${done[0].status}`);
+
+  // Restored: listed and closed, and the owner opens it as before.
+  await actingAs("shut_owner");
+  let notYours = "";
+  try {
+    await db.query(`select public.restore_operator($1);`, [desk]);
+  } catch (error) {
+    notYours = String(error?.message ?? error);
+  }
+  if (!/Only the admin/.test(notYours)) throw new Error(`the owner restored their own desk: ${notYours || "no error"}`);
+  await actingAs("admin_test");
+  await db.query(`select public.restore_operator($1);`, [desk]);
+  await actingAs("shut_owner");
+  await db.query(`update public.operators set is_open = true where id = $1;`, [desk]);
+  const { rows: back } = await db.query(`select is_open, is_listed, shut_at from public.operators where id = $1;`, [desk]);
+  if (!back[0].is_open || !back[0].is_listed || back[0].shut_at !== null) throw new Error(`after restoring: ${JSON.stringify(back[0])}`);
+  await db.query(`select public.create_invite($1, 'Allowed again');`, [desk]);
+  return "shut with 1 live order: unlisted, closed, codes revoked; staff refused at every door, finished the job; restored, open again";
+});
+
 await scenario("the upload ceiling holds", async () => {
   await actingAs("student_test");
   // 500 MB is the cap; one file over it must be refused.

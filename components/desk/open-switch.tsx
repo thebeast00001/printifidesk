@@ -41,12 +41,17 @@ export function OpenSwitch({
     }
   }
 
+  // Shut by the admin: the database would refuse the flip with the reason;
+  // the switch says so before anyone tries.
+  const shut = operator.shut_at !== null;
+
   if (compact) {
     return (
       <motion.button
         whileTap={{ scale: 0.96 }}
         transition={spring}
-        disabled={busy}
+        disabled={busy || shut}
+        title={shut ? `Closed by Printify: ${operator.shut_reason ?? ""}` : undefined}
         onClick={() => apply(!operator.is_open, null)}
         className={cn(
           "flex h-11 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold disabled:opacity-50",

@@ -417,3 +417,4 @@ The security-relevant scenarios in `check:sql`, by name:
 - a new order pushes to staff with a desk device, and only them
 - the platform fee: to the paisa on top of the minimum; floored; student refused the rate; pinned; ledger excludes a full refund; settlements admin-only
 - an overdue fee locks the desk closed until it's settled; within grace it opens
+- the admin shuts a desk: unlisted, closed, codes revoked; its staff refused at every door by triggers, but finish the live order; restored, open again
