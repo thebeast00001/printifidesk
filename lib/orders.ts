@@ -1,6 +1,7 @@
 "use client";
 
 import { ensureSession, getSupabase } from "./supabase/client";
+import { platformSettings } from "./platform";
 import type { PrintConfig, RateSource } from "./pricing";
 
 export type OrderStatus =
@@ -33,6 +34,8 @@ export interface OrderRow {
   status: OrderStatus;
   total: number;
   full_colour_total: number;
+  /** Printify's share, inside `total`. Zero before 0022. */
+  platform_fee: number;
   pages: number;
   colour_pages: number;
   config: PrintConfig;
@@ -125,6 +128,11 @@ export interface Operator {
   low_toner_at: number;
   opens_at: string;
   closes_at: string;
+
+  /* Printify's share, from platform_settings — merged onto every fetched
+     row so rateCardOf() prices with it. Not the desk's to edit. */
+  platform_fee_percent?: number;
+  platform_fee_min?: number;
 }
 
 /** Everything an operator can edit about how they price and run their desk. */
@@ -221,6 +229,13 @@ export async function defaultOperatorId(): Promise<string | null> {
   return (await defaultOperator())?.id ?? null;
 }
 
+/** The platform fee, stamped onto an operator row so every quote includes it. */
+async function withFee<T extends Operator | null>(row: T): Promise<T> {
+  if (!row) return row;
+  const ps = await platformSettings();
+  return { ...row, platform_fee_percent: ps.fee_percent, platform_fee_min: ps.fee_min };
+}
+
 /** Every operator a student can choose between. */
 export async function listOperators(): Promise<Operator[]> {
   const supabase = getSupabase();
@@ -230,7 +245,12 @@ export async function listOperators(): Promise<Operator[]> {
     .select(OPERATOR_SELECT)
     .eq("is_listed", true)
     .order("created_at", { ascending: true });
-  return (data ?? []) as unknown as Operator[];
+  const ps = await platformSettings();
+  return ((data ?? []) as unknown as Operator[]).map((o) => ({
+    ...o,
+    platform_fee_percent: ps.fee_percent,
+    platform_fee_min: ps.fee_min,
+  }));
 }
 
 /**
@@ -264,7 +284,7 @@ export async function defaultOperator(): Promise<Operator | null> {
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
-  return (data as unknown as Operator) ?? null;
+  return withFee((data as unknown as Operator) ?? null);
 }
 
 /** Remembers which operator this student prints through. */
@@ -288,7 +308,7 @@ export async function getOperator(id: string): Promise<Operator | null> {
     .select(OPERATOR_SELECT)
     .eq("id", id)
     .maybeSingle();
-  return (data as unknown as Operator) ?? null;
+  return withFee((data as unknown as Operator) ?? null);
 }
 
 /** Names for a handful of desks — the switcher for someone on more than one. */

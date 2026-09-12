@@ -8,6 +8,7 @@ import { StaffPanel } from "../operator/staff-panel";
 import { StockPanel } from "../operator/stock-panel";
 import { DevicePanel } from "../operator/device-panel";
 import { AccountPanel } from "./account-panel";
+import { FeePanel } from "./fee-panel";
 import { OpenSwitch } from "./open-switch";
 import { useDeskReady } from "./desk-provider";
 
@@ -26,6 +27,7 @@ export function DeskTakings() {
   return (
     <div className="flex flex-col gap-4">
       <OperatorDay operator={operator} />
+      <FeePanel operator={operator} />
       <CloseoutPanel operator={operator} onClosed={reload} />
     </div>
   );

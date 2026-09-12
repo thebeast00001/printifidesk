@@ -1,7 +1,10 @@
 "use client";
 
-import { money, perPage, type LineBill, type Quote, type RateCard } from "@/lib/pricing";
+import { money, paise, perPage, type LineBill, type Quote, type RateCard } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
+
+/** "3" for 3.00, "2.5" for 2.50 — the percentage as a person would say it. */
+const trimPercent = (p: number) => String(Number(p.toFixed(2)));
 
 /**
  * The bill, the way a receipt reads: each file with the arithmetic that
@@ -53,6 +56,18 @@ export function Bill({
             label={`Small-order top-up`}
             hint={`the desk's minimum is ${money(card.minOrder, cur)}`}
             value={`+${money(quote.topUp, cur)}`}
+            muted={muted}
+          />
+        )}
+        {quote.platformFee > 0 && (
+          <Row
+            label={`Platform fee${card.platformFeePercent > 0 ? ` (${trimPercent(card.platformFeePercent)}%)` : ""}`}
+            hint={
+              card.platformFeeMin > 0 && quote.platformFee === paise(card.platformFeeMin)
+                ? `the minimum is ${money(card.platformFeeMin, cur)}`
+                : "Printify's share, paid with the order"
+            }
+            value={`+${money(quote.platformFee, cur)}`}
             muted={muted}
           />
         )}

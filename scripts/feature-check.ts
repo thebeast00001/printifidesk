@@ -12,6 +12,7 @@ import { deskPrefix, parseScan } from "../components/operator/scan-sheet";
 import QRCode from "qrcode";
 import jsQR from "jsqr";
 import { deskPath, hostsFrom, isSingleHost, onDesk, routeFor, sameOriginPath, surfaceFor } from "../lib/surface";
+import { periodStart } from "../lib/platform";
 
 let fails = 0;
 const check = (name: string, got: unknown, want: unknown) => {
@@ -145,6 +146,7 @@ const body = guard.slice(guard.lastIndexOf("function public.guard_order_update()
 for (const column of [
   "total",
   "full_colour_total",
+  "platform_fee",
   "pages",
   "colour_pages",
   "config",
@@ -311,6 +313,18 @@ check("absolute, same origin → path", sameOriginPath("http://localhost:3000/or
 check("absolute, same origin, bare → /", sameOriginPath("http://localhost:3000", "/", "http://localhost:3000"), "/");
 check("absolute, other origin → fallback", sameOriginPath("http://localhost:3000.evil.com/x", "/", "http://localhost:3000"), "/");
 check("absolute, origin unknown → fallback", sameOriginPath("http://localhost:3000/orders", "/"), "/");
+
+console.log("\n— fee windows (calendar, in the viewer's own time) —");
+// Saturday 12 September 2026, 15:42 local.
+const sat = new Date(2026, 8, 12, 15, 42, 0);
+const iso = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+check("today starts at local midnight", iso(periodStart("today", sat)), "2026-09-12 0:00");
+check("this week starts on Monday", iso(periodStart("week", sat)), "2026-09-07 0:00");
+check("this month starts on the 1st", iso(periodStart("month", sat)), "2026-09-01 0:00");
+// A Monday is its own week start; a Sunday belongs to the week that began six days earlier.
+check("Monday is the week start", iso(periodStart("week", new Date(2026, 8, 7, 9, 0, 0))), "2026-09-07 0:00");
+check("Sunday looks back six days", iso(periodStart("week", new Date(2026, 8, 13, 9, 0, 0))), "2026-09-07 0:00");
 
 const done = fails === 0 ? "\nPASS - all checks passed" : `\nFAIL - ${fails} check(s) failed`;
 console.log(done);

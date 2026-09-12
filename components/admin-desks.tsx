@@ -6,6 +6,7 @@ import { AlertCircle, Loader2, Plus, ShieldAlert, Ticket, Users, X } from "lucid
 import { adminDesks, adminsExist, createDesk, isAdmin, type Desk } from "@/lib/operator";
 import { createInvite } from "@/lib/desk";
 import { InviteCard } from "./operator/invite-card";
+import { AdminFees } from "./admin-fees";
 import { useAuthKey } from "@/hooks/use-auth-key";
 import { ensureSession } from "@/lib/supabase/client";
 import { cn, easeIos } from "@/lib/utils";
@@ -124,6 +125,8 @@ export function AdminDesks() {
 
   return (
     <div className="flex flex-col gap-4">
+      <AdminFees />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="m-0 text-[12.5px] text-muted">
           {desks === null ? "" : desks.length === 0 ? "No desks yet." : `${desks.length} desk${desks.length === 1 ? "" : "s"}.`}

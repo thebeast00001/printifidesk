@@ -13,7 +13,7 @@ export default function AdminPage() {
       <PageHeader
         eyebrow="Printify"
         title="Desks"
-        sub="Create a desk, hand its owner a code. They sign in once and it's theirs."
+        sub="The platform fee, and every desk: what each owes, what it settled, and a code for a new one's owner."
       />
       <Container className="pt-3">
         <div className="mb-4">

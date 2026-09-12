@@ -32,6 +32,14 @@ export interface RateCard {
   bulkMultiplier: number;
   minOrder: number;
   paperGsm: number;
+  /**
+   * Printify's share, a percentage of the order after the minimum. Not the
+   * desk's to set: it comes from platform_settings, is merged onto the
+   * operator row when it's fetched, and is snapshotted onto every order.
+   */
+  platformFeePercent: number;
+  /** A floor per order, so a ₹6 job doesn't show a fee of ₹0.18. */
+  platformFeeMin: number;
 }
 
 /** Shape of the operator row the rate card is read from. */
@@ -45,6 +53,8 @@ export interface RateSource {
   bulk_multiplier?: number | string | null;
   min_order?: number | string | null;
   paper_gsm?: number | null;
+  platform_fee_percent?: number | string | null;
+  platform_fee_min?: number | string | null;
 }
 
 const num = (v: number | string | null | undefined, fallback: number) => {
@@ -68,7 +78,21 @@ export function rateCardOf(operator: RateSource | null | undefined): RateCard {
     bulkMultiplier: num(operator?.bulk_multiplier, 0.92),
     minOrder: num(operator?.min_order, 0),
     paperGsm: operator?.paper_gsm ?? 80,
+    // No fee unless one is configured — an old snapshot, or a project that
+    // hasn't run 0022, prices exactly as it did before.
+    platformFeePercent: num(operator?.platform_fee_percent, 0),
+    platformFeeMin: num(operator?.platform_fee_min, 0),
   };
+}
+
+/**
+ * The platform fee on a base amount: base × percent ÷ 100 to the paisa,
+ * then the floor. Zero on nothing. The database does the same arithmetic in
+ * double precision, in this order — see platform_fee_for() in 0022.
+ */
+export function platformFeeOn(base: number, card: RateCard): number {
+  if (base <= 0) return 0;
+  return Math.max(paise((base * card.platformFeePercent) / 100), paise(card.platformFeeMin));
 }
 
 /**
@@ -109,6 +133,8 @@ export interface Quote {
   subtotal: number;
   /** What the minimum order added, if it did. */
   topUp: number;
+  /** Printify's share, on top of the lines and the top-up. */
+  platformFee: number;
   total: number;
   /** What full colour would have cost — the smart-colour pitch. */
   fullColourTotal: number;
@@ -246,8 +272,11 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
   // of the unrounded lines — so a bill always adds up. The database does the
   // same, in the same order; the harness compares them line by line.
   const subtotal = paise(bills.reduce((n, b) => n + b.price, 0));
-  const total = Math.max(subtotal, minOrder);
-  const topUp = paise(total - subtotal);
+  const base = Math.max(subtotal, minOrder);
+  const topUp = paise(base - subtotal);
+  // The minimum lifts the lines; the fee sits on top of that.
+  const platformFee = platformFeeOn(base, card);
+  const total = paise(base + platformFee);
 
   // What the same job would have cost printed entirely in colour. Used by the
   // savings widget, so every line counts regardless of what it was set to.
@@ -256,7 +285,8 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
       .map((l) => paise(lineCost(l.pages, l.pages, { ...l.config, colour: "full" }, card, bulk).raw))
       .reduce((n, v) => n + v, 0),
   );
-  const fullColourTotal = Math.max(fullColourSum, minOrder);
+  const fullColourBase = Math.max(fullColourSum, minOrder);
+  const fullColourTotal = paise(fullColourBase + platformFeeOn(fullColourBase, card));
 
   // The smart-colour claim only counts lines actually set to smart. A line the
   // student deliberately set to black & white saved them money, but not by
@@ -272,7 +302,8 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
       )
       .reduce((n, v) => n + v, 0),
   );
-  const smartTotal = Math.max(smartSum, minOrder);
+  const smartBase = Math.max(smartSum, minOrder);
+  const smartTotal = paise(smartBase + platformFeeOn(smartBase, card));
 
   return {
     bwPages: sum((c) => c.bwPages),
@@ -284,6 +315,7 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
     lines: bills,
     subtotal,
     topUp,
+    platformFee,
     total,
     fullColourTotal,
     smartSaving: Math.max(0, paise(smartTotal - total)),

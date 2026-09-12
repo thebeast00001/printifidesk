@@ -16,6 +16,11 @@
 --
 -- Afterwards a paired counter device holds a token this database no longer
 -- knows; it will say so and offer "Forget this pairing".
+--
+-- One table is deliberately left alone, and `check:sql` knows it is:
+-- keeps public.platform_settings — the fee percentage and the payee VPA are
+-- configuration, not data, and a reset shouldn't make the admin set them
+-- again.
 
 truncate table
   public.order_reports,
@@ -34,6 +39,7 @@ truncate table
   public.staff_pins,
   public.staff_invites,
   public.invite_attempts,
+  public.platform_settlements,
   public.staff,
   public.operators,
   public.admins,

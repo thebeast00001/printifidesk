@@ -410,9 +410,11 @@ await scenario("resolving stamps the time and frees the slot", async () => {
  */
 async function rateCardFromDb() {
   const { rows } = await db.query(
-    `select currency, bw_per_page::text, colour_per_page::text, duplex_discount::text,
-            staple_price::text, bulk_threshold, bulk_multiplier::text, min_order::text, paper_gsm
-       from public.operators where id = $1;`,
+    `select o.currency, o.bw_per_page::text, o.colour_per_page::text, o.duplex_discount::text,
+            o.staple_price::text, o.bulk_threshold, o.bulk_multiplier::text, o.min_order::text, o.paper_gsm,
+            ps.fee_percent::text as platform_fee_percent, ps.fee_min::text as platform_fee_min
+       from public.operators o, public.platform_settings ps
+      where o.id = $1;`,
     [OPERATOR],
   );
   return rateCardOf(rows[0]);
@@ -427,7 +429,11 @@ await scenario("place_order prices exactly what the browser showed", async () =>
       where id = $1;`,
     [OPERATOR],
   );
+  // A fee with a decimal of its own, so the fee's rounding is exercised too.
+  await actingAs(null);
+  await db.exec(`update public.platform_settings set fee_percent = 3.25, fee_min = 0 where id;`);
   const card = await rateCardFromDb();
+  if (card.platformFeePercent !== 3.25) throw new Error("the card didn't pick up the platform fee");
 
   const colours = ["smart", "bw", "full"];
   const sidesOpts = ["single", "double"];
@@ -466,7 +472,7 @@ await scenario("place_order prices exactly what the browser showed", async () =>
               JSON.stringify(items),
             ]);
             const { rows: got } = await db.query(
-              `select o.total, o.rate_card,
+              `select o.total, o.platform_fee, o.rate_card,
                       (select array_agg(i.price order by i.ordinal) from public.order_items i where i.order_id = o.id) as prices
                  from public.orders o where o.id = $1;`,
               [rows[0].id],
@@ -476,6 +482,15 @@ await scenario("place_order prices exactly what the browser showed", async () =>
               throw new Error(
                 `${pages}p ${colour}/${sides}/${binding} x${copies}: SQL ${actual} vs TS ${expected}`,
               );
+            }
+            // The fee itself, and the snapshot that lets the bill be rebuilt later.
+            if (Number(got[0].platform_fee) !== q.platformFee) {
+              throw new Error(
+                `${pages}p ${colour}/${sides}/${binding} x${copies}: fee SQL ${got[0].platform_fee} vs TS ${q.platformFee}`,
+              );
+            }
+            if (String(got[0].rate_card.platform_fee_percent) !== "3.25") {
+              throw new Error("the platform fee percent wasn't snapshotted onto the order");
             }
             // Per line, to the paisa — the bill shown must be the bill stored.
             const sqlPrices = (got[0].prices ?? []).map(Number);
@@ -968,6 +983,163 @@ await scenario("applications are gone", async () => {
   return "table and both functions dropped";
 });
 
+/* ---------- 0022: the platform fee ---------- */
+
+await scenario("the platform fee is a line on the bill, to the paisa, on top of the minimum", async () => {
+  await actingAs(null);
+  await db.exec(`
+    update public.platform_settings set fee_percent = 3, fee_min = 0 where id;
+    update public.operators set bw_per_page = 1.50, colour_per_page = 8, duplex_discount = 0.08,
+           staple_price = 5, bulk_threshold = 100, bulk_multiplier = 0.92, min_order = 10
+     where id = '${OPERATOR}';
+  `);
+  const card = await rateCardFromDb();
+  await actingAs("student_fee");
+  // 7 pages B&W single-sided at ₹1.50 = ₹10.50; 3% = 0.315 → ₹0.32; total ₹10.82.
+  const lines = [{ pages: 7, colourPages: 0, config: { colour: "bw", sides: "single", binding: "none", copies: 1 } }];
+  const q = quoteOrder(lines, card);
+  const { rows } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "n.pdf", pages: 7, colour_pages: 0, config: lines[0].config }]),
+  ]);
+  const { rows: got } = await db.query(`select total, platform_fee, rate_card from public.orders where id = $1;`, [rows[0].id]);
+  if (Number(got[0].platform_fee) !== 0.32 || Number(got[0].total) !== 10.82) {
+    throw new Error(`SQL fee ${got[0].platform_fee} total ${got[0].total}`);
+  }
+  if (q.platformFee !== 0.32 || q.total !== 10.82) throw new Error(`TS fee ${q.platformFee} total ${q.total}`);
+
+  // Under the minimum: the fee is on the lifted amount, not the lines.
+  const small = [{ pages: 2, colourPages: 0, config: { colour: "bw", sides: "single", binding: "none", copies: 1 } }];
+  const qs = quoteOrder(small, card); // lines ₹3 → min ₹10 → fee ₹0.30 → ₹10.30
+  const { rows: r2 } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "s.pdf", pages: 2, colour_pages: 0, config: small[0].config }]),
+  ]);
+  const { rows: g2 } = await db.query(`select total, platform_fee from public.orders where id = $1;`, [r2[0].id]);
+  if (Number(g2[0].platform_fee) !== 0.3 || Number(g2[0].total) !== 10.3 || qs.total !== 10.3) {
+    throw new Error(`under the minimum: SQL ${g2[0].platform_fee}/${g2[0].total}, TS ${qs.platformFee}/${qs.total}`);
+  }
+  return "₹10.50 + 3% = ₹10.82; ₹3 lifted to ₹10 + 3% = ₹10.30, both sides";
+});
+
+await scenario("a minimum fee floors small orders; changing the rate touches only new orders", async () => {
+  await actingAs(null);
+  await db.exec(`update public.platform_settings set fee_percent = 3, fee_min = 1 where id;`);
+  await actingAs("student_fee");
+  const cfg = { colour: "bw", sides: "single", binding: "none", copies: 1 };
+  const { rows } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "s.pdf", pages: 7, colour_pages: 0, config: cfg }]),
+  ]);
+  const { rows: got } = await db.query(`select total, platform_fee from public.orders where id = $1;`, [rows[0].id]);
+  if (Number(got[0].platform_fee) !== 1 || Number(got[0].total) !== 11.5) {
+    throw new Error(`floor: fee ${got[0].platform_fee}, total ${got[0].total}`);
+  }
+  const card = await rateCardFromDb();
+  const q = quoteOrder([{ pages: 7, colourPages: 0, config: cfg }], card);
+  if (q.platformFee !== 1 || q.total !== 11.5) throw new Error(`TS floor: ${q.platformFee}/${q.total}`);
+
+  // Only the admin changes the rate, and an order placed before keeps its own.
+  await actingAs("student_fee");
+  let refused = false;
+  try {
+    await db.query(`select public.set_platform_fee(10, 0, null, null);`);
+  } catch (error) {
+    refused = /Only the admin/.test(String(error?.message ?? error));
+  }
+  if (!refused) throw new Error("a student changed the platform fee");
+  await actingAs("admin_test");
+  await db.query(`select public.set_platform_fee(5, 0, 'printify@upi', 'Printify');`);
+  const { rows: same } = await db.query(`select platform_fee from public.orders where id = $1;`, [rows[0].id]);
+  if (Number(same[0].platform_fee) !== 1) throw new Error("an existing order's fee moved with the setting");
+  await actingAs("student_fee");
+  const { rows: r2 } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "n.pdf", pages: 20, colour_pages: 0, config: cfg }]),
+  ]);
+  const { rows: g2 } = await db.query(`select platform_fee, rate_card ->> 'platform_fee_percent' as pct from public.orders where id = $1;`, [r2[0].id]);
+  // 20 × ₹1.50 = ₹30 → 5% = ₹1.50
+  if (Number(g2[0].platform_fee) !== 1.5 || Number(g2[0].pct) !== 5) throw new Error(`new order: ${JSON.stringify(g2[0])}`);
+  await actingAs(null);
+  await db.exec(`update public.platform_settings set fee_percent = 3, fee_min = 0 where id;`);
+  return "₹0.32 floored to ₹1; student refused; 5% applies to the next order only";
+});
+
+await scenario("a student cannot rewrite the platform fee", async () => {
+  await actingAs("student_fee");
+  const { rows } = await db.query(`select id, platform_fee from public.orders where user_id = 'student_fee' order by created_at limit 1;`);
+  await db.query(`update public.orders set platform_fee = 0 where id = $1;`, [rows[0].id]);
+  const { rows: after } = await db.query(`select platform_fee from public.orders where id = $1;`, [rows[0].id]);
+  if (Number(after[0].platform_fee) !== Number(rows[0].platform_fee)) throw new Error("the guard let it through");
+  return `still ${after[0].platform_fee}`;
+});
+
+await scenario("the desk's ledger: owed on collected orders, minus what was settled", async () => {
+  // Three of student_fee's orders: collect two (one fully refunded), leave one placed.
+  await actingAs(null);
+  const { rows: mine } = await db.query(
+    `select id, total, platform_fee from public.orders where user_id = 'student_fee' order by created_at;`,
+  );
+  if (mine.length < 3) throw new Error(`expected 3 orders, found ${mine.length}`);
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'queued' where id in ($1, $2);`, [mine[0].id, mine[1].id]);
+  await db.query(`update public.orders set status = 'ready' where id in ($1, $2);`, [mine[0].id, mine[1].id]);
+  await db.query(`update public.orders set status = 'collected' where id in ($1, $2);`, [mine[0].id, mine[1].id]);
+  // The second one is refunded in full: no fee owed on it.
+  await db.query(
+    `update public.orders set refunded_at = now(), refund_amount = total, refund_note = 'misprint' where id = $1;`,
+    [mine[1].id],
+  );
+  const owed = Number(mine[0].platform_fee);
+
+  const { rows: win } = await db.query(`select * from public.fee_window($1, now() - interval '1 hour', now());`, [OPERATOR]);
+  const { rows: bal } = await db.query(`select * from public.fee_balance($1);`, [OPERATOR]);
+  // op_test has other collected orders from earlier scenarios; isolate by checking the deltas.
+  const winFee = Number(win[0].fee);
+  const { rows: check } = await db.query(
+    `select coalesce(sum(platform_fee), 0)::numeric as f, count(*)::int as n from public.orders
+      where operator_id = $1 and status = 'collected' and collected_at >= now() - interval '1 hour'
+        and (refund_amount is null or refund_amount < total);`,
+    [OPERATOR],
+  );
+  if (winFee !== Number(check[0].f) || win[0].orders !== check[0].n) throw new Error(`fee_window ${JSON.stringify(win[0])} vs ${JSON.stringify(check[0])}`);
+  if (winFee < owed) throw new Error(`window fee ${winFee} doesn't include the collected order's ${owed}`);
+  const { rows: refundedIncluded } = await db.query(
+    `select count(*)::int as n from public.orders where id = $1 and refund_amount >= total;`,
+    [mine[1].id],
+  );
+  if (refundedIncluded[0].n !== 1) throw new Error("the refunded order wasn't marked fully refunded");
+
+  // Settle part of it as the admin; a student can't.
+  await actingAs("student_fee");
+  let refused = false;
+  try {
+    await db.query(`select public.record_settlement($1, 5, 'sneaky');`, [OPERATOR]);
+  } catch (error) {
+    refused = /Only the admin/.test(String(error?.message ?? error));
+  }
+  if (!refused) throw new Error("a student recorded a settlement");
+  await actingAs("admin_test");
+  await db.query(`select public.record_settlement($1, 0.25, 'September, part');`, [OPERATOR]);
+  const { rows: bal2 } = await db.query(`select * from public.fee_balance($1);`, [OPERATOR]);
+  // Compared in paise: the SQL numerics are exact, JS subtraction isn't.
+  const inPaise = (v) => Math.round(Number(v) * 100);
+  if (inPaise(bal2[0].settled) !== inPaise(bal[0].settled) + 25) throw new Error("the settlement didn't count");
+  if (inPaise(bal2[0].outstanding) !== inPaise(bal2[0].accrued) - inPaise(bal2[0].settled)) throw new Error("outstanding ≠ accrued − settled");
+
+  // The admin sees every desk; the window figures match the desk's own.
+  const { rows: desks } = await db.query(`select * from public.admin_fee_desks(now() - interval '1 hour', now());`);
+  const row = desks.find((d) => d.operator_id === OPERATOR);
+  if (!row || Number(row.fee) !== winFee || Number(row.outstanding) !== Number(bal2[0].outstanding)) {
+    throw new Error(`admin_fee_desks: ${JSON.stringify(row)}`);
+  }
+  // Takings carry the fee too.
+  await actingAs("op_test");
+  const { rows: stats } = await db.query(`select platform_fee from public.operator_stats_range($1, now() - interval '1 hour', now());`, [OPERATOR]);
+  if (Number(stats[0].platform_fee) !== winFee) throw new Error(`operator_stats_range fee ${stats[0].platform_fee} vs ${winFee}`);
+  return `owed ${winFee} in the window; refunded order excluded; settled 0.25; outstanding ${bal2[0].outstanding}; admin sees the same`;
+});
+
 /* ---------- 0021: the desk hears about new orders ---------- */
 
 await scenario("a new order pushes to staff with a desk device, and only them", async () => {
@@ -1029,13 +1201,17 @@ await actingAs(null);
 // Last, because it needs every table the scenarios above filled.
 await scenario("reset.sql empties every table and names every table", async () => {
   const reset = readFileSync(join(here, "..", "supabase", "reset.sql"), "utf8");
-  const named = [...reset.matchAll(/public\.(\w+)/g)].map((m) => m[1]).sort();
+  // Tables the script says it keeps (configuration, not data) are expected to
+  // exist and to survive; everything else must be named in the truncate.
+  const keeps = [...reset.matchAll(/^-- keeps public\.(\w+)/gm)].map((m) => m[1]);
+  const body = reset.replace(/^--.*$/gm, "");
+  const named = [...body.matchAll(/public\.(\w+)/g)].map((m) => m[1]).sort();
   const { rows: existing } = await db.query(
     `select tablename from pg_tables where schemaname = 'public' order by 1`,
   );
   const real = existing.map((r) => r.tablename).sort();
-  const missing = real.filter((t) => !named.includes(t));
-  const stale = named.filter((t) => !real.includes(t));
+  const missing = real.filter((t) => !named.includes(t) && !keeps.includes(t));
+  const stale = [...named, ...keeps].filter((t) => !real.includes(t));
   if (missing.length) throw new Error(`reset.sql doesn't mention: ${missing.join(", ")}`);
   if (stale.length) throw new Error(`reset.sql names tables that don't exist: ${stale.join(", ")}`);
 
@@ -1045,10 +1221,12 @@ await scenario("reset.sql empties every table and names every table", async () =
   const leftovers = [];
   for (const t of real) {
     const { rows } = await db.query(`select count(*)::int as n from public.${t}`);
-    if (rows[0].n > 0) leftovers.push(`${t} (${rows[0].n})`);
+    if (keeps.includes(t)) {
+      if (rows[0].n === 0) throw new Error(`${t} was emptied, but reset.sql says it keeps it`);
+    } else if (rows[0].n > 0) leftovers.push(`${t} (${rows[0].n})`);
   }
   if (leftovers.length) throw new Error(`still populated: ${leftovers.join(", ")}`);
-  return `${real.length} tables, ${before.rows[0].n} orders gone, all counts zero`;
+  return `${real.length} tables, ${before.rows[0].n} orders gone, all counts zero, ${keeps.join(", ")} kept`;
 });
 
 console.log(

@@ -109,7 +109,8 @@ factual-teal-4113.clerk.accounts.dev
 [`0018_desk_devices.sql`](supabase/migrations/0018_desk_devices.sql),
 [`0019_join_codes.sql`](supabase/migrations/0019_join_codes.sql),
 [`0020_admin_by_hand.sql`](supabase/migrations/0020_admin_by_hand.sql),
-then [`0021_desk_push.sql`](supabase/migrations/0021_desk_push.sql).
+[`0021_desk_push.sql`](supabase/migrations/0021_desk_push.sql),
+then [`0022_platform_fee.sql`](supabase/migrations/0022_platform_fee.sql).
 
 These are **SQL** — they go in the Supabase dashboard's SQL editor
 (`Project → SQL Editor → New query`), not a terminal.
@@ -516,6 +517,40 @@ before changing a policy.
 - **Next up**, **age badges** (amber past what the rate card promised), the
   **Scheduled** tab grouped by hour with *due in 20 min*.
 
+### The platform fee — how Printify earns
+
+Every order carries a **platform fee**: a percentage of the order after the
+desk's minimum (3% by default, set in `/admin`, with an optional floor per
+order), shown as its own line on the student's bill and paid in the same
+UPI tap or cash as the rest. Money never passes through Printify — the desk
+collects the fee with the order and **settles it to Printify's VPA**, which
+the desk's Takings page shows with a QR for the outstanding amount. The
+admin records each payment received; owed minus settled is the balance.
+
+```
+essay.pdf   7 p B&W            ₹10.50
+Platform fee (3%)               ₹0.32
+Total                          ₹10.82
+```
+
+The arithmetic is `place_order()`'s, in double precision in the same order
+as `quoteOrder()` — base × percent ÷ 100 to the paisa, then the floor — and
+the percentage is snapshotted into `rate_card`, so an order keeps the rate
+it was priced at when the admin changes it. The guard pins `platform_fee`
+like every other priced column. Fees are **owed on collected orders that
+weren't fully refunded**; a cancelled or fully refunded order carries none.
+
+Where it shows: the student's bill (print sheet, orders page, island); the
+desk's order card (*incl. ₹0.32 Printify fee*); **Takings** (*Printify fee
+(to settle)* and *Yours after the fee*, plus a *Printify fee* panel with
+today / this week / this month, the all-time balance, the QR and payments
+recorded); and **`/admin`** (the rate and payee VPA, orders and fee earned
+today / this week / this month across every desk, each desk's outstanding
+balance, and *Record payment*). Calendar windows, in the viewer's own time.
+
+`supabase/reset.sql` deliberately keeps `platform_settings` — the rate and
+the VPA are configuration, not data — and the harness knows it does.
+
 ### The desk hears about new orders
 
 `0021`: a device that turns on *New-order alerts* in the desk's settings gets
@@ -691,10 +726,13 @@ Kept honest deliberately — anything listed here has no UI pretending otherwise
 
 Being specific about this matters more than a green badge:
 
-- `npm run check` — types, pricing, phone normalisation, pickup slots, UPI link
-  format, the write-guard column list, and the SQL below. **Passes.**
+- `npm run check` — types, pricing (168 jobs with a 3.25% fee: whole paise,
+  lines + top-up + fee = total, the fee is the percentage of what sits under
+  it), phone normalisation, pickup slots, UPI link format, the write-guard
+  column list, the two-site routing table, the fee's calendar windows, and
+  the SQL below. **Passes.**
 - `npm run build` — **passes.**
-- `npm run check:sql` — all twenty-one migrations applied, re-applied, and their
+- `npm run check:sql` — all twenty-two migrations applied, re-applied, and their
   triggers driven through a real order under a real JWT: tokens, the timeline,
   the write guard, per-file settings, the report constraint, the upload
   ceiling, the order rate limit, document ownership, push endpoint sanity, and
@@ -705,7 +743,9 @@ Being specific about this matters more than a green badge:
   joins once, expired and revoked codes are dead, twenty guesses and you
   wait, applications gone, the admin is shut out of a staffed desk, no
   function or policy can write `admins`, a new order pushes to desk devices
-  and only them). **Passes.** It does not check the RLS policies
+  and only them, the platform fee — the 144-job parity grid now runs at
+  3.25%, the fee on the lifted minimum, the floor, the guard, and the
+  ledger with a settlement and a fully refunded order excluded). **Passes.** It does not check the RLS policies
   themselves; see above for why.
 - **Two sites** — the routing table is unit-tested row by row (38 checks),
   and a split-mode production server was probed on both hosts: every student

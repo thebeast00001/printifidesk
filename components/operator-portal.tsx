@@ -657,6 +657,11 @@ function OrderCard({
               </>
             )}{" "}
             · {money(Number(order.total), currency)}
+            {Number(order.platform_fee) > 0 && (
+              // The student paid this into the desk's UPI or drawer; it's
+              // Printify's, and Takings adds it up.
+              <span className="text-muted"> (incl. {money(Number(order.platform_fee), currency)} Printify fee)</span>
+            )}
           </p>
           <p className="m-0 mt-0.5 font-mono text-[11.5px] text-muted">
             placed {new Date(order.created_at).toLocaleTimeString([], {

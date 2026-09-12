@@ -171,6 +171,15 @@ the order with a reason, visible to the student.
 `operator_stats()` is today-only. Week and month, plus a busiest-hour breakdown,
 is what tells an operator when to staff up.
 
+### 2.12 The platform fee — done (0022)
+Three percent of every order, like Blinkit's handling charge: a line on the
+student's bill, paid with the order into the desk's UPI or drawer, owed by
+the desk to Printify and settled by QR from Takings. Admin sets the rate and
+the payee VPA; sees orders and fee earned today / this week / this month
+across every desk and each desk's balance; records payments received. The
+desk sees the same for itself. Priced in `place_order()`, snapshotted,
+pinned, proven against the JS engine at 3.25%.
+
 ### 2.11 Two sites — done
 The desk is its own site: `desk.printify.app`, its own door (email and
 password, or a PIN on a paired device), its own installable app with its own

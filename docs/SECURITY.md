@@ -26,6 +26,7 @@ token can still attempt, so every rule that matters has to hold in Postgres.
 | Staff vs student | `public.staff` table, read by `is_staff()` | Written only by `claim_invite()` (a live join code), `add_staff()` (staff, by email) or manual SQL. Desks are created by `create_operator()` (admin). |
 | Admin | `public.admins`, read by `is_admin()` | **No write path from the app at all** (0020): no function inserts, no policy allows it. Granted only by SQL in the project dashboard. An admin creates desks and mints a code for an *empty* desk; nothing else. |
 | Order price | `place_order()` RPC (0014) | The browser never writes a total. See below. |
+| Platform fee (0022) | Computed in `place_order()` from `platform_settings`, snapshotted, pinned by the guard | The rate is admin-only (`set_platform_fee`). The ledger (`fee_window`, `fee_balance`, `admin_fee_desks`) is derived from orders, never typed; settlements are recorded by the admin only. |
 | Order changes | `guard_order_update()` trigger (0009, 0012) | Pins every column a student may not touch, by name. |
 | Files | Storage RLS keyed on the path's first folder | Path is `<clerk id>/<doc id>-<name>`; `documents_path_owned` (0014) ties the row to it. |
 | Operator file access | `claim_document_access()` RPC + storage policy (0011) | Logged per open; only while the order is live. |
@@ -321,6 +322,25 @@ Three details worth knowing:
 **Verified:** the routing table row by row in `check:features`; both hosts
 of a split-mode production server with `curl`; the doors in the browser.
 
+### 13. The platform fee is priced where the price is — **0022**
+
+A fee the browser computed would be a fee the browser could omit. So it
+isn't: `place_order()` reads `platform_settings` and adds the fee inside
+the same transaction that prices the lines, in the same double-precision
+arithmetic `quoteOrder()` uses, and the harness's 144-job grid runs at an
+awkward 3.25% so the fee's own rounding is exercised alongside the lines'.
+The percentage is snapshotted into `rate_card`; `guard_order_update()` pins
+`platform_fee`; `check:features` asserts the pin.
+
+What the ledger trusts, and what it doesn't: the amounts owed are sums
+over `orders` — collected, not fully refunded — and no function accepts an
+amount to *add* to them. The only write is `record_settlement()`, admin
+only, which records a payment the admin says arrived; `fee_balance()` is
+owed minus that. A desk can read its own window and balance
+(`is_staff`), the admin every desk's; anon gets nothing. Changing the rate
+is `set_platform_fee()`, admin only, bounded 0–25%, and touches only
+orders placed afterwards — verified.
+
 ### Reviewed and left alone
 
 - **No XSS sinks.** No `dangerouslySetInnerHTML`, `innerHTML`, or `eval` anywhere.
@@ -384,3 +404,4 @@ The security-relevant scenarios in `check:sql`, by name:
 - join codes: admin-only desk creation, one use, expiry and revocation, twenty guesses then wait
 - admin: shut out of a staffed desk's codes; no function or policy writes `admins`
 - a new order pushes to staff with a desk device, and only them
+- the platform fee: to the paisa on top of the minimum; floored; student refused the rate; pinned; ledger excludes a full refund; settlements admin-only

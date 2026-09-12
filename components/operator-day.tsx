@@ -58,6 +58,9 @@ export function OperatorDay({ operator }: { operator: Operator }) {
         { label: "Cash", value: money(Math.round(Number(stats.cash_total)), currency) },
         { label: "UPI", value: money(Math.round(Number(stats.upi_total)), currency) },
         { label: "Refunded", value: money(Math.round(Number(stats.refunded)), currency) },
+        // The fee was inside every total the student paid; it's Printify's,
+        // so what the desk actually keeps is shown next to it.
+        { label: "Printify fee (to settle)", value: money(Number(stats.platform_fee), currency) },
         {
           label: "Total taken",
           value: money(
@@ -65,6 +68,13 @@ export function OperatorDay({ operator }: { operator: Operator }) {
             currency,
           ),
           strong: true,
+        },
+        {
+          label: "Yours after the fee",
+          value: money(
+            Math.round(Number(stats.revenue) - Number(stats.refunded) - Number(stats.platform_fee)),
+            currency,
+          ),
         },
         { label: "Still uncollected", value: String(stats.uncollected) },
         { label: "Median turnaround", value: `${stats.median_minutes} min` },

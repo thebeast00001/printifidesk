@@ -140,6 +140,8 @@ console.log("\n— the bill adds up (to the paisa, for every job in a grid) —"
   const awkward = rateCardOf({
     currency: "₹", bw_per_page: "1.35", colour_per_page: "7.75", duplex_discount: "0.08",
     staple_price: "4.50", bulk_threshold: 60, bulk_multiplier: "0.9", min_order: "10", paper_gsm: 80,
+    // The platform's share, with a decimal of its own so its rounding is real.
+    platform_fee_percent: "3.25", platform_fee_min: "0",
   });
   let jobs = 0;
   let linesOff = 0;
@@ -160,12 +162,15 @@ console.log("\n— the bill adds up (to the paisa, for every job in a grid) —"
             );
             jobs++;
             // Every amount is a whole number of paise.
-            for (const v of [q.total, q.subtotal, q.topUp, ...q.lines.map((l) => l.price)]) {
+            for (const v of [q.total, q.subtotal, q.topUp, q.platformFee, ...q.lines.map((l) => l.price)]) {
               if (Math.abs(Math.round(v * 100) - v * 100) > 1e-6) nonPaise++;
             }
-            // Lines sum to the subtotal; subtotal plus top-up is the total.
+            // Lines sum to the subtotal; subtotal, top-up and fee are the total,
+            // and the fee is the percentage of what sits under it.
             const lineSum = paise(q.lines.reduce((n, l) => n + l.price, 0));
-            if (lineSum !== q.subtotal || paise(q.subtotal + q.topUp) !== q.total) linesOff++;
+            const base = paise(q.subtotal + q.topUp);
+            if (lineSum !== q.subtotal || paise(base + q.platformFee) !== q.total) linesOff++;
+            if (q.platformFee !== paise((base * 3.25) / 100)) linesOff++;
             // Each line's parts sum to that line's price.
             for (const l of q.lines) {
               const parts = paise(l.bwCost + l.colourCost - l.bulkSaving - l.duplexSaving + l.binding);
@@ -184,6 +189,15 @@ console.log("\n— the bill adds up (to the paisa, for every job in a grid) —"
   // The top-up is shown as a line, not hidden in the total.
   const small = quoteOrder([{ pages: 1, colourPages: 0, config: DEFAULT_CONFIG }], awkward);
   check("minimum shows as a top-up line", small.topUp === paise(10 - small.subtotal), `${small.subtotal} + ${small.topUp}`);
+  // The fee sits on the lifted amount: ₹10 × 3.25% = ₹0.325 → ₹0.33 (half-up, like the SQL).
+  check("fee on the lifted minimum", small.platformFee === 0.33 && small.total === 10.33, `${small.platformFee} → ${small.total}`);
+  // A floor replaces a smaller percentage; a zero card means no fee at all.
+  const floored = rateCardOf({ bw_per_page: "1.5", platform_fee_percent: "3", platform_fee_min: "1" });
+  const flooredFee = quoteOrder([{ pages: 2, colourPages: 0, config: { ...DEFAULT_CONFIG, sides: "single", colour: "bw" } }], floored).platformFee;
+  check("minimum fee floors a small order", flooredFee === 1, `${flooredFee}`);
+  const feeless = rateCardOf({ bw_per_page: "1.5" });
+  const noFee = quoteOrder([{ pages: 20, colourPages: 0, config: DEFAULT_CONFIG }], feeless).platformFee;
+  check("no fee configured means none charged", noFee === 0, `${noFee}`);
   check(
     "money shows paise only when present",
     money(4.5) === "₹4.50" && money(5) === "₹5" && money(64.2) === "₹64.20",

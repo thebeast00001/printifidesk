@@ -189,7 +189,11 @@ create trigger orders_consume_stock
 -- ============================================================
 -- 5. Stats over a window, and the end-of-day summary
 -- ============================================================
-create or replace function public.operator_stats_range(
+-- Dropped first: 0022 adds a column to this RETURNS TABLE, and CREATE OR
+-- REPLACE cannot change a return type — so a replay of this file on a
+-- migrated database would fail here otherwise.
+drop function if exists public.operator_stats_range(uuid, timestamptz, timestamptz);
+create function public.operator_stats_range(
   p_operator uuid,
   p_from timestamptz,
   p_to   timestamptz default now()

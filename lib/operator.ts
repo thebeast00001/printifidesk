@@ -257,6 +257,8 @@ export interface RangeStats {
   upi_total: number;
   uncollected: number;
   median_minutes: number;
+  /** Printify's share of the collected, unrefunded orders in the window. */
+  platform_fee: number;
 }
 
 export async function statsForRange(
