@@ -316,6 +316,7 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
   const [kind, setKind] = useState<UpiKind>(operator.upi_kind ?? "personal");
   const [mc, setMc] = useState<string | null>(operator.upi_mc ?? null);
   const [read, setRead] = useState<string | null>(null);
+  const [round, setRound] = useState(operator.round_to_rupee === true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -325,7 +326,8 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
     setName(operator.upi_name ?? "");
     setKind(operator.upi_kind ?? "personal");
     setMc(operator.upi_mc ?? null);
-  }, [operator.upi_vpa, operator.upi_name, operator.upi_kind, operator.upi_mc]);
+    setRound(operator.round_to_rupee === true);
+  }, [operator.upi_vpa, operator.upi_name, operator.upi_kind, operator.upi_mc, operator.round_to_rupee]);
 
   const trimmed = vpa.trim();
   const looksValid = trimmed === "" || isValidVpa(trimmed);
@@ -333,7 +335,8 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
     trimmed !== (operator.upi_vpa ?? "") ||
     name.trim() !== (operator.upi_name ?? "") ||
     kind !== (operator.upi_kind ?? "personal") ||
-    (mc ?? null) !== (operator.upi_mc ?? null);
+    (mc ?? null) !== (operator.upi_mc ?? null) ||
+    round !== (operator.round_to_rupee === true);
 
   // A photo of the shop's own QR standee: the id, the name and — the part
   // that matters — whether it's a merchant id, read off the code itself.
@@ -373,6 +376,7 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
         upi_name: name.trim() || null,
         upi_kind: kind,
         upi_mc: kind === "merchant" ? mc : null,
+        round_to_rupee: round,
       } as OperatorSettings);
       onSaved();
       setSaved(true);
@@ -444,6 +448,25 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
         )}
         {read && <span className="block text-sage-ink"> Read from the photo: {read}</span>}
       </p>
+
+      {/* Whole rupees: what a student types is "14", not "13.91". Any kind of
+          id can have it; a personal one nearly always should. */}
+      <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-[14px] border border-line bg-surface-sunk p-3">
+        <input
+          type="checkbox"
+          checked={round}
+          onChange={(e) => setRound(e.target.checked)}
+          className="mt-0.5 size-4 accent-ink"
+        />
+        <span className="min-w-0">
+          <span className="block text-[12.5px] font-semibold tracking-[-0.01em]">Round every bill up to the rupee</span>
+          <span className="mt-0.5 block text-[11px] leading-snug text-muted">
+            ₹13.91 becomes ₹14, shown on the bill as its own line. Fewer wrong amounts when the
+            student types it; the paise are yours.
+            {kind === "personal" && !round && " Recommended with a personal id."}
+          </span>
+        </span>
+      </label>
 
       <div className="grid gap-2.5 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5 rounded-[14px] border border-line bg-surface-sunk p-3">

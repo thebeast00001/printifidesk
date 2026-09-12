@@ -419,3 +419,5 @@ The security-relevant scenarios in `check:sql`, by name:
 - an overdue fee locks the desk closed until it's settled; within grace it opens
 - the admin shuts a desk: unlisted, closed, codes revoked; its staff refused at every door by triggers, but finish the live order; restored, open again
 - a desk's UPI id is personal until it says merchant (junk kinds and codes refused); the fee id the same, and a five-argument set_platform_fee leaves it
+- a desk that rounds is priced to the rupee in SQL and the browser alike (30 jobs; fee and lines untouched, rounding on the row and in the snapshot)
+- the amount received is the desk's fact and the amount sent the student's claim: the student can't write the desk's columns, an absurd claim is refused, the claim freezes on confirmation, a bare confirm records the bill

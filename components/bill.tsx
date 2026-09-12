@@ -71,6 +71,14 @@ export function Bill({
             muted={muted}
           />
         )}
+        {quote.rounding > 0 && (
+          <Row
+            label="Rounded to the rupee"
+            hint="this desk takes whole rupees"
+            value={`+${money(quote.rounding, cur)}`}
+            muted={muted}
+          />
+        )}
         <Row
           label="Total"
           value={money(quote.total, cur)}

@@ -3,6 +3,7 @@ import { normalisePhone } from "../lib/phone";
 import { summarisePages } from "../lib/pages";
 import { buildSlots } from "../components/pickup-picker";
 import { isValidVpa, parseUpiQr, upiLink } from "../lib/upi";
+import { paise, quoteOrder, rateCardOf, roundedTotal } from "../lib/pricing";
 import type { Operator } from "../lib/orders";
 import { secretMatches } from "../lib/server/secret";
 import { readFileSync, readdirSync } from "node:fs";
@@ -144,6 +145,23 @@ check("plain personal QR → personal", parseUpiQr("upi://pay?pa=ansh@ybl&pn=Ans
 check("not a UPI QR → null", parseUpiQr("printify:order:A03:7F3A9C21"), null);
 check("UPI QR with a bad id → null", parseUpiQr("upi://pay?pa=nope&pn=x"), null);
 
+console.log("\n— rounding to the rupee —");
+const plain = rateCardOf({ bw_per_page: "1.35", colour_per_page: "7.75", min_order: "0", platform_fee_percent: "3.25" });
+const rounds = rateCardOf({ bw_per_page: "1.35", colour_per_page: "7.75", min_order: "0", platform_fee_percent: "3.25", round_to_rupee: true });
+const rq = quoteOrder([{ pages: 7, colourPages: 2, config: { colour: "smart", sides: "single", binding: "none", copies: 1 } }], rounds);
+const pq = quoteOrder([{ pages: 7, colourPages: 2, config: { colour: "smart", sides: "single", binding: "none", copies: 1 } }], plain);
+check("unrounded total has paise", Number.isInteger(pq.total), false);
+check("rounded total is whole", Number.isInteger(rq.total), true);
+check("rounding is the difference", rq.rounding, paise(rq.total - pq.total));
+check("rounding never a whole rupee", rq.rounding < 1 && rq.rounding >= 0, true);
+check("fee unchanged by rounding", rq.platformFee, pq.platformFee);
+check("lines unchanged by rounding", rq.lines[0].price, pq.lines[0].price);
+check("no rounding when off", pq.rounding, 0);
+check("a whole total stays put", roundedTotal(14, rounds), { total: 14, rounding: 0 });
+check("13.91 lifts to 14", roundedTotal(13.91, rounds), { total: 14, rounding: 0.09 });
+check("13.005 → paise first, then the rupee", roundedTotal(13.005, rounds), { total: 14, rounding: 0.99 });
+check("off: 13.91 stays", roundedTotal(13.91, plain), { total: 13.91, rounding: 0 });
+
 console.log("\n— the write guard (RLS grants rows, never columns) —");
 
 // The guard names every column a student may not change. Adding a column to
@@ -183,6 +201,10 @@ for (const column of [
   "refunded_at",
   "refund_amount",
   "refund_note",
+  // 0028: what the desk saw arrive, what rounding added, when the rest was taken.
+  "rounding",
+  "payment_received",
+  "shortfall_cleared_at",
 ]) {
   check(`pins ${column}`, new RegExp(`new\\.${column}\\s*:=\\s*old\\.${column}`).test(body), true);
 }
@@ -190,6 +212,11 @@ for (const column of [
 // The two the student is *supposed* to write, or paying breaks.
 check("leaves payment_claimed_at", /new\.payment_claimed_at\s*:=\s*old\./.test(body), false);
 check("reference pinned only after check", body.includes("old.payment_taken_at is not null"), true);
+// The student's amount is a claim like the reference: theirs until the desk
+// confirms, frozen after — so it's pinned inside that same block, not above it.
+const freezeBlock = body.slice(body.indexOf("old.payment_taken_at is not null"));
+check("claimed amount frozen only after confirmation", /new\.payment_claimed_amount\s*:=\s*old\.payment_claimed_amount/.test(freezeBlock), true);
+check("claimed amount free before it", /new\.payment_claimed_amount\s*:=\s*old\./.test(body.slice(0, body.indexOf("old.payment_taken_at is not null"))), false);
 
 console.log("\n— migration hygiene —");
 const numbers = migrations.map((f) => f.slice(0, 4));

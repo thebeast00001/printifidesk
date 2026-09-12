@@ -6,7 +6,8 @@ import { motion } from "motion/react";
 import jsQR from "jsqr";
 import { Camera, Check, ImageUp, Keyboard, Loader2, ScanLine, ShieldAlert, ShieldCheck } from "lucide-react";
 import { orderCustomer, type Customer } from "@/lib/operator";
-import { listOperators, type OrderRow } from "@/lib/orders";
+import { listOperators, paymentBalance, type OrderRow } from "@/lib/orders";
+import { money } from "@/lib/pricing";
 import { cn, spring } from "@/lib/utils";
 
 /**
@@ -569,6 +570,13 @@ function MatchPanel({
           <span className="ml-2 font-mono text-[11.5px] text-muted">{customer.roll_no}</span>
         )}
       </p>
+      {paymentBalance(order).short > 0 && (
+        // The one moment the desk can still take it: before the paper leaves.
+        <p className="m-0 mt-2.5 rounded-xl bg-clay px-3 py-2 text-[13px] font-semibold text-clay-ink">
+          Take {money(paymentBalance(order).short)} in cash — they paid{" "}
+          {money(paymentBalance(order).received ?? 0)} of {money(Number(order.total))}.
+        </p>
+      )}
 
       {proof === "wrong" ? (
         <p className="m-0 mt-3 text-[12px] leading-relaxed text-clay-ink">

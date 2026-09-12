@@ -40,6 +40,12 @@ export interface RateCard {
   platformFeePercent: number;
   /** A floor per order, so a ₹6 job doesn't show a fee of ₹0.18. */
   platformFeeMin: number;
+  /**
+   * Lift the total to the next whole rupee, shown as its own line. A desk
+   * paid into a personal UPI id turns this on: the student types the
+   * amount, and ₹14 is typed right far more often than ₹13.91.
+   */
+  roundToRupee: boolean;
 }
 
 /** Shape of the operator row the rate card is read from. */
@@ -55,6 +61,7 @@ export interface RateSource {
   paper_gsm?: number | null;
   platform_fee_percent?: number | string | null;
   platform_fee_min?: number | string | null;
+  round_to_rupee?: boolean | null;
 }
 
 const num = (v: number | string | null | undefined, fallback: number) => {
@@ -82,7 +89,20 @@ export function rateCardOf(operator: RateSource | null | undefined): RateCard {
     // hasn't run 0022, prices exactly as it did before.
     platformFeePercent: num(operator?.platform_fee_percent, 0),
     platformFeeMin: num(operator?.platform_fee_min, 0),
+    roundToRupee: operator?.round_to_rupee === true,
   };
+}
+
+/**
+ * The total a desk is paid: lines, minimum, fee — then, if the desk rounds,
+ * up to the next rupee. Returns what rounding added so the bill can show it.
+ * The database does the same in place_order() (0028).
+ */
+export function roundedTotal(unrounded: number, card: RateCard): { total: number; rounding: number } {
+  const exact = paise(unrounded);
+  if (!card.roundToRupee) return { total: exact, rounding: 0 };
+  const total = Math.ceil(exact - 1e-9);
+  return { total, rounding: paise(total - exact) };
 }
 
 /**
@@ -135,6 +155,8 @@ export interface Quote {
   topUp: number;
   /** Printify's share, on top of the lines and the top-up. */
   platformFee: number;
+  /** What lifting to the next rupee added; zero unless the desk rounds. */
+  rounding: number;
   total: number;
   /** What full colour would have cost — the smart-colour pitch. */
   fullColourTotal: number;
@@ -276,7 +298,7 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
   const topUp = paise(base - subtotal);
   // The minimum lifts the lines; the fee sits on top of that.
   const platformFee = platformFeeOn(base, card);
-  const total = paise(base + platformFee);
+  const { total, rounding } = roundedTotal(base + platformFee, card);
 
   // What the same job would have cost printed entirely in colour. Used by the
   // savings widget, so every line counts regardless of what it was set to.
@@ -286,7 +308,7 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
       .reduce((n, v) => n + v, 0),
   );
   const fullColourBase = Math.max(fullColourSum, minOrder);
-  const fullColourTotal = paise(fullColourBase + platformFeeOn(fullColourBase, card));
+  const fullColourTotal = roundedTotal(fullColourBase + platformFeeOn(fullColourBase, card), card).total;
 
   // The smart-colour claim only counts lines actually set to smart. A line the
   // student deliberately set to black & white saved them money, but not by
@@ -303,7 +325,7 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
       .reduce((n, v) => n + v, 0),
   );
   const smartBase = Math.max(smartSum, minOrder);
-  const smartTotal = paise(smartBase + platformFeeOn(smartBase, card));
+  const smartTotal = roundedTotal(smartBase + platformFeeOn(smartBase, card), card).total;
 
   return {
     bwPages: sum((c) => c.bwPages),
@@ -316,6 +338,7 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
     subtotal,
     topUp,
     platformFee,
+    rounding,
     total,
     fullColourTotal,
     smartSaving: Math.max(0, paise(smartTotal - total)),

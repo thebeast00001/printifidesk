@@ -38,6 +38,8 @@ export interface OrderRow {
   full_colour_total: number;
   /** Printify's share, inside `total`. Zero before 0022. */
   platform_fee: number;
+  /** What lifting to the next rupee added, inside `total`. Zero unless the desk rounds (0028). */
+  rounding?: number | string | null;
   pages: number;
   colour_pages: number;
   config: PrintConfig;
@@ -53,6 +55,11 @@ export interface OrderRow {
   payment_claimed_at: string | null;
   payment_taken_at: string | null;
   payment_reference: string | null;
+  /* 0028. The student's claim of what their app showed; the desk's record of
+     what arrived; and when the desk collected a shortfall in cash. */
+  payment_claimed_amount?: number | string | null;
+  payment_received?: number | string | null;
+  shortfall_cleared_at?: string | null;
   refunded_at: string | null;
   refund_amount: number | null;
   refund_note: string | null;
@@ -127,6 +134,8 @@ export interface Operator {
      so the student types it. Missing before 0027 — read as personal. */
   upi_kind?: UpiKind;
   upi_mc?: string | null;
+  /** 0028: totals lifted to the next rupee, as a line on the bill. */
+  round_to_rupee?: boolean;
   accepts_cash: boolean;
   paper_stock: number | null;
   low_paper_at: number;
@@ -180,7 +189,7 @@ const OPERATOR_SELECT_LEGACY =
   "min_order, paper_gsm, pages_per_minute, handling_minutes, short_name, is_listed, opens_at, closes_at, " +
   "upi_vpa, upi_name, accepts_cash, paper_stock, low_paper_at, toner_pages, low_toner_at, " +
   "shut_at, shut_reason";
-const OPERATOR_SELECT = OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc";
+const OPERATOR_SELECT = OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee";
 
 // The column list this project answers to. A deployment can go out before
 // its migration is run; 42703 ("column does not exist") on the newest
@@ -259,6 +268,25 @@ const ORDER_SELECT = "*, order_items(id, name, pages, colour_pages, selected_pag
 
 export async function defaultOperatorId(): Promise<string | null> {
   return (await defaultOperator())?.id ?? null;
+}
+
+/**
+ * Where an order's money stands, from the desk's record. `short` is what the
+ * counter still has to take in cash; `over` is what the desk owes back —
+ * both zero until the desk has confirmed, and `short` zero once cleared.
+ */
+export function paymentBalance(order: OrderRow): { short: number; over: number; received: number | null } {
+  if (order.payment_received === null || order.payment_received === undefined) {
+    return { short: 0, over: 0, received: null };
+  }
+  const received = Number(order.payment_received);
+  const total = Number(order.total);
+  const diff = Math.round((received - total) * 100) / 100;
+  return {
+    received,
+    short: diff < 0 && !order.shortfall_cleared_at ? -diff : 0,
+    over: diff > 0 ? diff : 0,
+  };
 }
 
 /** The platform fee, stamped onto an operator row so every quote includes it. */

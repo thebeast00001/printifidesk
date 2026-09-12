@@ -768,6 +768,34 @@ the Fees page).
 deploy lands before its migration; the operator queries retry once with
 the previous column list on `42703`, so a desk never disappears for that.
 
+**The amount is a fact the desk records** (`0028`). With a personal id
+the student types the amount, so three things keep that honest:
+
+1. **Round to the rupee** — a desk setting under *Getting paid*. The
+   total is lifted to the next whole rupee, *after* the fee, shown on the
+   bill as "Rounded to the rupee +₹0.03" (`orders.rounding`). Priced in
+   `place_order` exactly as `roundedTotal()` prices it in the browser; the
+   lines and the fee don't move. ₹14 is typed right far more often than
+   ₹13.91.
+2. **Amount received** — on a UPI claim, *Confirm payment* opens a row
+   with the bill pre-filled; the desk types what its own app shows
+   arrived (`orders.payment_received`; a bare confirm records the bill).
+   Short: the card and the handover panel say *collect ₹0.72 cash* until
+   the desk taps *Took ₹0.72 cash* (`shortfall_cleared_at`). Over: the
+   refund form opens pre-filled with the difference. The student's order
+   shows the same line. The Next-up bar routes a UPI claim at a
+   personal-id desk to that row rather than accepting blind.
+3. **Amount you sent** — the student's claim, entered with the reference
+   when they tap *I've paid by UPI* (`orders.payment_claimed_amount`). A
+   number that isn't the bill is a warning on the phone — "₹0.72 short;
+   the desk will take the rest at pickup" — not a surprise at the counter.
+   The desk sees the claim beside its own field. Like the reference, it's
+   theirs to write until the desk confirms and frozen after.
+
+The guard pins `rounding`, `payment_received` and `shortfall_cleared_at`
+against the student; `check:features` asserts it, and the harness runs a
+rounding parity grid and the whole claim/confirm/clear sequence.
+
 ## How a file becomes a price
 
 `hooks/use-uploader.ts` runs analysis *before* upload, so the quote appears
@@ -874,11 +902,12 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0027** in the SQL editor, pasted from the files. Until
+2. **Run 0022 → 0028** in the SQL editor, pasted from the files. Until
    0025, the fee panel shows no due date; until 0024, the join page shows a
    migration message in the application panel; until 0026, *Shut this
    desk* on `/admin/desks` errors with a missing function; until 0027,
-   every desk pays as a personal id and saving *Business QR id* fails.
+   every desk pays as a personal id and saving *Business QR id* fails;
+   until 0028, no bill rounds and the confirm row's amount is not kept.
 3. **`npm run check:rls` with two ordinary accounts** — a student who is
    *not* the admin and a desk account that *is* on a desk, both signed in
    recently. The run so far (anonymous + the admin account) passed 21 probes;

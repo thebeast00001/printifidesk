@@ -6,6 +6,7 @@ import {
   AlertCircle,
   Banknote,
   Check,
+  Coins,
   ChevronDown,
   Clock,
   Download,
@@ -25,6 +26,7 @@ import {
 import {
   acceptOrder,
   advance,
+  clearShortfall,
   declineOrder,
   openOrderFile,
   operatorOrders,
@@ -36,7 +38,7 @@ import {
   type Customer,
   type OperatorStats,
 } from "@/lib/operator";
-import { NEXT_STATUS, STATUS_LABEL, type Operator, type OrderRow, type OrderStatus } from "@/lib/orders";
+import { NEXT_STATUS, STATUS_LABEL, paymentBalance, type Operator, type OrderRow, type OrderStatus } from "@/lib/orders";
 import { money, paise, type PrintConfig } from "@/lib/pricing";
 import { summarisePages } from "@/lib/pages";
 import { openReports, resolveReport, type OrderReport } from "@/lib/reports";
@@ -105,6 +107,9 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
   const [reports, setReports] = useState<OrderReport[]>([]);
   const [scanning, setScanning] = useState(false);
   const [slipFor, setSlipFor] = useState<OrderRow | null>(null);
+  // The Next-up bar can't take an amount; a UPI claim at a desk paid into a
+  // personal id opens the card's own confirm row instead of a bare accept.
+  const [confirmFor, setConfirmFor] = useState<string | null>(null);
   // Whether the hero card's own buttons are on screen. The thumb bar exists
   // for when they aren't; drawn over them it just hides them.
   const [heroInView, setHeroInView] = useState(true);
@@ -421,7 +426,12 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
                   onSlip={() => setSlipFor(order)}
                   currency={operator.currency ?? "₹"}
                   busy={busy === order.id}
-                  onAccept={() => run(order.id, () => acceptOrder(order.id))}
+                  confirmNow={confirmFor === order.id}
+                  onAccept={(received) => {
+                    setConfirmFor(null);
+                    void run(order.id, () => acceptOrder(order.id, received));
+                  }}
+                  onShortfallCleared={() => run(order.id, () => clearShortfall(order.id))}
                   onDecline={(reason) => run(order.id, () => declineOrder(order.id, reason))}
                   onAdvance={(to, label) => run(order.id, () => advance(order.id, to, label))}
                   onPriority={() => run(order.id, () => setPriority(order.id, !order.is_priority))}
@@ -443,9 +453,19 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
       <NextUpBar
         order={heroInView ? null : nextUp}
         busy={busy === nextUp?.id}
-        onAct={(order, to, label) =>
-          run(order.id, () => (to === "queued" && order.status === "placed" ? acceptOrder(order.id) : advance(order.id, to, label)))
-        }
+        onAct={(order, to, label) => {
+          if (to === "queued" && order.status === "placed") {
+            if (order.payment_method === "upi" && operator.upi_kind !== "merchant") {
+              // The amount typed by the student is the desk's to check.
+              setConfirmFor(order.id);
+              document.getElementById(`order-${order.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+              return;
+            }
+            void run(order.id, () => acceptOrder(order.id));
+            return;
+          }
+          void run(order.id, () => advance(order.id, to, label));
+        }}
       />
 
       <ScanSheet
@@ -513,6 +533,8 @@ function OrderCard({
   currency,
   busy,
   onAccept,
+  confirmNow,
+  onShortfallCleared,
   onDecline,
   onAdvance,
   onPriority,
@@ -529,7 +551,11 @@ function OrderCard({
   onSlip: () => void;
   currency: string;
   busy: boolean;
-  onAccept: () => void;
+  /** With the amount the desk saw arrive; without one, the bill itself. */
+  onAccept: (received?: number) => void;
+  /** Opened by the Next-up bar when the amount needs checking. */
+  confirmNow?: boolean;
+  onShortfallCleared: () => void;
   onDecline: (reason: string) => void;
   onAdvance: (to: OrderStatus, label: string) => void;
   onPriority: () => void;
@@ -540,6 +566,14 @@ function OrderCard({
 }) {
   const [open, setOpen] = useState(false);
   const [declining, setDeclining] = useState(false);
+  // The confirm row: what arrived, pre-filled with the bill. Only a UPI
+  // claim gets it — cash is counted in the hand.
+  const [confirming, setConfirming] = useState(false);
+  const [received, setReceived] = useState(paise(Number(order.total)).toFixed(2));
+  useEffect(() => {
+    if (confirmNow) setConfirming(true);
+  }, [confirmNow]);
+  const balance = paymentBalance(order);
   const [note, setNote] = useState(order.operator_note ?? "");
   const [opening, setOpening] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -558,6 +592,7 @@ function OrderCard({
 
   return (
     <article
+      id={`order-${order.id}`}
       className={cn(
         "rounded-[20px] border bg-surface p-4 shadow-card lg:p-5",
         order.is_priority ? "border-ink" : "border-line",
@@ -620,6 +655,24 @@ function OrderCard({
                     : " by UPI"}
               </span>
             )}
+            {balance.short > 0 && (
+              <span
+                className="flex items-center gap-1 rounded-full bg-clay px-2.5 py-1 text-[10.5px] font-semibold text-clay-ink"
+                title={`Received ${money(balance.received ?? 0, currency)} of ${money(Number(order.total), currency)}. Take the rest in cash when they collect.`}
+              >
+                <Coins size={10} strokeWidth={2.4} />
+                collect {money(balance.short, currency)} cash
+              </span>
+            )}
+            {balance.over > 0 && !order.refunded_at && (
+              <span
+                className="flex items-center gap-1 rounded-full bg-bone px-2.5 py-1 text-[10.5px] font-semibold text-ink"
+                title={`Received ${money(balance.received ?? 0, currency)} of ${money(Number(order.total), currency)}. Return the difference and record it below.`}
+              >
+                <Coins size={10} strokeWidth={2.4} />
+                {money(balance.over, currency)} over — return it
+              </span>
+            )}
             {reports.length > 0 && (
               <span className="flex items-center gap-1 rounded-full bg-clay px-2.5 py-1 text-[10.5px] font-semibold text-clay-ink">
                 <Flag size={10} strokeWidth={2.4} />
@@ -679,7 +732,11 @@ function OrderCard({
         <div className="flex basis-full flex-wrap items-center gap-2 sm:basis-auto sm:shrink-0">
           {order.status === "placed" ? (
             <>
-              <ActionButton onClick={onAccept} busy={busy} primary>
+              <ActionButton
+                onClick={() => (order.payment_method === "upi" ? setConfirming((v) => !v) : onAccept())}
+                busy={busy}
+                primary
+              >
                 <Check size={14} strokeWidth={2.6} />
                 {order.payment_claimed_at ? "Confirm payment" : "Payment taken"}
               </ActionButton>
@@ -687,6 +744,23 @@ function OrderCard({
                 <X size={14} strokeWidth={2.4} />
                 Decline
               </ActionButton>
+            </>
+          ) : balance.short > 0 ? (
+            <>
+              <ActionButton onClick={onShortfallCleared} busy={busy}>
+                <Coins size={14} strokeWidth={2.4} />
+                Took {money(balance.short, currency)} cash
+              </ActionButton>
+              {(NEXT_STATUS[order.status] ?? []).map(({ to, label }) => (
+                <ActionButton
+                  key={to}
+                  onClick={() => onAdvance(to, label)}
+                  busy={busy}
+                  primary={to !== "failed" && to !== "cancelled"}
+                >
+                  {label}
+                </ActionButton>
+              ))}
             </>
           ) : (
             (NEXT_STATUS[order.status] ?? []).map(({ to, label }) => (
@@ -773,6 +847,39 @@ function OrderCard({
           {fileError}
         </p>
       )}
+
+      {/* A UPI claim: the desk types what its own app shows arrived. Short of
+          the bill, the difference is taken in cash at the counter; over it,
+          returned and recorded as a refund. The bill is the default, so a
+          desk that saw the right number just taps. */}
+      <AnimatePresence initial={false}>
+        {confirming && order.status === "placed" && (
+          <motion.form
+            key="confirm"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: easeIos }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              const value = Number(received);
+              if (!Number.isFinite(value) || value < 0) return;
+              setConfirming(false);
+              onAccept(paise(value));
+            }}
+            className="overflow-hidden"
+          >
+            <ConfirmRow
+              order={order}
+              currency={currency}
+              received={received}
+              onChange={setReceived}
+              busy={busy}
+              onCancel={() => setConfirming(false)}
+            />
+          </motion.form>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence initial={false}>
         {declining && (
@@ -1119,9 +1226,102 @@ function LowStock({ operator }: { operator: Operator }) {
 const REFUND_REASONS = [
   "Print came out wrong",
   "Paid twice",
+  "Paid more than the bill",
   "Cancelled before printing",
   "Machine broke down",
 ];
+
+function ConfirmRow({
+  order,
+  currency,
+  received,
+  onChange,
+  busy,
+  onCancel,
+}: {
+  order: OrderRow;
+  currency: string;
+  received: string;
+  onChange: (v: string) => void;
+  busy: boolean;
+  onCancel: () => void;
+}) {
+  const total = paise(Number(order.total));
+  const value = Number(received);
+  const valid = Number.isFinite(value) && value >= 0 && received.trim() !== "";
+  const diff = valid ? paise(value - total) : 0;
+  const claimed =
+    order.payment_claimed_amount === null || order.payment_claimed_amount === undefined
+      ? null
+      : paise(Number(order.payment_claimed_amount));
+
+  return (
+    <div className="mt-3 rounded-[14px] border border-line bg-surface-sunk p-3.5">
+      <p className="m-0 text-[12px] leading-relaxed text-ink-soft">
+        Open your UPI app and read what arrived for{" "}
+        <b className="font-semibold">{order.token ?? "this order"}</b>
+        {order.payment_reference ? (
+          <>
+            {" "}
+            (ref <span className="font-mono">{order.payment_reference}</span>)
+          </>
+        ) : null}
+        . The bill is {money(total, currency)}
+        {claimed !== null && claimed !== total ? (
+          <>
+            ; the student says they sent <b className="font-semibold">{money(claimed, currency)}</b>
+          </>
+        ) : null}
+        .
+      </p>
+      <div className="mt-2.5 flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[11.5px] font-semibold">Amount received</span>
+          <input
+            autoFocus
+            value={received}
+            onChange={(e) => onChange(e.target.value.replace(/[^\d.]/g, ""))}
+            inputMode="decimal"
+            className={cn(
+              "w-28 rounded-lg border bg-surface px-2.5 py-2 font-mono text-[14px] outline-none",
+              valid ? "border-line focus:border-ink" : "border-clay-ink",
+            )}
+          />
+        </label>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={!valid || busy}
+            className="flex h-10 items-center gap-1.5 rounded-xl bg-ink px-3.5 text-[12.5px] font-semibold text-paper disabled:opacity-50"
+          >
+            <Check size={14} strokeWidth={2.6} />
+            Confirm {valid ? money(paise(value), currency) : ""}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-10 rounded-xl border border-line px-3.5 text-[12.5px] font-semibold text-ink-soft"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+      {valid && diff < 0 && (
+        <p className="m-0 mt-2 text-[12px] font-semibold text-clay-ink">
+          {money(-diff, currency)} short — the card will remind you to take it in cash when they collect.
+        </p>
+      )}
+      {valid && diff > 0 && (
+        <p className="m-0 mt-2 text-[12px] font-semibold text-ink">
+          {money(diff, currency)} over — return it to them and record the refund below once you have.
+        </p>
+      )}
+      {valid && diff === 0 && (
+        <p className="m-0 mt-2 text-[12px] text-muted">Exactly the bill.</p>
+      )}
+    </div>
+  );
+}
 
 /**
  * Recording a refund.
@@ -1145,9 +1345,11 @@ function RefundRow({
 }) {
   // To the paisa: a ₹64.20 order can be refunded ₹64.20, not ₹64.
   const total = paise(Number(order.total));
+  // An overpayment is the amount to return; anything else starts at the bill.
+  const over = paymentBalance(order).over;
   const [open, setOpen] = useState(false);
-  const [amount, setAmount] = useState(String(total));
-  const [reason, setReason] = useState(REFUND_REASONS[0]);
+  const [amount, setAmount] = useState(String(over > 0 ? over : total));
+  const [reason, setReason] = useState(over > 0 ? "Paid more than the bill" : REFUND_REASONS[0]);
 
   // Nothing to refund until the operator has actually taken the money.
   if (!order.payment_taken_at) return null;

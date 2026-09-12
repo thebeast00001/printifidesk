@@ -412,6 +412,7 @@ async function rateCardFromDb() {
   const { rows } = await db.query(
     `select o.currency, o.bw_per_page::text, o.colour_per_page::text, o.duplex_discount::text,
             o.staple_price::text, o.bulk_threshold, o.bulk_multiplier::text, o.min_order::text, o.paper_gsm,
+            o.round_to_rupee,
             ps.fee_percent::text as platform_fee_percent, ps.fee_min::text as platform_fee_min
        from public.operators o, public.platform_settings ps
       where o.id = $1;`,
@@ -1485,6 +1486,120 @@ await scenario("a desk's UPI id is personal until it says merchant; the fee id t
   if (!bad) throw new Error("an unknown payee kind was accepted");
   await db.query(`select public.set_platform_fee(3, 0, null, null, 15, 'personal');`);
   return "desk: personal by default, merchant + 4-digit code accepted, junk refused; fee id: set to merchant, a five-arg call leaves it, junk refused";
+});
+
+/* ---------- 0028: the rupee, and the amount as a fact ---------- */
+
+await scenario("a desk that rounds is priced to the rupee, in SQL and in the browser alike", async () => {
+  await actingAs(null);
+  await db.query(`update public.operators set round_to_rupee = true where id = $1;`, [OPERATOR]);
+  await db.exec(`update public.platform_settings set fee_percent = 3.25, fee_min = 0 where id;`);
+  const card = await rateCardFromDb();
+  if (!card.roundToRupee) throw new Error("the card didn't pick up round_to_rupee");
+  let compared = 0;
+  let rounded = 0;
+  await actingAs("student_round");
+  for (const pages of [1, 7, 23, 48, 61]) {
+    for (const colour of ["smart", "bw", "full"]) {
+      for (const copies of [1, 3]) {
+        const lines = [
+          { pages, colourPages: Math.floor(pages / 3), config: { colour, sides: "double", binding: "staple", copies } },
+          { pages: 5, colourPages: 1, config: { colour: "bw", sides: "single", binding: "none", copies: 1 } },
+        ];
+        const q = quoteOrder(lines, card);
+        if (!Number.isInteger(q.total)) throw new Error(`TS total ${q.total} is not whole`);
+        await db.query(`delete from public.orders where user_id = 'student_round';`);
+        const { rows } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+          OPERATOR,
+          JSON.stringify(lines.map((l, i) => ({ name: `r${i}.pdf`, pages: l.pages, colour_pages: l.colourPages, config: l.config }))),
+        ]);
+        const { rows: got } = await db.query(
+          `select total, platform_fee, rounding, full_colour_total, rate_card from public.orders where id = $1;`,
+          [rows[0].id],
+        );
+        const label = `${pages}p ${colour} x${copies}`;
+        if (Number(got[0].total) !== q.total) throw new Error(`${label}: SQL ${got[0].total} vs TS ${q.total}`);
+        if (Number(got[0].rounding) !== q.rounding) throw new Error(`${label}: rounding SQL ${got[0].rounding} vs TS ${q.rounding}`);
+        if (Number(got[0].platform_fee) !== q.platformFee) throw new Error(`${label}: fee changed by rounding`);
+        if (Number(got[0].full_colour_total) !== q.fullColourTotal) throw new Error(`${label}: full-colour SQL ${got[0].full_colour_total} vs TS ${q.fullColourTotal}`);
+        if (got[0].rate_card.round_to_rupee !== true) throw new Error("round_to_rupee wasn't snapshotted");
+        if (q.rounding > 0) rounded++;
+        compared++;
+      }
+    }
+  }
+  await actingAs(null);
+  await db.query(`update public.operators set round_to_rupee = false where id = $1;`, [OPERATOR]);
+  await db.exec(`update public.platform_settings set fee_percent = 3, fee_min = 0 where id;`);
+  if (rounded === 0) throw new Error("no job in the grid needed rounding — the grid isn't testing it");
+  return `${compared} jobs whole to the rupee, ${rounded} of them lifted; fee untouched, rounding on the row and in the snapshot`;
+});
+
+await scenario("the amount received is the desk's fact; the amount sent is the student's claim", async () => {
+  await actingAs("student_amount");
+  const { rows: placed } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "a.pdf", pages: 9, colour_pages: 1, config: { copies: 1, sides: "single" } }]),
+  ]);
+  const id = placed[0].id;
+  const { rows: o } = await db.query(`select total from public.orders where id = $1;`, [id]);
+  const total = Number(o[0].total);
+
+  // The student says what their app showed — allowed, and kept as a claim.
+  await db.query(
+    `update public.orders set payment_method = 'upi', payment_claimed_at = now(), payment_claimed_amount = $2 where id = $1;`,
+    [id, total - 0.5],
+  );
+  // But not the desk's facts.
+  await db.query(`update public.orders set payment_received = $2, rounding = 0.5, shortfall_cleared_at = now() where id = $1;`, [id, total]);
+  const { rows: pinned } = await db.query(
+    `select payment_claimed_amount, payment_received, rounding, shortfall_cleared_at from public.orders where id = $1;`,
+    [id],
+  );
+  if (Number(pinned[0].payment_claimed_amount) !== total - 0.5) throw new Error("the student's claim wasn't kept");
+  if (pinned[0].payment_received !== null || Number(pinned[0].rounding) !== 0 || pinned[0].shortfall_cleared_at !== null) {
+    throw new Error(`a student wrote the desk's facts: ${JSON.stringify(pinned[0])}`);
+  }
+  let big = false;
+  try {
+    await db.query(`update public.orders set payment_claimed_amount = 999999 where id = $1;`, [id]);
+  } catch {
+    big = true;
+  }
+  if (!big) throw new Error("an absurd claimed amount was accepted");
+
+  // The desk confirms with what actually arrived: short by fifty paise.
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'queued', payment_received = $2 where id = $1;`, [id, total - 0.5]);
+  const { rows: taken } = await db.query(
+    `select payment_taken_at, payment_received, payment_claimed_amount from public.orders where id = $1;`,
+    [id],
+  );
+  if (!taken[0].payment_taken_at || Number(taken[0].payment_received) !== total - 0.5) throw new Error(`confirm: ${JSON.stringify(taken[0])}`);
+
+  // Confirmed: the student's claim is frozen, like the reference.
+  await actingAs("student_amount");
+  await db.query(`update public.orders set payment_claimed_amount = $2 where id = $1;`, [id, total]);
+  const { rows: frozen } = await db.query(`select payment_claimed_amount from public.orders where id = $1;`, [id]);
+  if (Number(frozen[0].payment_claimed_amount) !== total - 0.5) throw new Error("the claim changed after confirmation");
+
+  // The desk collects the rest at the counter and says so.
+  await actingAs("op_test");
+  await db.query(`update public.orders set shortfall_cleared_at = now() where id = $1;`, [id]);
+  const { rows: cleared } = await db.query(`select shortfall_cleared_at from public.orders where id = $1;`, [id]);
+  if (!cleared[0].shortfall_cleared_at) throw new Error("the shortfall wasn't cleared");
+
+  // A tap with no number means the money was right.
+  await actingAs("student_amount");
+  const { rows: second } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "b.pdf", pages: 2, colour_pages: 0, config: { copies: 1, sides: "single" } }]),
+  ]);
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'queued' where id = $1;`, [second[0].id]);
+  const { rows: exact } = await db.query(`select total, payment_received from public.orders where id = $1;`, [second[0].id]);
+  if (Number(exact[0].payment_received) !== Number(exact[0].total)) throw new Error("a bare confirm didn't record the bill as received");
+  return `claimed ${(total - 0.5).toFixed(2)} of ${total.toFixed(2)} kept, desk's columns refused; confirmed short, claim frozen, shortfall cleared; bare confirm = bill`;
 });
 
 await scenario("the upload ceiling holds", async () => {

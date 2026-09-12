@@ -270,9 +270,21 @@ export async function operatorOrders(
   return (data ?? []) as OrderRow[];
 }
 
-/** Accepting is the moment money changed hands at the desk. */
-export async function acceptOrder(orderId: string): Promise<void> {
-  await patchOrder(orderId, { status: "queued", note: "Payment taken" });
+/**
+ * Accepting is the moment money changed hands at the desk. `received` is
+ * what the desk saw arrive; left out, the guard records the bill itself.
+ */
+export async function acceptOrder(orderId: string, received?: number): Promise<void> {
+  await patchOrder(orderId, {
+    status: "queued",
+    note: received === undefined ? "Payment taken" : `Payment taken · ₹${received.toFixed(2)} received`,
+    ...(received === undefined ? {} : { payment_received: received }),
+  });
+}
+
+/** The counter took the rest in cash. */
+export async function clearShortfall(orderId: string): Promise<void> {
+  await patchOrder(orderId, { shortfall_cleared_at: new Date().toISOString() });
 }
 
 export async function declineOrder(orderId: string, reason: string): Promise<void> {

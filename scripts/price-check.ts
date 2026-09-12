@@ -203,6 +203,40 @@ console.log("\n— the bill adds up (to the paisa, for every job in a grid) —"
     money(4.5) === "₹4.50" && money(5) === "₹5" && money(64.2) === "₹64.20",
     `${money(4.5)}, ${money(5)}, ${money(64.2)}`,
   );
+
+  // A desk that rounds: the same jobs, every total whole, the lines and the
+  // fee untouched, and what was added shown as its own line.
+  const rounding = rateCardOf({
+    bw_per_page: "1.35", colour_per_page: "7.75", duplex_discount: "0.08", staple_price: "4.50",
+    bulk_threshold: 60, bulk_multiplier: "0.9", min_order: "10", paper_gsm: 80,
+    platform_fee_percent: "3.25", platform_fee_min: "0", round_to_rupee: true,
+  });
+  let notWhole = 0;
+  let lineDrift = 0;
+  let feeDrift = 0;
+  let roundingOff = 0;
+  let lifted = 0;
+  for (const pages of [1, 7, 23, 48, 61, 120]) {
+    for (const colour of ["smart", "bw", "full"] as const) {
+      for (const copies of [1, 3]) {
+        const lines: QuoteLine[] = [
+          { pages, colourPages: Math.floor(pages / 3), config: { ...DEFAULT_CONFIG, colour, copies } },
+          { pages: 5, colourPages: 1, config: { ...DEFAULT_CONFIG, colour: "bw", sides: "single" } },
+        ];
+        const r = quoteOrder(lines, rounding);
+        const u = quoteOrder(lines, awkward);
+        if (!Number.isInteger(r.total)) notWhole++;
+        if (r.lines.some((l, i) => l.price !== u.lines[i].price)) lineDrift++;
+        if (r.platformFee !== u.platformFee) feeDrift++;
+        if (paise(u.total + r.rounding) !== r.total || r.rounding < 0 || r.rounding >= 1) roundingOff++;
+        if (r.rounding > 0) lifted++;
+      }
+    }
+  }
+  check("rounded: every total is whole", notWhole === 0, `${notWhole} not whole`);
+  check("rounded: lines identical", lineDrift === 0, `${lineDrift} drifted`);
+  check("rounded: fee identical", feeDrift === 0, `${feeDrift} drifted`);
+  check("rounded: the line is exactly what was added", roundingOff === 0, `${roundingOff} off, ${lifted} lifted`);
 }
 
 console.log(bad === 0 ? "\nPASS - pricing" : `\nFAIL - ${bad} pricing check(s)`);

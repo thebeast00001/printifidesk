@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AlertCircle, ChevronDown, Flag, Loader2, Receipt, X } from "lucide-react";
 import { useOrderHistory } from "@/hooks/use-tracking";
-import { cancelOrder, getOperator, STATUS_LABEL, type Operator, type OrderRow, type OrderStatus } from "@/lib/orders";
+import { paymentBalance, cancelOrder, getOperator, STATUS_LABEL, type Operator, type OrderRow, type OrderStatus } from "@/lib/orders";
 import { billFor } from "@/lib/bill";
 import { Bill } from "./bill";
 import { money } from "@/lib/pricing";
@@ -290,13 +290,20 @@ function PaymentLine({ order }: { order: OrderRow }) {
   const claimed = Boolean(order.payment_claimed_at);
   const method = order.payment_method === "cash" ? "cash at the desk" : order.payment_method === "upi" ? "UPI" : null;
 
+  const balance = paymentBalance(order);
+
   let text: string;
   if (order.refunded_at) {
     text = `Refunded ${money(Number(order.refund_amount ?? 0))}${order.refund_note ? ` — ${order.refund_note.toLowerCase()}` : ""}.`;
+  } else if (paid && balance.short > 0) {
+    // The desk received less than the bill: the rest is taken at the counter.
+    text = `The desk received ${money(balance.received ?? 0)} of ${money(Number(order.total))} — pay the remaining ${money(balance.short)} in cash when you collect.`;
+  } else if (paid && balance.over > 0) {
+    text = `The desk received ${money(balance.received ?? 0)} for a ${money(Number(order.total))} bill — it will return ${money(balance.over)} to you.`;
   } else if (paid) {
     text = `Paid${method ? ` by ${method}` : ""}, confirmed by the desk${
       order.payment_reference ? ` · ref ${order.payment_reference}` : ""
-    }.`;
+    }${order.shortfall_cleared_at ? " · the rest taken in cash" : ""}.`;
   } else if (claimed) {
     text = `You marked this paid${method ? ` by ${method}` : ""}; the desk hasn't confirmed it yet.`;
   } else if (order.status === "placed") {

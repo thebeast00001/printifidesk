@@ -43,11 +43,15 @@ export function PaySheet({
   const [qr, setQr] = useState<string | null>(null);
   const [busy, setBusy] = useState<"upi" | "cash" | null>(null);
   const [reference, setReference] = useState("");
+  // What their app's success screen showed. Pre-filled with the bill; a
+  // different number is a warning now instead of a surprise at the counter.
+  const [sent, setSent] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !order) return;
     setError(null);
+    setSent(Number(order.total).toFixed(2));
     void getOperator(order.operator_id).then(setOperator);
   }, [open, order]);
 
@@ -96,6 +100,8 @@ export function PaySheet({
           // The UPI reference turns the operator's check from a guess into a
           // lookup in their own statement.
           payment_reference: method === "upi" ? reference.trim() || null : null,
+          payment_claimed_amount:
+            method === "upi" && sent.trim() !== "" && Number.isFinite(Number(sent)) ? Number(sent) : null,
         })
         .eq("id", order.id);
       setBusy(null);
@@ -107,8 +113,14 @@ export function PaySheet({
       onClaimed();
       onOpenChange(false);
     },
-    [order, reference, onClaimed, onOpenChange],
+    [order, reference, sent, onClaimed, onOpenChange],
   );
+
+  const sentValue = Number(sent);
+  const sentDiff =
+    order && sent.trim() !== "" && Number.isFinite(sentValue)
+      ? Math.round((sentValue - Number(order.total)) * 100) / 100
+      : 0;
 
   const claimed = Boolean(order?.payment_claimed_at);
 
@@ -254,6 +266,35 @@ export function PaySheet({
                     Once you&apos;ve sent it, tell the operator so they can check and start printing.
                   </p>
 
+                  {request && (
+                    <label className="mb-3 flex flex-col gap-1.5">
+                      <span className="text-[12px] font-semibold tracking-[-0.01em]">
+                        Amount you sent{" "}
+                        <span className="font-normal text-faint">as your app showed it</span>
+                      </span>
+                      <input
+                        value={sent}
+                        onChange={(e) => setSent(e.target.value.replace(/[^\d.]/g, ""))}
+                        inputMode="decimal"
+                        className={cn(
+                          "rounded-xl border bg-surface px-3 py-2.5 font-mono text-[13px] outline-none focus:border-ink",
+                          sentDiff !== 0 ? "border-clay" : "border-line",
+                        )}
+                      />
+                      {sentDiff < 0 && (
+                        <span className="text-[11.5px] leading-snug text-clay-ink dark:text-clay">
+                          That&apos;s {money(-sentDiff, operator?.currency)} short of the bill — the desk will take
+                          the rest in cash when you collect.
+                        </span>
+                      )}
+                      {sentDiff > 0 && (
+                        <span className="text-[11.5px] leading-snug text-clay-ink dark:text-clay">
+                          That&apos;s {money(sentDiff, operator?.currency)} more than the bill — the desk will
+                          return it.
+                        </span>
+                      )}
+                    </label>
+                  )}
                   {request && (
                     <label className="mb-3 flex flex-col gap-1.5">
                       <span className="text-[12px] font-semibold tracking-[-0.01em]">
