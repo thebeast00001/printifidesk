@@ -219,6 +219,17 @@ export async function claimInvite(code: string): Promise<{ operatorId: string; o
   return { operatorId: row.operator_id, operatorName: row.operator_name ?? "" };
 }
 
+/**
+ * The admin taking an empty desk themselves: a code made and claimed in one
+ * go. Both halves are the ordinary functions with their ordinary rules —
+ * the code is only mintable for a desk with nobody on it, and claiming it
+ * is what claiming is — so this is a convenience, not a back door.
+ */
+export async function runDeskMyself(operatorId: string): Promise<{ operatorId: string; operatorName: string }> {
+  const made = await createInvite(operatorId, "Owner");
+  return claimInvite(made.code);
+}
+
 /* ---------- close-out ---------- */
 
 export interface Closeout {

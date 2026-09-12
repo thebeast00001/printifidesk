@@ -7,6 +7,7 @@ import { useAuth } from "@clerk/nextjs";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowRight, Check, KeyRound, Loader2, LogIn, Ticket } from "lucide-react";
 import { claimInvite } from "@/lib/desk";
+import { isAdmin } from "@/lib/operator";
 import { setMyPin } from "@/lib/desk-auth";
 import { cn, easeIos } from "@/lib/utils";
 import { useSurface } from "./surface-provider";
@@ -41,8 +42,15 @@ export function JoinDesk({
   const [pin, setPin] = useState("");
   const [pinState, setPinState] = useState<"idle" | "saving" | "set">("idle");
   const [pinError, setPinError] = useState<string | null>(null);
+  // The admin lands here too, on an account that's on no desk. They don't
+  // need a code from anyone — they make them.
+  const [admin, setAdmin] = useState(false);
 
   useEffect(() => setCode(pretty(initialCode)), [initialCode]);
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return setAdmin(false);
+    void isAdmin().then(setAdmin);
+  }, [isLoaded, isSignedIn]);
 
   const raw = code.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
   const complete = raw.length === 8;
@@ -165,9 +173,20 @@ export function JoinDesk({
             {error && (
               <p className="m-0 mt-2.5 text-[12.5px] font-semibold text-clay-ink dark:text-clay">{error}</p>
             )}
-            <p className="m-0 mt-3 text-[11px] leading-relaxed text-muted">
-              Don&apos;t have one? Whoever runs the desk makes it under Settings → Staff.
-            </p>
+            {admin ? (
+              <p className="m-0 mt-3 rounded-xl border border-line bg-surface-sunk px-3 py-2.5 text-[12px] leading-relaxed">
+                You&apos;re the admin. Desks and their owner codes are yours to make —{" "}
+                <Link href="/admin/desks" className="font-semibold underline-offset-2 hover:underline">
+                  open Desks
+                </Link>
+                , create one or pick an empty one, and <i>Run it myself</i> puts you on it in one tap.
+              </p>
+            ) : (
+              <p className="m-0 mt-3 text-[11px] leading-relaxed text-muted">
+                Don&apos;t have one? Whoever runs the desk makes it under Settings → Staff. A brand-new desk
+                gets its first code from the Printify admin.
+              </p>
+            )}
           </motion.div>
         ) : (
           <motion.div

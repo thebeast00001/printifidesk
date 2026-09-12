@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertCircle, Loader2, Plus, Ticket, Users, X } from "lucide-react";
+import { AlertCircle, Loader2, Plus, Ticket, UserRoundCheck, Users, X } from "lucide-react";
 import { adminDesks, createDesk, type Desk } from "@/lib/operator";
-import { createInvite } from "@/lib/desk";
+import { createInvite, runDeskMyself } from "@/lib/desk";
+import { useRouter } from "next/navigation";
+import { useSurface } from "./surface-provider";
 import { InviteCard } from "./operator/invite-card";
 import { useAuthKey } from "@/hooks/use-auth-key";
 import { cn, easeIos } from "@/lib/utils";
@@ -21,6 +23,8 @@ import { cn, easeIos } from "@/lib/utils";
  */
 export function AdminDesks() {
   const authKey = useAuthKey();
+  const router = useRouter();
+  const { desk: deskPath } = useSurface();
   const [desks, setDesks] = useState<Desk[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -70,6 +74,20 @@ export function AdminDesks() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't make a code.");
     } finally {
+      setBusy(null);
+    }
+  }
+
+  // The admin running an empty desk themselves — a founder who is also the
+  // counter. A code, claimed at once, then straight to the queue.
+  async function runMyself(desk: Desk) {
+    setBusy(`run:${desk.id}`);
+    setError(null);
+    try {
+      await runDeskMyself(desk.id);
+      router.push(deskPath("/operator"));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't take the desk.");
       setBusy(null);
     }
   }
@@ -192,14 +210,25 @@ export function AdminDesks() {
                 </p>
               </div>
               {desk.staff_count === 0 ? (
-                <button
-                  onClick={() => ownerCode(desk)}
-                  disabled={busy === desk.id}
-                  className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface-sunk px-3.5 text-[12.5px] font-semibold text-ink-soft disabled:opacity-50"
-                >
-                  {busy === desk.id ? <Loader2 size={13} className="animate-spin" /> : <Ticket size={14} strokeWidth={2.2} />}
-                  {desk.owner_code ? "New owner code" : "Owner code"}
-                </button>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <button
+                    onClick={() => ownerCode(desk)}
+                    disabled={busy !== null}
+                    className="flex h-10 items-center gap-1.5 rounded-xl border border-line bg-surface-sunk px-3.5 text-[12.5px] font-semibold text-ink-soft disabled:opacity-50"
+                  >
+                    {busy === desk.id ? <Loader2 size={13} className="animate-spin" /> : <Ticket size={14} strokeWidth={2.2} />}
+                    {desk.owner_code ? "New owner code" : "Owner code"}
+                  </button>
+                  <button
+                    onClick={() => runMyself(desk)}
+                    disabled={busy !== null}
+                    title="Put your own account on this desk and open its queue"
+                    className="flex h-10 items-center gap-1.5 rounded-xl bg-ink px-3.5 text-[12.5px] font-semibold text-paper disabled:opacity-50"
+                  >
+                    {busy === `run:${desk.id}` ? <Loader2 size={13} className="animate-spin" /> : <UserRoundCheck size={14} strokeWidth={2.2} />}
+                    Run it myself
+                  </button>
+                </div>
               ) : (
                 <p className="m-0 shrink-0 text-[11.5px] text-muted">Staff is theirs to manage.</p>
               )}
