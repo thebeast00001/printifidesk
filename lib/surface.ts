@@ -75,7 +75,15 @@ const DESK_PREFIXES = ["/operator", "/join", "/admin", "/diagnostics"];
 /** The student's pages. `/` is handled on its own. */
 const STUDENT_PREFIXES = ["/orders", "/profile", "/settings"];
 /** Pages both sites have, each rendering its own version. */
-const SHARED_PREFIXES = ["/sign-in", "/sso-callback", "/api", "/manifest.webmanifest", "/desk.webmanifest"];
+const SHARED_PREFIXES = [
+  "/sign-in",
+  "/sso-callback",
+  "/api",
+  "/manifest.webmanifest",
+  "/desk.webmanifest",
+  "/privacy",
+  "/terms",
+];
 
 const under = (path: string, prefix: string) => path === prefix || path.startsWith(prefix + "/");
 

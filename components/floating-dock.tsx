@@ -33,8 +33,8 @@ export function FloatingDock() {
   const pathname = usePathname();
   const { isDeskPath } = useSurface();
 
-  // A door has nowhere else to go.
-  if (pathname.startsWith("/sign-in") || pathname.startsWith("/sso-callback")) return null;
+  // A door has nowhere else to go; a policy page is read, not navigated.
+  if (["/sign-in", "/sso-callback", "/privacy", "/terms"].some((p) => pathname.startsWith(p))) return null;
 
   // The admin's pages get the admin's dock, on either host.
   if (pathname.startsWith("/admin") || pathname.startsWith("/diagnostics")) {

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowLeft, KeyRound, Loader2, LogIn, MailCheck, UserPlus } from "lucide-react";
+import Link from "next/link";
 import { sameOriginPath } from "@/lib/surface";
 import { cn, easeIos } from "@/lib/utils";
 
@@ -257,7 +258,9 @@ function CreatePane({
           </Primary>
           <p className="m-0 text-[11px] leading-relaxed text-muted">
             Your name is what the staff list and <i>Handled by</i> show. The password rules are
-            Clerk&apos;s; it says so if one isn&apos;t met.
+            Clerk&apos;s; it says so if one isn&apos;t met. Creating an account agrees to the{" "}
+            <Link href="/terms" className="underline-offset-2 hover:underline">terms</Link> and the{" "}
+            <Link href="/privacy" className="underline-offset-2 hover:underline">privacy policy</Link>.
           </p>
         </form>
       ) : (

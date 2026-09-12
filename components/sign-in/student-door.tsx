@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { Loader2 } from "lucide-react";
 import { sameOriginPath } from "@/lib/surface";
+import Link from "next/link";
 import { GoogleSignIn } from "./google-button";
 
 /**
@@ -37,6 +38,11 @@ export function StudentDoor({ next }: { next: string }) {
           <div className="mt-5">
             <GoogleSignIn next={target} className="w-full" />
           </div>
+          <p className="m-0 mt-4 text-[11px] leading-relaxed text-muted">
+            By continuing you agree to the{" "}
+            <Link href="/terms" className="underline-offset-2 hover:underline">terms</Link> and the{" "}
+            <Link href="/privacy" className="underline-offset-2 hover:underline">privacy policy</Link>.
+          </p>
         </>
       )}
     </div>

@@ -212,6 +212,12 @@ export function ProfileView() {
         )}
       </SettingsGroup>
 
+      <p className="m-0 text-[11.5px] text-muted">
+        <Link href="/privacy" className="underline-offset-2 hover:underline">Privacy policy</Link>
+        {" · "}
+        <Link href="/terms" className="underline-offset-2 hover:underline">Terms of service</Link>
+      </p>
+
       <button
         onClick={() => clerk.signOut()}
         className="flex items-center gap-2 self-start rounded-full border border-line bg-surface px-5 py-2.5 text-[13px] font-semibold text-ink-soft shadow-card transition-colors hover:bg-surface-sunk"
