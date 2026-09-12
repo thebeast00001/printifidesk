@@ -623,6 +623,31 @@ Also in `0025`: every push subscription records the VAPID public key it
 was made with, and the dispatcher names a mismatch ("subscribed with a
 different VAPID key") instead of retrying a push the service will refuse.
 
+### The capsule paints after one round trip
+
+Every hop from a phone in India to the database costs what the database's
+distance costs — half a second, measured, while the project sits in Tokyo.
+So the number of hops is what the code controls:
+
+- `activeOrderBundle()` fetches the live order **with its timeline
+  embedded** (PostgREST follows `order_events.order_id`), and
+  `queue_status_mine()` (`0029`) finds the caller's newest live order by
+  itself — so the capsule asks for both **at once**. It used to ask for the
+  order, wait, then ask for the timeline and the queue: two trips in
+  sequence, now one.
+- `getOperator()` caches each desk's row for thirty seconds and the capsule
+  warms it as soon as it has an order, so *Pay now* opens with the id and
+  the QR already there instead of fetching the desk first. The desk's own
+  writes drop the cache; the header's realtime reload bypasses it.
+- A status change still arrives over the socket and is painted from the
+  payload before anything is refetched.
+- `vercel.json` pins the functions to **`bom1`** (Mumbai). Without it Vercel
+  runs them in `iad1` (Washington), which put every server-rendered page
+  a quarter of the way round the world from the people loading it.
+
+The database's own region is the remaining lever, and it's yours — see
+*Marked for you*.
+
 ### Installing it as an app
 
 The site installs to the home screen on the student's say-so, not the
@@ -902,17 +927,30 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0028** in the SQL editor, pasted from the files. Until
+2. **Run 0022 → 0029** in the SQL editor, pasted from the files. Until
    0025, the fee panel shows no due date; until 0024, the join page shows a
    migration message in the application panel; until 0026, *Shut this
    desk* on `/admin/desks` errors with a missing function; until 0027,
    every desk pays as a personal id and saving *Business QR id* fails;
-   until 0028, no bill rounds and the confirm row's amount is not kept.
-3. **`npm run check:rls` with two ordinary accounts** — a student who is
+   until 0028, no bill rounds and the confirm row's amount is not kept;
+   until 0029, the capsule's queue position errors quietly and shows no
+   place in the queue.
+3. **Move the database nearer.** The Supabase project resolves to Tokyo
+   (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
+   the pay sheet and the desk's queue all feel it. Supabase can't move a
+   project, so: create a new project in **Mumbai (`ap-south-1`)**, run
+   `0001 → 0029` in its SQL editor, create the private `documents` bucket,
+   add both Clerk domains under Authentication → Third-Party Auth, then
+   swap `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+   and `SUPABASE_SERVICE_ROLE_KEY` on both Vercel projects and in
+   `.env.local`, redeploy, and run `check:rls` against it. Nothing in the
+   old project is worth carrying over before launch. Confirm the region
+   first under Project Settings → General.
+4. **`npm run check:rls` with two ordinary accounts** — a student who is
    *not* the admin and a desk account that *is* on a desk, both signed in
    recently. The run so far (anonymous + the admin account) passed 21 probes;
    the four admin-only refusals need a non-admin account to mean anything.
-4. **One VAPID pair.** Both Vercel projects get the same
+5. **One VAPID pair.** Both Vercel projects get the same
    `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`, and both need
    `SUPABASE_SERVICE_ROLE_KEY` and `NOTIFY_WEBHOOK_SECRET`, because either
    site may be the one that sends: the app **pokes the dispatcher itself**
@@ -922,11 +960,11 @@ Things the code can't do on its own, in the order they bite:
    allows; they run on whichever project keeps the file — both is harmless.
    `/diagnostics` shows the key's last twelve characters on each site so
    you can compare.
-5. **Both Clerk domains in Supabase → Third-Party Auth**, and both apps on
+6. **Both Clerk domains in Supabase → Third-Party Auth**, and both apps on
    production instances before launch (dev instances are capped).
-6. **All three host variables on both projects** — `/diagnostics` flags a
+7. **All three host variables on both projects** — `/diagnostics` flags a
    pinned desk with no student host.
-7. **Page counts are client-reported.** A claimed page count prices the
+8. **Page counts are client-reported.** A claimed page count prices the
    order; the operator opens the file before printing, which is where a
    wrong one is caught. Server-side counting needs a server that opens
    PDFs — not built.

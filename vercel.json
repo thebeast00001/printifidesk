@@ -1,7 +1,16 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": [
+    "bom1"
+  ],
   "crons": [
-    { "path": "/api/notifications/dispatch?run=1", "schedule": "5 3 * * *" },
-    { "path": "/api/maintenance/purge?run=1", "schedule": "17 3 * * *" }
+    {
+      "path": "/api/notifications/dispatch?run=1",
+      "schedule": "5 3 * * *"
+    },
+    {
+      "path": "/api/maintenance/purge?run=1",
+      "schedule": "17 3 * * *"
+    }
   ]
 }

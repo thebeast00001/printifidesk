@@ -6,7 +6,8 @@ import { ensureSession, getSupabase, type SessionState } from "@/lib/supabase/cl
 import { subscribeTable, type ConnectionState } from "@/lib/realtime";
 import {
   ACTIVE_STATUSES,
-  activeOrder,
+  activeOrderBundle,
+  queueStatusMine,
   operatorQueue,
   operatorWait,
   defaultOperator,
@@ -92,19 +93,17 @@ export function useActiveOrder() {
     setUserId(session.status === "ready" ? session.userId : null);
 
     try {
-      const current = await activeOrder();
+      // One round trip: the order carries its timeline, and the queue
+      // position finds the same order on its own. Before this it was the
+      // order first, then two more once its id was known.
+      const [bundle, position] = await Promise.all([activeOrderBundle(), queueStatusMine()]);
+      const current = bundle.order;
       setOrder(current);
-      if (current) {
-        const [timeline, position] = await Promise.all([
-          orderEvents(current.id),
-          queueStatus(current.id),
-        ]);
-        setEvents(timeline);
-        setQueue(position);
-      } else {
-        setEvents([]);
-        setQueue(null);
-      }
+      setEvents(bundle.events);
+      setQueue(current && position && position.order_id === current.id ? position : null);
+      // The pay sheet needs the desk's row; warm it now so "Pay now" opens
+      // with the id and the QR already there.
+      if (current) void getOperator(current.operator_id);
       setBackend({ state: "ready" });
     } catch (error) {
       setBackend({

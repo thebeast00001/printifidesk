@@ -1602,6 +1602,30 @@ await scenario("the amount received is the desk's fact; the amount sent is the s
   return `claimed ${(total - 0.5).toFixed(2)} of ${total.toFixed(2)} kept, desk's columns refused; confirmed short, claim frozen, shortfall cleared; bare confirm = bill`;
 });
 
+/* ---------- 0029: the capsule's queue position without knowing the id ---------- */
+
+await scenario("queue_status_mine finds the caller's newest live order and nobody else's", async () => {
+  await actingAs("student_amount");
+  const { rows: mine } = await db.query(`select * from public.queue_status_mine();`);
+  if (mine.length !== 1) throw new Error(`expected one row, got ${mine.length}`);
+  const { rows: check } = await db.query(
+    `select o.id, q.place, q.pages_ahead, q.wait_minutes
+       from public.orders o cross join lateral public.queue_status(o.id) q
+      where o.id = $1;`,
+    [mine[0].order_id],
+  );
+  if (check[0].place !== mine[0].place || check[0].wait_minutes !== mine[0].wait_minutes) {
+    throw new Error(`mine ${JSON.stringify(mine[0])} vs queue_status ${JSON.stringify(check[0])}`);
+  }
+  const { rows: owner } = await db.query(`select user_id, status from public.orders where id = $1;`, [mine[0].order_id]);
+  if (owner[0].user_id !== "student_amount") throw new Error("someone else's order came back");
+  if (!["placed", "queued", "printing", "finishing", "ready"].includes(owner[0].status)) throw new Error(`not live: ${owner[0].status}`);
+  await actingAs("nobody_here");
+  const { rows: none } = await db.query(`select * from public.queue_status_mine();`);
+  if (none.length !== 0) throw new Error("a stranger got a row");
+  return `order ${String(mine[0].order_id).slice(0, 8)} place ${mine[0].place}, ${mine[0].wait_minutes} min; a stranger gets nothing`;
+});
+
 await scenario("the upload ceiling holds", async () => {
   await actingAs("student_test");
   // 500 MB is the cap; one file over it must be refused.

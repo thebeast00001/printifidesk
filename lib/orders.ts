@@ -332,7 +332,7 @@ export async function defaultOperator(): Promise<Operator | null> {
     if (chosen) {
       // A saved desk that has since been unlisted — or shut by the admin —
       // isn't one they can order from; fall through to the first that is.
-      const operator = await getOperator(chosen);
+      const operator = await getOperator(chosen, true);
       if (operator?.is_listed) return operator;
     }
   }
@@ -362,13 +362,36 @@ export async function chooseOperator(operatorId: string): Promise<void> {
   if (error) throw new Error(friendly(error.message));
 }
 
-export async function getOperator(id: string): Promise<Operator | null> {
+/**
+ * One desk's row, cached briefly per id. The pay sheet, the order cards and
+ * the capsule all ask for the same desk within seconds of each other; from
+ * a phone that is a round trip apiece. `fresh` bypasses the cache for the
+ * callers that react to a realtime change on the desk itself.
+ */
+const OPERATOR_CACHE_MS = 30_000;
+const operatorCache = new Map<string, { at: number; value: Promise<Operator | null> }>();
+
+export function forgetOperator(id?: string) {
+  if (id) operatorCache.delete(id);
+  else operatorCache.clear();
+}
+
+export async function getOperator(id: string, fresh = false): Promise<Operator | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data } = await operatorQuery((select) =>
-    supabase.from("operators").select(select).eq("id", id).maybeSingle(),
-  );
-  return withFee((data as unknown as Operator) ?? null);
+  const hit = operatorCache.get(id);
+  if (!fresh && hit && Date.now() - hit.at < OPERATOR_CACHE_MS) return hit.value;
+  const value = (async () => {
+    const { data } = await operatorQuery((select) =>
+      supabase.from("operators").select(select).eq("id", id).maybeSingle(),
+    );
+    const row = await withFee((data as unknown as Operator) ?? null);
+    // A miss isn't worth remembering; the next caller asks again.
+    if (!row) operatorCache.delete(id);
+    return row;
+  })();
+  operatorCache.set(id, { at: Date.now(), value });
+  return value;
 }
 
 /** Names for a handful of desks — the switcher for someone on more than one. */
@@ -392,6 +415,7 @@ export async function updateOperator(
   if (!supabase) return;
   const { error } = await supabase.from("operators").update(patch).eq("id", operatorId);
   if (error) throw new Error(friendly(error.message));
+  forgetOperator(operatorId);
 }
 
 /** Open or close Printify. Staff only — RLS enforces it. */
@@ -407,6 +431,7 @@ export async function setOperatorOpen(
     .update({ is_open: isOpen, status_note: statusNote ?? null })
     .eq("id", operatorId);
   if (error) throw new Error(friendly(error.message));
+  forgetOperator(operatorId);
 }
 
 export interface NewOrderInput {
@@ -502,6 +527,35 @@ export async function activeOrder(): Promise<OrderRow | null> {
     .limit(1)
     .maybeSingle();
   return (data as OrderRow) ?? null;
+}
+
+/**
+ * The live order with its timeline embedded — one query where there were
+ * two. PostgREST follows order_events.order_id, and the student's own RLS
+ * policy on order_events applies inside the embed as it would outside.
+ */
+export async function activeOrderBundle(): Promise<{ order: OrderRow | null; events: OrderEventRow[] }> {
+  const supabase = getSupabase();
+  if (!supabase) return { order: null, events: [] };
+  const { data } = await supabase
+    .from("orders")
+    .select(`${ORDER_SELECT}, order_events(*)`)
+    .in("status", ACTIVE_STATUSES)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return { order: null, events: [] };
+  const { order_events: embedded, ...rest } = data as OrderRow & { order_events?: OrderEventRow[] };
+  const events = [...(embedded ?? [])].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  return { order: rest as OrderRow, events };
+}
+
+/** Queue position for the caller's newest live order — no id needed, so it can run alongside the order fetch. */
+export async function queueStatusMine(): Promise<(QueueStatus & { order_id: string }) | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data } = await supabase.rpc("queue_status_mine");
+  return (data?.[0] as QueueStatus & { order_id: string }) ?? null;
 }
 
 export async function orderEvents(orderId: string): Promise<OrderEventRow[]> {
