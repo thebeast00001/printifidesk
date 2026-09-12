@@ -4,6 +4,7 @@ import { ensureSession, getSupabase } from "./supabase/client";
 import { platformSettings } from "./platform";
 import { pokeDispatch } from "./push";
 import type { PrintConfig, RateSource } from "./pricing";
+import type { UpiKind } from "./upi";
 
 export type OrderStatus =
   | "placed"
@@ -122,6 +123,10 @@ export interface Operator {
   is_listed: boolean;
   upi_vpa: string | null;
   upi_name: string | null;
+  /* 0027: a merchant id takes a pre-filled amount; a personal one doesn't,
+     so the student types it. Missing before 0027 — read as personal. */
+  upi_kind?: UpiKind;
+  upi_mc?: string | null;
   accepts_cash: boolean;
   paper_stock: number | null;
   low_paper_at: number;
@@ -169,12 +174,32 @@ export type OperatorSettings = Partial<
   >
 >;
 
-const OPERATOR_SELECT =
+const OPERATOR_SELECT_LEGACY =
   "id, name, campus, is_open, status_note, status_changed_at, currency, bw_per_page, " +
   "colour_per_page, duplex_discount, staple_price, bulk_threshold, bulk_multiplier, " +
   "min_order, paper_gsm, pages_per_minute, handling_minutes, short_name, is_listed, opens_at, closes_at, " +
   "upi_vpa, upi_name, accepts_cash, paper_stock, low_paper_at, toner_pages, low_toner_at, " +
   "shut_at, shut_reason";
+const OPERATOR_SELECT = OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc";
+
+// The column list this project answers to. A deployment can go out before
+// its migration is run; 42703 ("column does not exist") on the newest
+// columns drops back to the list before them rather than showing no desk.
+let operatorColumns = OPERATOR_SELECT;
+
+async function operatorQuery<T>(
+  run: (select: string) => PromiseLike<{ data: T; error: { code?: string } | null }>,
+): Promise<{ data: T; error: { code?: string } | null }> {
+  // Judge by the list *this* call used: several run at once on a page load,
+  // and one switching the shared list mustn't stop the others retrying.
+  const used = operatorColumns;
+  let result = await run(used);
+  if (result.error?.code === "42703" && used !== OPERATOR_SELECT_LEGACY) {
+    operatorColumns = OPERATOR_SELECT_LEGACY;
+    result = await run(OPERATOR_SELECT_LEGACY);
+  }
+  return result;
+}
 
 export interface OperatorWait {
   open: boolean;
@@ -247,11 +272,9 @@ async function withFee<T extends Operator | null>(row: T): Promise<T> {
 export async function listOperators(): Promise<Operator[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const { data } = await supabase
-    .from("operators")
-    .select(OPERATOR_SELECT)
-    .eq("is_listed", true)
-    .order("created_at", { ascending: true });
+  const { data } = await operatorQuery((select) =>
+    supabase.from("operators").select(select).eq("is_listed", true).order("created_at", { ascending: true }),
+  );
   const ps = await platformSettings();
   return ((data ?? []) as unknown as Operator[]).map((o) => ({
     ...o,
@@ -286,13 +309,15 @@ export async function defaultOperator(): Promise<Operator | null> {
     }
   }
 
-  const { data } = await supabase
-    .from("operators")
-    .select(OPERATOR_SELECT)
-    .eq("is_listed", true)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  const { data } = await operatorQuery((select) =>
+    supabase
+      .from("operators")
+      .select(select)
+      .eq("is_listed", true)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+  );
   return withFee((data as unknown as Operator) ?? null);
 }
 
@@ -312,11 +337,9 @@ export async function chooseOperator(operatorId: string): Promise<void> {
 export async function getOperator(id: string): Promise<Operator | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data } = await supabase
-    .from("operators")
-    .select(OPERATOR_SELECT)
-    .eq("id", id)
-    .maybeSingle();
+  const { data } = await operatorQuery((select) =>
+    supabase.from("operators").select(select).eq("id", id).maybeSingle(),
+  );
   return withFee((data as unknown as Operator) ?? null);
 }
 

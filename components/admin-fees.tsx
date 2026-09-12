@@ -14,7 +14,7 @@ import {
   type PlatformSettings,
 } from "@/lib/platform";
 import { money } from "@/lib/pricing";
-import { isValidVpa } from "@/lib/upi";
+import { isValidVpa, type UpiKind } from "@/lib/upi";
 import { cn, spring } from "@/lib/utils";
 
 const PERIODS: { id: FeePeriod; label: string }[] = [
@@ -229,6 +229,7 @@ function SettingsForm({ settings, onSaved }: { settings: PlatformSettings; onSav
   const [min, setMin] = useState(String(settings.fee_min));
   const [vpa, setVpa] = useState(settings.payee_vpa ?? "");
   const [name, setName] = useState(settings.payee_name ?? "");
+  const [payeeKind, setPayeeKind] = useState<UpiKind>(settings.payee_kind);
   const [grace, setGrace] = useState(String(settings.grace_days));
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -239,6 +240,7 @@ function SettingsForm({ settings, onSaved }: { settings: PlatformSettings; onSav
     setMin(String(settings.fee_min));
     setVpa(settings.payee_vpa ?? "");
     setName(settings.payee_name ?? "");
+    setPayeeKind(settings.payee_kind);
     setGrace(String(settings.grace_days));
   }, [settings]);
 
@@ -247,6 +249,7 @@ function SettingsForm({ settings, onSaved }: { settings: PlatformSettings; onSav
     Number(min) !== settings.fee_min ||
     vpa.trim() !== (settings.payee_vpa ?? "") ||
     name.trim() !== (settings.payee_name ?? "") ||
+    payeeKind !== settings.payee_kind ||
     Number(grace) !== settings.grace_days;
   const vpaOk = vpa.trim() === "" || isValidVpa(vpa);
 
@@ -255,7 +258,7 @@ function SettingsForm({ settings, onSaved }: { settings: PlatformSettings; onSav
     setError(null);
     setSaved(false);
     try {
-      await setPlatformFee({ percent: Number(percent), min: Number(min), vpa, name, graceDays: Number(grace) });
+      await setPlatformFee({ percent: Number(percent), min: Number(min), vpa, name, graceDays: Number(grace), payeeKind });
       await onSaved();
       setSaved(true);
       setTimeout(() => setSaved(false), 1800);
@@ -332,6 +335,19 @@ function SettingsForm({ settings, onSaved }: { settings: PlatformSettings; onSav
           aria-label="Payee name"
           className="h-11 min-w-0 rounded-xl border border-line bg-surface px-3 text-[13px] outline-none focus:border-ink"
         />
+        <label className="flex h-11 items-center gap-2 rounded-xl border border-line bg-surface px-3 text-[13px]">
+          <span className="text-muted">id is</span>
+          <select
+            value={payeeKind}
+            onChange={(e) => setPayeeKind(e.target.value as UpiKind)}
+            aria-label="Payee id kind"
+            title="A business-QR id takes the amount pre-filled in the desk's settle-up link; a personal id can't, so the desk types it"
+            className="bg-transparent font-semibold outline-none"
+          >
+            <option value="personal">personal</option>
+            <option value="merchant">business QR</option>
+          </select>
+        </label>
         <button
           type="submit"
           disabled={busy || !dirty || !vpaOk || percent === "" || min === "" || grace === ""}

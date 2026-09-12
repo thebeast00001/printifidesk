@@ -18,6 +18,12 @@ import { cn, spring } from "@/lib/utils";
  * student taps once and their own UPI app opens ready to send. Nothing sits in
  * the middle — the money goes to the operator's id directly.
  *
+ * That pre-filled amount is only allowed when the desk's id is a merchant
+ * one (the id behind its business QR). For a personal id the apps refuse
+ * such a link outright, so the sheet turns into what does work everywhere:
+ * copy the id, open the app, pay to it, type the amount — with the amount
+ * and the token a tap away so nothing has to be remembered.
+ *
  * What this deliberately does *not* do is claim the payment succeeded. Without
  * a gateway webhook nobody here can know that. "I've paid" records a claim the
  * operator can see; the operator confirms it against their own app.
@@ -37,7 +43,6 @@ export function PaySheet({
   const [qr, setQr] = useState<string | null>(null);
   const [busy, setBusy] = useState<"upi" | "cash" | null>(null);
   const [reference, setReference] = useState("");
-  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,18 +51,28 @@ export function PaySheet({
     void getOperator(order.operator_id).then(setOperator);
   }, [open, order]);
 
+  const merchant = operator?.upi_kind === "merchant";
   const request = useMemo<UpiRequest | null>(() => {
     if (!order || !operator?.upi_vpa || !isValidVpa(operator.upi_vpa)) return null;
     return {
       vpa: operator.upi_vpa,
       payeeName: operator.upi_name?.trim() || operator.short_name || operator.name,
-      amount: Number(order.total),
+      // A personal id can't take the amount in the link; the payer types it.
+      amount: operator.upi_kind === "merchant" ? Number(order.total) : undefined,
+      merchantCode: operator.upi_kind === "merchant" ? operator.upi_mc : null,
       note: `Printify ${order.token ?? ""}`.trim(),
       reference: order.token ?? order.id.slice(0, 12),
     };
   }, [order, operator]);
 
   const link = request ? upiLink(request) : null;
+  const amountText = order ? Number(order.total).toFixed(2) : "";
+  const [copiedWhat, setCopiedWhat] = useState<"id" | "amount" | null>(null);
+  async function copy(what: "id" | "amount", text: string) {
+    await navigator.clipboard?.writeText(text);
+    setCopiedWhat(what);
+    setTimeout(() => setCopiedWhat(null), 1600);
+  }
 
   useEffect(() => {
     if (!link) return setQr(null);
@@ -126,7 +141,7 @@ export function PaySheet({
                 <AlertCircle size={15} strokeWidth={2.2} />
                 This operator hasn&apos;t added a UPI id yet — pay cash at the desk.
               </Panel>
-            ) : (
+            ) : merchant ? (
               <>
                 {/* Phones open the app; laptops scan the code. Both are shown
                     rather than guessed at, since a wrong guess is a dead end. */}
@@ -137,7 +152,6 @@ export function PaySheet({
                   <Smartphone size={17} strokeWidth={2.2} />
                   Open UPI app
                 </a>
-
                 {qr && (
                   <div className="mt-4 flex flex-col items-center gap-2.5">
                     <p className="m-0 text-[12px] text-muted">or scan from your phone</p>
@@ -151,16 +165,80 @@ export function PaySheet({
                 )}
 
                 <button
-                  onClick={async () => {
-                    await navigator.clipboard?.writeText(operator.upi_vpa ?? "");
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1600);
-                  }}
+                  onClick={() => copy("id", operator.upi_vpa ?? "")}
                   className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-surface px-4 py-2.5 font-mono text-[12.5px] text-ink-soft"
                 >
                   <Copy size={13} strokeWidth={2.2} />
-                  {copied ? "Copied" : operator.upi_vpa}
+                  {copiedWhat === "id" ? "Copied" : operator.upi_vpa}
                 </button>
+              </>
+            ) : (
+              <>
+                {/* A personal id: the apps refuse a link with the amount in it,
+                    so this is the route that works in every one of them. */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => copy("id", operator.upi_vpa ?? "")}
+                    className="flex min-h-[54px] flex-col items-center justify-center gap-0.5 rounded-2xl bg-ink px-3 py-2 text-paper"
+                  >
+                    <span className="flex items-center gap-1.5 text-[11px] font-semibold opacity-80">
+                      <Copy size={12} strokeWidth={2.4} />
+                      {copiedWhat === "id" ? "Copied" : "Copy UPI id"}
+                    </span>
+                    <span className="max-w-full truncate font-mono text-[12.5px]">{operator.upi_vpa}</span>
+                  </button>
+                  <button
+                    onClick={() => copy("amount", amountText)}
+                    className="flex min-h-[54px] flex-col items-center justify-center gap-0.5 rounded-2xl border border-line bg-surface px-3 py-2 text-ink"
+                  >
+                    <span className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
+                      <Copy size={12} strokeWidth={2.4} />
+                      {copiedWhat === "amount" ? "Copied" : "Copy amount"}
+                    </span>
+                    <span className="font-figure text-[17px] font-extrabold tabular-nums">
+                      {money(Number(order?.total ?? 0), operator.currency)}
+                    </span>
+                  </button>
+                </div>
+                <ol className="m-0 mt-3 flex list-none flex-col gap-1.5 p-0 text-[12.5px] leading-relaxed text-ink-soft">
+                  <Step n={1}>
+                    Open your UPI app and choose <b className="font-semibold">Pay to UPI id</b> (or
+                    &quot;To contact / UPI id&quot;).
+                  </Step>
+                  <Step n={2}>
+                    Paste the id, type{" "}
+                    <b className="font-semibold tabular-nums">{money(Number(order?.total ?? 0), operator.currency)}</b>
+                    {order?.token ? (
+                      <>
+                        , and put <b className="font-semibold">{order.token}</b> in the note.
+                      </>
+                    ) : (
+                      "."
+                    )}
+                  </Step>
+                </ol>
+                {qr && (
+                  <div className="mt-4 flex flex-col items-center gap-2">
+                    <p className="m-0 text-[12px] text-muted">On a laptop? Scan this and type the amount</p>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={qr}
+                      alt={`UPI QR code for ${operator.upi_vpa}`}
+                      className="size-[180px] rounded-2xl border border-line bg-white p-2"
+                    />
+                  </div>
+                )}
+                <a
+                  href={link ?? "#"}
+                  className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-line bg-surface text-[12.5px] font-semibold text-ink-soft"
+                >
+                  <Smartphone size={14} strokeWidth={2.2} />
+                  Try opening your app anyway
+                </a>
+                <p className="m-0 mt-2 text-[11px] leading-relaxed text-muted">
+                  This desk uses a personal UPI id. UPI apps refuse a link with the amount already filled in
+                  for those, so the amount is typed by hand.
+                </p>
               </>
             )}
 
@@ -227,6 +305,17 @@ export function PaySheet({
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>
+  );
+}
+
+function Step({ n, children }: { n: number; children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2.5">
+      <span className="mt-px grid size-5 shrink-0 place-items-center rounded-full bg-ink font-mono text-[10.5px] font-semibold text-paper">
+        {n}
+      </span>
+      <span>{children}</span>
+    </li>
   );
 }
 

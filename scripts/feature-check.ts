@@ -2,7 +2,7 @@ import { canInstall, platformFrom, type InstallState } from "../lib/install";
 import { normalisePhone } from "../lib/phone";
 import { summarisePages } from "../lib/pages";
 import { buildSlots } from "../components/pickup-picker";
-import { isValidVpa, upiLink } from "../lib/upi";
+import { isValidVpa, parseUpiQr, upiLink } from "../lib/upi";
 import type { Operator } from "../lib/orders";
 import { secretMatches } from "../lib/server/secret";
 import { readFileSync, readdirSync } from "node:fs";
@@ -123,6 +123,26 @@ const rounded = upiLink({
   vpa: "a@b", payeeName: "x", amount: 12.5, note: "n", reference: "r",
 });
 check("half rupee formats", /[?&]am=12\.50(&|$)/.test(rounded), true);
+
+// A personal payee: the apps refuse a third-party link with the amount in
+// it, so the link carries none and the payer types it.
+const personal = upiLink({ vpa: "ansh@ybl", payeeName: "Ansh", note: "Printify B12", reference: "B12" });
+check("no amount → no am=", /[?&]am=/.test(personal), false);
+check("no amount still carries the reference", /[?&]tr=B12(&|$)/.test(personal), true);
+const withMc = upiLink({ vpa: "shop@ybl", payeeName: "Shop", amount: 10, note: "n", reference: "r", merchantCode: "5111" });
+check("merchant code carried", /[?&]mc=5111(&|$)/.test(withMc), true);
+const badMc = upiLink({ vpa: "shop@ybl", payeeName: "Shop", amount: 10, note: "n", reference: "r", merchantCode: "51" });
+check("a malformed merchant code is dropped", /[?&]mc=/.test(badMc), false);
+
+// Reading the shop's own QR: mc decides the kind.
+const business = parseUpiQr("upi://pay?pa=Q123456789@ybl&pn=SHARMA%20XEROX&mc=5111&mode=02&purpose=00");
+check("business QR → merchant", business?.kind, "merchant");
+check("business QR → code", business?.merchantCode, "5111");
+check("business QR → name decoded", business?.name, "SHARMA XEROX");
+check("GPay personal QR (mc=0000) → personal", parseUpiQr("upi://pay?pa=ansh@okaxis&pn=Ansh&mc=0000&mode=02")?.kind, "personal");
+check("plain personal QR → personal", parseUpiQr("upi://pay?pa=ansh@ybl&pn=Ansh")?.kind, "personal");
+check("not a UPI QR → null", parseUpiQr("printify:order:A03:7F3A9C21"), null);
+check("UPI QR with a bad id → null", parseUpiQr("upi://pay?pa=nope&pn=x"), null);
 
 console.log("\n— the write guard (RLS grants rows, never columns) —");
 

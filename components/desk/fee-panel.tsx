@@ -79,11 +79,14 @@ export function FeePanel({ operator }: { operator: Operator }) {
   const currency = operator.currency ?? "₹";
   const outstanding = balance?.outstanding ?? 0;
   const payable = settings?.payee_vpa && isValidVpa(settings.payee_vpa) && outstanding > 0;
+  // Printify's own id follows the same rule as a desk's: a personal id
+  // can't take the amount in the link, so the desk types it.
+  const payeeMerchant = settings?.payee_kind === "merchant";
   const link = payable
     ? upiLink({
         vpa: settings!.payee_vpa!,
         payeeName: settings!.payee_name || "Printify",
-        amount: outstanding,
+        amount: payeeMerchant ? outstanding : undefined,
         note: `Printify fee · ${operator.short_name || operator.name}`.slice(0, 50),
         reference: `PF-${operator.id.slice(0, 8)}`,
       })
@@ -203,15 +206,18 @@ export function FeePanel({ operator }: { operator: Operator }) {
                     </p>
                     <p className="m-0 mt-1 text-[12.5px] leading-relaxed text-muted">
                       to <span className="font-mono text-ink-soft">{settings.payee_vpa}</span>
-                      {settings.payee_name ? ` (${settings.payee_name})` : ""}. Scan from any UPI app, or tap on a
-                      phone. Once Printify records it, it shows below.
+                      {settings.payee_name ? ` (${settings.payee_name})` : ""}.{" "}
+                      {payeeMerchant
+                        ? "Scan from any UPI app, or tap on a phone."
+                        : `Scan from any UPI app and type ${money(outstanding, currency)} — a personal id can't carry the amount.`}{" "}
+                      Once Printify records it, it shows below.
                     </p>
                     {link && (
                       <a
                         href={link}
                         className="mt-2.5 inline-flex h-10 items-center rounded-xl bg-ink px-4 text-[13px] font-semibold text-paper"
                       >
-                        Pay {money(outstanding, currency)} by UPI
+                        {payeeMerchant ? `Pay ${money(outstanding, currency)} by UPI` : "Open UPI app"}
                       </a>
                     )}
                   </div>

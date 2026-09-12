@@ -749,6 +749,25 @@ evidence by then.
 `quote()` is pure, so a gateway can re-run it server-side later to authorise a
 real charge.
 
+**Two kinds of UPI id** (`0027`). The apps refuse a link or QR that a
+website generated *with the amount filled in* when the payee is an ordinary
+personal id — PhonePe says "Transaction not allowed", GPay "restricted by
+the bank" — and accept it for a merchant id, the one behind a shop's
+PhonePe Business / Paytm for Business / GPay Business QR. So a desk says
+which it has (`operators.upi_kind`, personal by default), and the pay
+sheet does what works for that kind: a merchant id gets the one-tap link
+with the amount and the shop's merchant code (`upi_mc`); a personal id
+gets *Copy UPI id · Copy amount* and two steps, with the link kept as
+"try anyway". The desk can **read its own QR from a photo** under
+Getting paid — `parseUpiQr()` takes the id, the name and the merchant
+code off it, and `mc` present and not `0000` is what decides the kind.
+Printify's own settle-up id follows the same rule (`payee_kind`, set on
+the Fees page).
+
+`OPERATOR_SELECT` can name a column the live project hasn't got yet if a
+deploy lands before its migration; the operator queries retry once with
+the previous column list on `42703`, so a desk never disappears for that.
+
 ## How a file becomes a price
 
 `hooks/use-uploader.ts` runs analysis *before* upload, so the quote appears
@@ -855,10 +874,11 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0026** in the SQL editor, pasted from the files. Until
+2. **Run 0022 → 0027** in the SQL editor, pasted from the files. Until
    0025, the fee panel shows no due date; until 0024, the join page shows a
    migration message in the application panel; until 0026, *Shut this
-   desk* on `/admin/desks` errors with a missing function.
+   desk* on `/admin/desks` errors with a missing function; until 0027,
+   every desk pays as a personal id and saving *Business QR id* fails.
 3. **`npm run check:rls` with two ordinary accounts** — a student who is
    *not* the admin and a desk account that *is* on a desk, both signed in
    recently. The run so far (anonymous + the admin account) passed 21 probes;

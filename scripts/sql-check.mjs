@@ -1447,6 +1447,46 @@ await scenario("the admin shuts a desk; its staff finish the queue and nothing e
   return "shut with 1 live order: unlisted, closed, codes revoked; staff refused at every door, finished the job; restored, open again";
 });
 
+/* ---------- 0027: a UPI id says what kind it is ---------- */
+
+await scenario("a desk's UPI id is personal until it says merchant; the fee id the same", async () => {
+  await actingAs("op_test");
+  const { rows: before } = await db.query(`select upi_kind, upi_mc from public.operators where id = $1;`, [OPERATOR]);
+  if (before[0].upi_kind !== "personal" || before[0].upi_mc !== null) throw new Error(`default: ${JSON.stringify(before[0])}`);
+  await db.query(`update public.operators set upi_kind = 'merchant', upi_mc = '5111' where id = $1;`, [OPERATOR]);
+  for (const [what, sql] of [
+    ["kind", `update public.operators set upi_kind = 'business' where id = $1;`],
+    ["code", `update public.operators set upi_mc = '51' where id = $1;`],
+  ]) {
+    let refused = false;
+    try {
+      await db.query(sql, [OPERATOR]);
+    } catch {
+      refused = true;
+    }
+    if (!refused) throw new Error(`a bad ${what} was accepted`);
+  }
+  await db.query(`update public.operators set upi_kind = 'personal', upi_mc = null where id = $1;`, [OPERATOR]);
+
+  await actingAs("admin_test");
+  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printify', 15, 'merchant');`);
+  const { rows: ps } = await db.query(`select payee_kind from public.platform_settings where id;`);
+  if (ps[0].payee_kind !== "merchant") throw new Error(`payee_kind ${ps[0].payee_kind}`);
+  // The five-argument call from before 0027 still works, and leaves the kind alone.
+  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printify', 15);`);
+  const { rows: ps2 } = await db.query(`select payee_kind from public.platform_settings where id;`);
+  if (ps2[0].payee_kind !== "merchant") throw new Error(`five-arg call changed the kind to ${ps2[0].payee_kind}`);
+  let bad = false;
+  try {
+    await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printify', 15, 'crypto');`);
+  } catch {
+    bad = true;
+  }
+  if (!bad) throw new Error("an unknown payee kind was accepted");
+  await db.query(`select public.set_platform_fee(3, 0, null, null, 15, 'personal');`);
+  return "desk: personal by default, merchant + 4-digit code accepted, junk refused; fee id: set to merchant, a five-arg call leaves it, junk refused";
+});
+
 await scenario("the upload ceiling holds", async () => {
   await actingAs("student_test");
   // 500 MB is the cap; one file over it must be refused.

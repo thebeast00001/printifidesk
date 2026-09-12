@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { Check, Loader2, RotateCcw } from "lucide-react";
+import { Camera, Check, Loader2, RotateCcw } from "lucide-react";
 import { updateOperator, type Operator, type OperatorSettings } from "@/lib/orders";
-import { isValidVpa } from "@/lib/upi";
+import { isValidVpa, parseUpiQr, type UpiKind } from "@/lib/upi";
+import { decodePixels } from "./operator/scan-sheet";
 import { money, quote, rateCardOf, DEFAULT_CONFIG } from "@/lib/pricing";
 import { cn, spring } from "@/lib/utils";
 
@@ -312,6 +313,9 @@ function PreviewCard({
 function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () => void }) {
   const [vpa, setVpa] = useState(operator.upi_vpa ?? "");
   const [name, setName] = useState(operator.upi_name ?? "");
+  const [kind, setKind] = useState<UpiKind>(operator.upi_kind ?? "personal");
+  const [mc, setMc] = useState<string | null>(operator.upi_mc ?? null);
+  const [read, setRead] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -319,11 +323,46 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
   useEffect(() => {
     setVpa(operator.upi_vpa ?? "");
     setName(operator.upi_name ?? "");
-  }, [operator.upi_vpa, operator.upi_name]);
+    setKind(operator.upi_kind ?? "personal");
+    setMc(operator.upi_mc ?? null);
+  }, [operator.upi_vpa, operator.upi_name, operator.upi_kind, operator.upi_mc]);
 
   const trimmed = vpa.trim();
   const looksValid = trimmed === "" || isValidVpa(trimmed);
-  const dirty = trimmed !== (operator.upi_vpa ?? "") || name.trim() !== (operator.upi_name ?? "");
+  const dirty =
+    trimmed !== (operator.upi_vpa ?? "") ||
+    name.trim() !== (operator.upi_name ?? "") ||
+    kind !== (operator.upi_kind ?? "personal") ||
+    (mc ?? null) !== (operator.upi_mc ?? null);
+
+  // A photo of the shop's own QR standee: the id, the name and — the part
+  // that matters — whether it's a merchant id, read off the code itself.
+  async function readPhoto(file: File) {
+    setError(null);
+    setRead(null);
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Couldn't open that photo."));
+        img.src = url;
+      });
+      const text = decodePixels(img, document.createElement("canvas"));
+      const found = text ? parseUpiQr(text) : null;
+      if (!found) {
+        setError(text ? "That QR isn't a UPI one." : "No QR code found in that photo — get closer, in good light.");
+        return;
+      }
+      setVpa(found.vpa);
+      if (found.name && !name.trim()) setName(found.name);
+      setKind(found.kind);
+      setMc(found.merchantCode);
+      setRead(`${found.vpa} · ${found.kind === "merchant" ? `merchant, code ${found.merchantCode}` : "personal id"}`);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
 
   async function save() {
     setSaving(true);
@@ -332,6 +371,8 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
       await updateOperator(operator.id, {
         upi_vpa: trimmed || null,
         upi_name: name.trim() || null,
+        upi_kind: kind,
+        upi_mc: kind === "merchant" ? mc : null,
       } as OperatorSettings);
       onSaved();
       setSaved(true);
@@ -347,8 +388,61 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
     <div className="mt-5 border-t border-line pt-5">
       <p className="label-caps m-0 mb-2">Getting paid</p>
       <p className="m-0 mb-3 max-w-[60ch] text-[11.5px] leading-relaxed text-muted">
-        Students get a UPI link with the amount and the order token already filled in, and pay you
-        directly. Leave it blank to take cash only.
+        Students pay this id directly. Leave it blank to take cash only.
+      </p>
+
+      <div className="mb-2.5 grid gap-2 sm:grid-cols-[1fr_auto]">
+        <div className="grid grid-cols-2 gap-1 rounded-[14px] border border-line bg-surface-sunk p-1">
+          {(
+            [
+              ["merchant", "Business QR id", "Amount arrives pre-filled"],
+              ["personal", "Personal id", "Students type the amount"],
+            ] as const
+          ).map(([k, label, hint]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setKind(k)}
+              className={cn(
+                "flex flex-col items-start rounded-[11px] px-3 py-2 text-left transition-colors",
+                kind === k ? "bg-surface shadow-card" : "text-muted hover:bg-surface/60",
+              )}
+            >
+              <span className="text-[12.5px] font-semibold tracking-[-0.01em]">{label}</span>
+              <span className="text-[10.5px] leading-snug opacity-75">{hint}</span>
+            </button>
+          ))}
+        </div>
+        <label className="flex cursor-pointer items-center justify-center gap-2 rounded-[14px] border border-line bg-surface px-3.5 py-2 text-[12.5px] font-semibold text-ink-soft hover:bg-surface-sunk">
+          <Camera size={14} strokeWidth={2.2} />
+          Read from a photo of your QR
+          <input
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void readPhoto(f);
+            }}
+          />
+        </label>
+      </div>
+      <p className="m-0 mb-3 max-w-[64ch] text-[11px] leading-relaxed text-muted">
+        {kind === "merchant" ? (
+          <>
+            The id behind your PhonePe Business, Paytm for Business or GPay Business QR — the one on
+            the standee. UPI apps let those take the amount in the link; the student taps once.
+            {mc && <> Merchant code <span className="font-mono">{mc}</span> from your QR is sent with it.</>}
+          </>
+        ) : (
+          <>
+            An ordinary <span className="font-mono">name@bank</span> id. UPI apps refuse a link with the
+            amount pre-filled to a personal id — &quot;transaction not allowed&quot; — so students copy the
+            id and type the amount. A free business QR from PhonePe or Paytm fixes that.
+          </>
+        )}
+        {read && <span className="block text-sage-ink"> Read from the photo: {read}</span>}
       </p>
 
       <div className="grid gap-2.5 sm:grid-cols-2">

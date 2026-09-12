@@ -94,7 +94,7 @@ async function nativeDetector(): Promise<Detector | null> {
  * detector isn't there, and for a photo whichever detector is there — a
  * photo is a still, and this is simpler than wrapping one for the API.
  */
-function decodePixels(source: HTMLVideoElement | HTMLImageElement, scratch: HTMLCanvasElement): string | null {
+export function decodePixels(source: HTMLVideoElement | HTMLImageElement, scratch: HTMLCanvasElement): string | null {
   const w = source instanceof HTMLVideoElement ? source.videoWidth : source.naturalWidth;
   const h = source instanceof HTMLVideoElement ? source.videoHeight : source.naturalHeight;
   if (!w || !h) return null;

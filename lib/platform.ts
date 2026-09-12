@@ -1,6 +1,7 @@
 "use client";
 
 import { getSupabase } from "./supabase/client";
+import type { UpiKind } from "./upi";
 
 /**
  * The platform fee — Printify's share of every order — and the ledger of
@@ -13,6 +14,8 @@ export interface PlatformSettings {
   fee_min: number;
   payee_vpa: string | null;
   payee_name: string | null;
+  /** Merchant ids take a pre-filled amount in the desk's settle-up QR; personal ones don't. */
+  payee_kind: UpiKind;
   /** Days past month-end before an unsettled fee locks the desk closed. */
   grace_days: number;
   updated_at: string;
@@ -23,6 +26,7 @@ const EMPTY: PlatformSettings = {
   fee_min: 0,
   payee_vpa: null,
   payee_name: null,
+  payee_kind: "personal",
   grace_days: 15,
   updated_at: "",
 };
@@ -49,11 +53,10 @@ export async function platformSettings(force = false): Promise<PlatformSettings>
 async function fetchSettings(): Promise<PlatformSettings> {
   const supabase = getSupabase();
   if (!supabase) return EMPTY;
-  const { data, error } = await supabase
-    .from("platform_settings")
-    .select("fee_percent, fee_min, payee_vpa, payee_name, grace_days, updated_at")
-    .eq("id", true)
-    .maybeSingle();
+  // `*`, not a column list: a column this project hasn't got yet (0025's
+  // grace_days, 0027's payee_kind) must read as its default, not as "no
+  // fee" — the quote would then disagree with place_order.
+  const { data, error } = await supabase.from("platform_settings").select("*").eq("id", true).maybeSingle();
   // A project that hasn't run 0022 prices as it did before: no fee.
   const value: PlatformSettings = error || !data
     ? EMPTY
@@ -62,6 +65,7 @@ async function fetchSettings(): Promise<PlatformSettings> {
         fee_min: Number(data.fee_min),
         payee_vpa: data.payee_vpa ?? null,
         payee_name: data.payee_name ?? null,
+        payee_kind: data.payee_kind === "merchant" ? "merchant" : "personal",
         grace_days: Number(data.grace_days ?? 15),
         updated_at: data.updated_at,
       };
@@ -76,6 +80,7 @@ export async function setPlatformFee(input: {
   vpa: string;
   name: string;
   graceDays: number;
+  payeeKind: UpiKind;
 }): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) throw new Error("No database connection.");
@@ -85,6 +90,7 @@ export async function setPlatformFee(input: {
     p_vpa: input.vpa.trim() || null,
     p_name: input.name.trim() || null,
     p_grace_days: input.graceDays,
+    p_payee_kind: input.payeeKind,
   });
   if (error) throw new Error(explain(error.message));
   cache = null;

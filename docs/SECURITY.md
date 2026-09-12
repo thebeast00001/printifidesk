@@ -418,3 +418,4 @@ The security-relevant scenarios in `check:sql`, by name:
 - the platform fee: to the paisa on top of the minimum; floored; student refused the rate; pinned; ledger excludes a full refund; settlements admin-only
 - an overdue fee locks the desk closed until it's settled; within grace it opens
 - the admin shuts a desk: unlisted, closed, codes revoked; its staff refused at every door by triggers, but finish the live order; restored, open again
+- a desk's UPI id is personal until it says merchant (junk kinds and codes refused); the fee id the same, and a five-argument set_platform_fee leaves it
