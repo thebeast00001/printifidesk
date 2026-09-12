@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import { Activity, House, Printer, Receipt, Settings2, SlidersHorizontal, Store, Wallet } from "lucide-react";
+import { Activity, House, Inbox, Printer, Receipt, Settings2, SlidersHorizontal, Store, Wallet } from "lucide-react";
+import { useEffect, useState } from "react";
+import { adminApplications } from "@/lib/operator";
 import { useActiveCount } from "@/hooks/use-tracking";
 import { useApp } from "@/lib/store";
 import { useSurface } from "./surface-provider";
@@ -44,17 +46,28 @@ export function FloatingDock() {
 
 const ADMIN_NAV = [
   { href: "/admin", label: "Fees", icon: Receipt },
+  { href: "/admin/applications", label: "Applications", icon: Inbox },
   { href: "/admin/desks", label: "Desks", icon: Store },
   { href: "/diagnostics", label: "Diagnostics", icon: Activity },
 ] as const;
 
-/** Money, desks, and whether the wiring is right. Nothing that leaves the admin. */
+/** Money, applications, desks, and whether the wiring is right. Nothing that leaves the admin. */
 function AdminDock({ pathname }: { pathname: string }) {
+  // Applications waiting to be read. Admin-only in the database, so a
+  // non-admin on these pages simply gets no badge.
+  const [pending, setPending] = useState(0);
+  useEffect(() => {
+    adminApplications("pending")
+      .then((rows) => setPending(rows.length))
+      .catch(() => setPending(0));
+  }, [pathname]);
+
   return (
     <DockShell>
       {ADMIN_NAV.map(({ href, label, icon: Icon }) => {
         const active = href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
-        return <DockItem key={href} href={href} label={label} icon={Icon} active={active} />;
+        const badge = href === "/admin/applications" && pending ? pending : undefined;
+        return <DockItem key={href} href={href} label={label} icon={Icon} active={active} badge={badge} />;
       })}
     </DockShell>
   );

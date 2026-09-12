@@ -988,17 +988,84 @@ await scenario("twenty bad guesses in an hour and you wait", async () => {
   return "21st refused for an hour; another user still gets a plain 'not known'";
 });
 
-await scenario("applications are gone", async () => {
-  const { rows } = await db.query(`select to_regclass('public.operator_applications') as t;`);
-  if (rows[0].t !== null) throw new Error("operator_applications still exists");
-  const { rows: fn } = await db.query(
-    `select count(*)::int as n from pg_proc where proname in ('approve_application', 'reject_application');`,
+await scenario("applying: a form, a review, a code only the applicant can use", async () => {
+  // Someone with a desk account, on no desk, applies.
+  await actingAs("applicant_test");
+  const { rows: app } = await db.query(
+    `select public.apply_for_desk('Verma Xerox, Block D', 'Main campus', 'Ground floor', '9876543210', 'HP M428', null) as id;`,
   );
-  if (fn[0].n !== 0) throw new Error("approve/reject_application still exist");
-  return "table and both functions dropped";
-});
+  let twice = false;
+  try {
+    await db.query(`select public.apply_for_desk('Again', 'Main campus', null, '9876543210', null, null);`);
+  } catch (error) {
+    twice = /already have an application/.test(String(error?.message ?? error));
+  }
+  if (!twice) throw new Error("a second pending application was accepted");
+  const { rows: mine } = await db.query(`select * from public.my_application();`);
+  if (mine[0]?.status !== "pending" || mine[0].code_live !== false) throw new Error(`my_application: ${JSON.stringify(mine[0])}`);
 
-/* ---------- 0022: the platform fee ---------- */
+  // Only the admin approves; approving makes the desk and a code for the applicant.
+  let outsider = false;
+  try {
+    await db.query(`select * from public.approve_application($1, null);`, [app[0].id]);
+  } catch (error) {
+    outsider = /Only the admin/.test(String(error?.message ?? error));
+  }
+  if (!outsider) throw new Error("a non-admin approved an application");
+  await actingAs("admin_test");
+  const { rows: ok } = await db.query(`select * from public.approve_application($1, 'Welcome');`, [app[0].id]);
+  if (!ok[0]?.operator_id || !/^[A-HJ-NP-Z2-9]{8}$/.test(ok[0].code)) throw new Error(`approve returned ${JSON.stringify(ok[0])}`);
+  const { rows: desk } = await db.query(`select name, short_name, is_open from public.operators where id = $1;`, [ok[0].operator_id]);
+  if (desk[0].name !== "Verma Xerox, Block D" || desk[0].short_name !== "Verma Xerox" || desk[0].is_open) {
+    throw new Error(`desk row: ${JSON.stringify(desk[0])}`);
+  }
+  const { rows: listed } = await db.query(`select code, code_claimed, applicant_name from public.admin_applications('approved');`);
+  const row = listed.find((r) => r.code === ok[0].code);
+  if (!row || row.code_claimed) throw new Error("admin_applications doesn't show the live code");
+
+  // The code is the applicant's: someone else is refused, they get in.
+  await actingAs("someone_else");
+  const { rows: wrong } = await db.query(`select * from public.claim_invite($1);`, [ok[0].code]);
+  if (wrong[0].ok || !/different account/.test(wrong[0].message)) throw new Error(`another account: ${JSON.stringify(wrong[0])}`);
+  await actingAs("applicant_test");
+  const { rows: seen } = await db.query(`select code_live from public.my_application();`);
+  if (seen[0].code_live !== true) throw new Error("the applicant isn't told the code is live");
+  const { rows: joined } = await db.query(`select * from public.claim_invite($1);`, [ok[0].code]);
+  if (!joined[0].ok || joined[0].operator_id !== ok[0].operator_id) throw new Error(`applicant claim: ${JSON.stringify(joined[0])}`);
+  const { rows: staff } = await db.query(`select 1 from public.staff where user_id = 'applicant_test' and operator_id = $1;`, [ok[0].operator_id]);
+  if (staff.length !== 1) throw new Error("the applicant isn't on the desk");
+  // Already running a desk: can't apply again.
+  let running = false;
+  try {
+    await db.query(`select public.apply_for_desk('Another', 'Campus', null, '1', null, null);`);
+  } catch (error) {
+    running = /already run a desk/.test(String(error?.message ?? error));
+  }
+  if (!running) throw new Error("someone on a desk could apply again");
+
+  // Reject needs a reason; withdraw is the applicant's.
+  await actingAs("applicant_two");
+  const { rows: app2 } = await db.query(
+    `select public.apply_for_desk('Sharma Prints', 'North campus', null, '9999999999', null, 'evenings only') as id;`,
+  );
+  await actingAs("admin_test");
+  let noReason = false;
+  try {
+    await db.query(`select public.reject_application($1, '  ');`, [app2[0].id]);
+  } catch (error) {
+    noReason = /Say why/.test(String(error?.message ?? error));
+  }
+  if (!noReason) throw new Error("a rejection without a reason went through");
+  await db.query(`select public.reject_application($1, 'No printer listed');`, [app2[0].id]);
+  await actingAs("applicant_two");
+  const { rows: rejected } = await db.query(`select status, review_note from public.my_application();`);
+  if (rejected[0].status !== "rejected" || rejected[0].review_note !== "No printer listed") throw new Error(`rejected: ${JSON.stringify(rejected[0])}`);
+  const { rows: app3 } = await db.query(`select public.apply_for_desk('Sharma Prints', 'North campus', null, '9999999999', 'Canon', null) as id;`);
+  await db.query(`select public.withdraw_application($1);`, [app3[0].id]);
+  const { rows: withdrawn } = await db.query(`select status from public.my_application();`);
+  if (withdrawn[0].status !== "withdrawn") throw new Error("withdraw didn't take");
+  return "applied once; admin approved → desk + a code for that account only; wrong account refused; applicant joined; rejected with a reason; withdrawn";
+});
 
 await scenario("the platform fee is a line on the bill, to the paisa, on top of the minimum", async () => {
   await actingAs(null);

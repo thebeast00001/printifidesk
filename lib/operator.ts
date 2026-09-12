@@ -4,6 +4,122 @@ import { ensureSession, getSupabase } from "./supabase/client";
 import type { OrderRow, OrderStatus } from "./orders";
 
 /* ============================================================
+   Applications — asking to run a desk
+   ============================================================ */
+
+export type ApplicationStatus = "pending" | "approved" | "rejected" | "withdrawn";
+
+export interface ApplicationDraft {
+  display_name: string;
+  campus: string;
+  location: string;
+  phone: string;
+  machine: string;
+  note: string;
+}
+
+/** The applicant's own most recent application. Never carries the code. */
+export interface MyApplication {
+  id: string;
+  display_name: string;
+  campus: string;
+  status: ApplicationStatus;
+  review_note: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+  /** Approved, and the owner code the admin holds is still usable. */
+  code_live: boolean;
+  code_expires_at: string | null;
+}
+
+export async function myApplication(): Promise<MyApplication | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const session = await ensureSession();
+  if (session.status !== "ready") return null;
+  const { data, error } = await supabase.rpc("my_application");
+  if (error) throw new Error(explain(error.message));
+  return (data?.[0] as MyApplication) ?? null;
+}
+
+export async function applyForDesk(draft: ApplicationDraft): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { error } = await supabase.rpc("apply_for_desk", {
+    p_display_name: draft.display_name.trim(),
+    p_campus: draft.campus.trim(),
+    p_location: draft.location.trim() || null,
+    p_phone: draft.phone.trim(),
+    p_machine: draft.machine.trim() || null,
+    p_note: draft.note.trim() || null,
+  });
+  if (error) throw new Error(explain(error.message));
+}
+
+export async function withdrawApplication(id: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { error } = await supabase.rpc("withdraw_application", { p_application: id });
+  if (error) throw new Error(explain(error.message));
+}
+
+/* ---------- the admin's side ---------- */
+
+export interface Application {
+  id: string;
+  user_id: string;
+  display_name: string;
+  campus: string;
+  location: string | null;
+  phone: string;
+  machine: string | null;
+  note: string | null;
+  status: ApplicationStatus;
+  review_note: string | null;
+  reviewed_at: string | null;
+  operator_id: string | null;
+  created_at: string;
+  applicant_name: string | null;
+  applicant_email: string | null;
+  /** The owner code while it's live; null once used, cancelled or expired. */
+  code: string | null;
+  code_expires_at: string | null;
+  code_claimed: boolean;
+}
+
+export async function adminApplications(status?: ApplicationStatus): Promise<Application[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_applications", { p_status: status ?? null });
+  if (error) throw new Error(explain(error.message));
+  return (data ?? []) as Application[];
+}
+
+/** Creates the desk and mints a code for that applicant, in one transaction. */
+export async function approveApplication(
+  id: string,
+  note?: string,
+): Promise<{ operator_id: string; code: string; expires_at: string }> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { data, error } = await supabase.rpc("approve_application", {
+    p_application: id,
+    p_note: note?.trim() || null,
+  });
+  if (error) throw new Error(explain(error.message));
+  const row = data?.[0] as { operator_id: string; code: string; expires_at: string } | undefined;
+  if (!row) throw new Error("The database made no code.");
+  return row;
+}
+
+export async function rejectApplication(id: string, note: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { error } = await supabase.rpc("reject_application", { p_application: id, p_note: note.trim() });
+  if (error) throw new Error(explain(error.message));
+}
+
+/* ============================================================
    Admin — desks
    ============================================================ */
 
@@ -158,6 +274,9 @@ function explain(message: string): string {
     return "The database refused that. Your sign-in may not be reaching Supabase — check the banner above.";
   }
   if (m.includes("does not exist") || m.includes("schema cache")) {
+    if (m.includes("application") || m.includes("apply_for_desk")) {
+      return "This needs migration 0024 — run supabase/migrations/0024_applications.sql.";
+    }
     if (m.includes("admin_desks") || m.includes("create_operator")) {
       return "This needs migration 0019 — run supabase/migrations/0019_join_codes.sql.";
     }

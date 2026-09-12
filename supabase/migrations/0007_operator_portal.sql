@@ -88,7 +88,10 @@ create policy "applications review" on public.operator_applications for update
 -- Approving creates the operator and the staff row in one step, so a half
 -- approved application can't exist.
 -- ------------------------------------------------------------
-create or replace function public.approve_application(p_application uuid, p_note text default null)
+-- Dropped first: 0024 gives this a different return type, and CREATE OR
+-- REPLACE cannot change one — a replay would fail here otherwise.
+drop function if exists public.approve_application(uuid, text);
+create function public.approve_application(p_application uuid, p_note text default null)
 returns uuid
 language plpgsql security definer set search_path = public as $$
 declare

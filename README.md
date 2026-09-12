@@ -111,7 +111,8 @@ factual-teal-4113.clerk.accounts.dev
 [`0020_admin_by_hand.sql`](supabase/migrations/0020_admin_by_hand.sql),
 [`0021_desk_push.sql`](supabase/migrations/0021_desk_push.sql),
 [`0022_platform_fee.sql`](supabase/migrations/0022_platform_fee.sql),
-then [`0023_owner_code.sql`](supabase/migrations/0023_owner_code.sql).
+[`0023_owner_code.sql`](supabase/migrations/0023_owner_code.sql),
+then [`0024_applications.sql`](supabase/migrations/0024_applications.sql).
 
 These are **SQL** — they go in the Supabase dashboard's SQL editor
 (`Project → SQL Editor → New query`), not a terminal.
@@ -278,17 +279,27 @@ Finishing is only what a desk does while you wait — **staple or loose**. Spira
 and soft binding are a separate job with a separate turnaround, so they're out
 until that's modelled.
 
-### Becoming an operator — a code, not a form
+### Becoming an operator — apply, then a code
 
-Nobody applies. A desk is created by an admin at `/admin` (name and campus;
-the owner sets everything else), and creating it hands you an **owner code**
-— eight characters, a QR, a link — to pass on over WhatsApp or across a
-counter. The owner opens it, signs in once, and the desk is theirs. From then
-on they bring in their own staff the same way from *Settings → Staff*.
+Two ways onto a desk, both ending in a code:
+
+- **Joining someone's desk:** they make a join code under *Settings →
+  Staff*; you enter it.
+- **Starting your own** (`0024`): sign in to the desk site — a desk account
+  is what keeps your orders and everything else yours — and **apply**: what
+  students should see, campus, where, your phone, the printer, a note.
+  The admin reads it at `/admin/applications`. **Accepting creates the desk
+  and mints an owner code for your account only**, in one transaction; the
+  admin hands you the code (it stays readable on the application until
+  it's used); you enter it in the same box; the desk is yours. A rejection
+  carries a reason and you can apply again. One pending application per
+  person; nobody already on a desk can apply.
+
+The admin can also create a desk directly at `/admin/desks` and hand out
+its owner code — or take an empty one with *Run it myself*.
 
 `/operator` therefore shows one of three things: a sign-in prompt, the
-**join-code box**, or the portal. Since `0019` the application form and its
-review queue are gone — a queue nobody used was a place for mistakes.
+**join-code box with the application under it**, or the portal.
 
 New desks start **closed** (`is_open = false`) with nobody on staff, so
 nothing goes live until the owner has joined and opened it.
@@ -735,7 +746,7 @@ Being specific about this matters more than a green badge:
   column list, the two-site routing table, the fee's calendar windows, and
   the SQL below. **Passes.**
 - `npm run build` — **passes.**
-- `npm run check:sql` — all twenty-three migrations applied, re-applied, and their
+- `npm run check:sql` — all twenty-four migrations applied, re-applied, and their
   triggers driven through a real order under a real JWT: tokens, the timeline,
   the write guard, per-file settings, the report constraint, the upload
   ceiling, the order rate limit, document ownership, push endpoint sanity, and
@@ -748,7 +759,10 @@ Being specific about this matters more than a green badge:
   function or policy can write `admins`, a new order pushes to desk devices
   and only them, the platform fee — the 144-job parity grid now runs at
   3.25%, the fee on the lifted minimum, the floor, the guard, and the
-  ledger with a settlement and a fully refunded order excluded). **Passes.** It does not check the RLS policies
+  ledger with a settlement and a fully refunded order excluded, and
+  applications — one pending per person, admin-only approval that makes the
+  desk and a code bound to the applicant, another account refused, rejection
+  needs a reason, withdrawal). **Passes.** It does not check the RLS policies
   themselves; see above for why.
 - **Two sites** — the routing table is unit-tested row by row (38 checks),
   and a split-mode production server was probed on both hosts: every student

@@ -23,7 +23,7 @@ token can still attempt, so every rule that matters has to hold in Postgres.
 |---|---|---|
 | Who you are | Clerk JWT → `public.clerk_id()` reads `sub` | Supabase verifies the signature; nothing here does. |
 | Your rows vs mine | RLS on every table | `user_id = clerk_id()` or `is_staff(operator_id)`. |
-| Staff vs student | `public.staff` table, read by `is_staff()` | Written only by `claim_invite()` (a live join code), `add_staff()` (staff, by email) or manual SQL. Desks are created by `create_operator()` (admin). |
+| Staff vs student | `public.staff` table, read by `is_staff()` | Written only by `claim_invite()` (a live join code — and a code from an approved application works on the applicant's account alone), `add_staff()` (staff, by email) or manual SQL. Desks are created by `create_operator()` or `approve_application()` (admin). |
 | Admin | `public.admins`, read by `is_admin()` | **No write path from the app at all** (0020): no function inserts, no policy allows it. Granted only by SQL in the project dashboard. An admin creates desks and mints a code for an *empty* desk; nothing else. |
 | Order price | `place_order()` RPC (0014) | The browser never writes a total. See below. |
 | Platform fee (0022) | Computed in `place_order()` from `platform_settings`, snapshotted, pinned by the guard | The rate is admin-only (`set_platform_fee`). The ledger (`fee_window`, `fee_balance`, `admin_fee_desks`) is derived from orders, never typed; settlements are recorded by the admin only. |
@@ -259,7 +259,17 @@ but a four-digit PIN is a four-digit PIN. Staff who want more can set six.
 And a paired device is a key: lose the tablet, revoke it in Settings, and it
 is a tablet again.
 
-### 11. Join codes replace applications — **0019**
+### 11. Join codes — and applications, back in front of them (0019, 0024)
+
+Applications returned in 0024 in the shape the codes make safe: a signed-in
+account applies (one pending each, never while already on a desk); the
+admin accepts; `approve_application()` creates the desk and mints an owner
+code with `for_user` set to the applicant, in one transaction; the admin
+hands it over by any channel, because `claim_invite()` refuses it on any
+other account. The applicant is told the code is live, never the code
+itself. Every write is an admin-only or owner-only function; the table has
+a read policy and nothing else, and the direct-write policies 0007 once
+had are dropped by name.
 
 The only way onto a desk's staff is now a code made by someone already on it
 (or, for a brand-new desk, by an admin). A stranger with a form was never a

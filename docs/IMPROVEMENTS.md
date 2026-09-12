@@ -171,6 +171,12 @@ the order with a reason, visible to the student.
 `operator_stats()` is today-only. Week and month, plus a busiest-hour breakdown,
 is what tells an operator when to staff up.
 
+### 2.13 Applications, in front of the codes — done (0024)
+A person with a desk account applies; the admin reads it; accepting creates
+the desk and mints an owner code that only that applicant's account can
+use; the admin hands it over; they enter it. Rejections carry a reason.
+The admin's dock shows how many are waiting.
+
 ### 2.12 The platform fee — done (0022)
 Three percent of every order, like Blinkit's handling charge: a line on the
 student's bill, paid with the order into the desk's UPI or drawer, owed by

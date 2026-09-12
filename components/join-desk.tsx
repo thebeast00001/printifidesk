@@ -8,6 +8,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { ArrowRight, Check, KeyRound, Loader2, LogIn, Ticket } from "lucide-react";
 import { claimInvite } from "@/lib/desk";
 import { isAdmin } from "@/lib/operator";
+import { OperatorApplication } from "./operator-application";
 import { setMyPin } from "@/lib/desk-auth";
 import { cn, easeIos } from "@/lib/utils";
 import { useSurface } from "./surface-provider";
@@ -183,8 +184,8 @@ export function JoinDesk({
               </p>
             ) : (
               <p className="m-0 mt-3 text-[11px] leading-relaxed text-muted">
-                Don&apos;t have one? Whoever runs the desk makes it under Settings → Staff. A brand-new desk
-                gets its first code from the Printify admin.
+                Joining someone&apos;s desk? They make your code under Settings → Staff. Starting your own?
+                Apply below — an accepted application comes back as an owner code for this account.
               </p>
             )}
           </motion.div>
@@ -262,6 +263,13 @@ export function JoinDesk({
           </motion.div>
         )}
       </AnimatePresence>
+      {/* The other way onto a desk: your own, by application. Not for the
+          admin, who makes desks rather than asks for them; not once joined. */}
+      {!admin && !joined && (
+        <div className="mt-4">
+          <OperatorApplication />
+        </div>
+      )}
     </Shell>
   );
 }

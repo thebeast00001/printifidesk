@@ -40,6 +40,7 @@ truncate table
   public.staff_invites,
   public.invite_attempts,
   public.platform_settlements,
+  public.operator_applications,
   public.staff,
   public.operators,
   public.admins,
