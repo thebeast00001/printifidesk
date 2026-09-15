@@ -426,3 +426,4 @@ The security-relevant scenarios in `check:sql`, by name:
 - a gateway payment is the server's write: a student or staff can't call the gateway functions or write the gateway columns; a short payment is refused; a retried webhook is a no-op; the fee is retained, not owed; a refund is recorded by the server only
 - a Cashfree webhook verifies over the raw bytes with the client secret in constant time; a reserialised body, a wrong secret, a missing header or a tampered timestamp all fail
 - admin_fee_orders lists collected, unrefunded orders with no name or file, sums to fee_window, and returns nothing to a student or a staffer
+- a student cancels their own placed or queued order with the exact update the orders page sends; a printing one is refused by the guard in words (the policy hides it as well)

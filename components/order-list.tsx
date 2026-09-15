@@ -31,6 +31,8 @@ export function OrderList() {
   const openSheet = useApp((s) => s.openSheet);
   const [busy, setBusy] = useState<string | null>(null);
   const [reporting, setReporting] = useState<OrderRow | null>(null);
+  // A refused cancel says why under the card, instead of a button that does nothing.
+  const [problem, setProblem] = useState<{ id: string; message: string } | null>(null);
 
   if (backend.state === "loading") {
     return (
@@ -87,9 +89,12 @@ export function OrderList() {
 
   async function cancel(order: OrderRow) {
     setBusy(order.id);
+    setProblem(null);
     try {
       await cancelOrder(order.id);
       await reload();
+    } catch (e) {
+      setProblem({ id: order.id, message: e instanceof Error ? e.message : "Couldn't cancel that." });
     } finally {
       setBusy(null);
     }
@@ -102,6 +107,7 @@ export function OrderList() {
           key={order.id}
           order={order}
           busy={busy === order.id}
+          problem={problem?.id === order.id ? problem.message : null}
           onCancel={() => cancel(order)}
           onReport={() => setReporting(order)}
         />
@@ -128,11 +134,14 @@ export function OrderList() {
 function OrderCard({
   order,
   busy,
+  problem,
   onCancel,
   onReport,
 }: {
   order: OrderRow;
   busy: boolean;
+  /** Why the last cancel was refused, if it was. */
+  problem?: string | null;
   onCancel: () => void;
   onReport: () => void;
 }) {
@@ -196,6 +205,7 @@ function OrderCard({
           {order.note && (order.status === "failed" || order.cancelled_by === "operator") && (
             <p className="m-0 mt-1 text-[11.5px] text-clay-ink dark:text-clay">{order.note}</p>
           )}
+          {problem && <p className="m-0 mt-1 text-[11.5px] text-clay-ink dark:text-clay">Couldn&apos;t cancel: {problem}</p>}
         </div>
 
         {cancellable && (

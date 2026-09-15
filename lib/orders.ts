@@ -657,11 +657,15 @@ export async function myTotals(): Promise<Totals | null> {
 export async function cancelOrder(orderId: string): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("orders")
     .update({ status: "cancelled", note: "Cancelled by you" })
-    .eq("id", orderId);
+    .eq("id", orderId)
+    .select("id");
   if (error) throw new Error(friendly(error.message));
+  // RLS hides a row the student may no longer cancel (already printing) and
+  // reports nothing; say so rather than reload into the same screen.
+  if (!data || data.length === 0) throw new Error("Too late — the desk has already started on it. Ask at the counter.");
 }
 
 /* ---------- operator side ---------- */

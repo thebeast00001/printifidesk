@@ -16,6 +16,7 @@ import { useProfileSync } from "@/lib/profile-sync";
 import { staffOperatorId } from "@/lib/orders";
 import { adminsExist, isAdmin } from "@/lib/operator";
 import { useSurface } from "./surface-provider";
+import { MIGRATION_PROBES, probeMigrations, type MigrationReport } from "@/lib/migrations";
 import { cn } from "@/lib/utils";
 
 /**
@@ -60,6 +61,7 @@ export function DiagnosticsView() {
   return (
     <div className="flex max-w-[720px] flex-col gap-7">
       <DeploymentGroup />
+      <MigrationsGroup />
 
       <SettingsGroup title="Services">
         <SettingsRow
@@ -268,6 +270,47 @@ values ('${clerkId ?? "user_..."}');`}
  * projects with different VAPID pairs — and both are visible here: compare
  * this block on the two sites.
  */
+/**
+ * Which migrations the live project has run — probed, not assumed. A
+ * migration applied out of order shows up here as the earlier one
+ * missing, with what breaks while it is.
+ */
+function MigrationsGroup() {
+  const [report, setReport] = useState<MigrationReport | null>(null);
+  useEffect(() => {
+    void probeMigrations().then(setReport);
+  }, []);
+  const ok = report !== null && report.missing.length === 0;
+  return (
+    <SettingsGroup
+      title="Database migrations"
+      note={
+        report === null
+          ? "Checking which migrations the project has run…"
+          : ok
+            ? `All ${MIGRATION_PROBES.length} probed migrations are in.`
+            : "Run the missing ones in the SQL editor, in number order — a later migration can name a column an earlier one adds."
+      }
+    >
+      {report?.missing.map((m) => (
+        <SettingsRow
+          key={m.id}
+          label={`${m.id} missing`}
+          description={`Without it: ${m.without}`}
+          control={<Pill ok={false} okLabel="in" badLabel="missing" />}
+        />
+      ))}
+      {report && ok && (
+        <SettingsRow
+          label={`0022 → ${MIGRATION_PROBES[MIGRATION_PROBES.length - 1].id}`}
+          description="Every column and function the app expects answered."
+          control={<Pill ok okLabel="in" badLabel="missing" />}
+        />
+      )}
+    </SettingsGroup>
+  );
+}
+
 function DeploymentGroup() {
   const { surface, split } = useSurface();
   const desk = process.env.NEXT_PUBLIC_DESK_HOST || "";

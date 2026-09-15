@@ -1873,6 +1873,52 @@ await scenario("admin_fee_orders lists the period's collected orders with their 
   return `one listed (the fully refunded one left out), no names, sums to fee_window; a student and a staffer see nothing`;
 });
 
+/* ---------- the student's X: cancelling their own order ---------- */
+
+await scenario("a student cancels their own placed or queued order with the exact update the orders page sends", async () => {
+  await actingAs("student_cancel");
+  const place = async () => {
+    const { rows } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+      OPERATOR,
+      JSON.stringify([{ name: "c.pdf", pages: 3, colour_pages: 0, config: { copies: 1, sides: "single" } }]),
+    ]);
+    return rows[0].id;
+  };
+  const placed = await place();
+  // Exactly what cancelOrder() in lib/orders.ts sends.
+  await db.query(`update public.orders set status = 'cancelled', note = 'Cancelled by you' where id = $1;`, [placed]);
+  const { rows: a } = await db.query(`select status, cancelled_by, note from public.orders where id = $1;`, [placed]);
+  if (a[0].status !== "cancelled" || a[0].cancelled_by !== "student") throw new Error(`placed → ${JSON.stringify(a[0])}`);
+
+  // Queued (paid, waiting for the machine) is still theirs to cancel.
+  const queued = await place();
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'queued' where id = $1;`, [queued]);
+  await actingAs("student_cancel");
+  await db.query(`update public.orders set status = 'cancelled', note = 'Cancelled by you' where id = $1;`, [queued]);
+  const { rows: b } = await db.query(`select status, cancelled_by from public.orders where id = $1;`, [queued]);
+  if (b[0].status !== "cancelled" || b[0].cancelled_by !== "student") throw new Error(`queued → ${JSON.stringify(b[0])}`);
+
+  // Printing is not: the guard refuses any status but 'cancelled', and the
+  // policy only lets placed/queued rows through, so nothing changes.
+  const printing = await place();
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'queued' where id = $1;`, [printing]);
+  await db.query(`update public.orders set status = 'printing' where id = $1;`, [printing]);
+  await actingAs("student_cancel");
+  let refused = false;
+  try {
+    await db.query(`update public.orders set status = 'cancelled', note = 'Cancelled by you' where id = $1;`, [printing]);
+  } catch {
+    refused = true;
+  }
+  const { rows: c } = await db.query(`select status from public.orders where id = $1;`, [printing]);
+  if (c[0].status !== "printing") throw new Error(`printing was cancelled by the student`);
+  await actingAs(null);
+  await db.query(`delete from public.orders where user_id = 'student_cancel';`);
+  return `placed and queued cancel, cancelled_by = student; printing stays printing${refused ? "" : " (RLS hides the row; the harness is superuser)"}`;
+});
+
 await scenario("the upload ceiling holds", async () => {
   await actingAs("student_test");
   // 500 MB is the cap; one file over it must be refused.

@@ -1067,7 +1067,12 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0033** in the SQL editor, pasted from the files. Until
+2. **Run 0022 → 0034** in the SQL editor, pasted from the files, **in
+   number order** — a later migration can name a column an earlier one
+   adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
+   student update on an order failed and the X on /orders did nothing).
+   `/diagnostics` → *Database migrations* probes the live project and
+   names the missing ones with what breaks. Until
    0025, the fee panel shows no due date; until 0024, the join page shows a
    migration message in the application panel; until 0026, *Shut this
    desk* on `/admin/desks` errors with a missing function; until 0027,
@@ -1078,7 +1083,8 @@ Things the code can't do on its own, in the order they bite:
    slot is assigned, and saving the shelf fails; until 0031, a Paytm
    desk's standee QR isn't kept and the pay sheet draws Printify's copy;
    until 0032, online payment is never offered; until 0033, *Orders* on
-   the admin's fee rows errors quietly.
+   the admin's fee rows errors quietly; until 0034, a too-late cancel is
+   refused by the policy alone (silently) rather than by the guard (in words).
 3. **Cashfree.** Create a Cashfree Payments account for Printify (business
    KYC: PAN, bank account; GST if you have it), enable **Easy Split** on
    it (a request in the dashboard), then: `CASHFREE_APP_ID`,
