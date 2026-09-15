@@ -57,6 +57,9 @@ export function OperatorDay({ operator }: { operator: Operator }) {
         { label: "Of which colour", value: String(stats.colour_pages) },
         { label: "Cash", value: money(Math.round(Number(stats.cash_total)), currency) },
         { label: "UPI", value: money(Math.round(Number(stats.upi_total)), currency) },
+        ...(Number(stats.online_total ?? 0) > 0
+          ? [{ label: "Online", value: money(Math.round(Number(stats.online_total)), currency) }]
+          : []),
         { label: "Refunded", value: money(Math.round(Number(stats.refunded)), currency) },
         // The fee was inside every total the student paid; it's Printify's,
         // so what the desk actually keeps is shown next to it.

@@ -63,6 +63,7 @@ export function AdminFees() {
     return {
       orders: r.reduce((n, d) => n + d.orders, 0),
       fee: r.reduce((n, d) => n + d.fee, 0),
+      retained: r.reduce((n, d) => n + d.retained, 0),
       outstanding: r.reduce((n, d) => n + d.outstanding, 0),
       settled: r.reduce((n, d) => n + d.settled, 0),
     };
@@ -105,7 +106,7 @@ export function AdminFees() {
         <>
           <dl className="m-0 grid gap-2 sm:grid-cols-4">
             <Stat label={`Orders ${PERIODS.find((p) => p.id === period)?.label.toLowerCase()}`} value={String(totals.orders)} />
-            <Stat label="Fee earned" value={money(totals.fee)} strong />
+            <Stat label="Fee earned" value={money(totals.fee + totals.retained)} strong sub={totals.retained > 0 ? `${money(totals.retained)} taken at source` : undefined} />
             <Stat label="Settled, all time" value={money(totals.settled)} />
             <Stat label="Outstanding, all time" value={money(totals.outstanding)} />
           </dl>
@@ -164,7 +165,9 @@ function DeskRow({ desk, onRecorded }: { desk: DeskFeeRow; onRecorded: () => Pro
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-semibold">{desk.name}</span>
           <span className="block font-mono text-[11px] text-muted">
-            {desk.orders} collected · fee {money(desk.fee)} · settled {money(desk.settled)}
+            {desk.orders} collected · fee {money(desk.fee)}
+            {desk.retained > 0 ? ` + ${money(desk.retained)} at source` : ""} · settled {money(desk.settled)}
+            {desk.gateway_status === "active" ? " · online payments on" : desk.gateway_status === "pending" ? " · online payments pending" : ""}
           </span>
         </span>
         <span className="text-right">
@@ -367,11 +370,12 @@ function SettingsForm({ settings, onSaved }: { settings: PlatformSettings; onSav
   );
 }
 
-function Stat({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function Stat({ label, value, sub, strong }: { label: string; value: string; sub?: string; strong?: boolean }) {
   return (
     <div className={cn("rounded-[14px] border border-line p-3", strong ? "bg-ink text-paper" : "bg-surface-sunk")}>
       <dt className={cn("text-[11.5px]", strong ? "text-paper/70" : "text-muted")}>{label}</dt>
       <dd className="font-figure m-0 mt-0.5 text-[20px] font-extrabold tabular-nums">{value}</dd>
+      {sub && <dd className={cn("m-0 mt-0.5 text-[11px]", strong ? "text-paper/70" : "text-muted")}>{sub}</dd>}
     </div>
   );
 }

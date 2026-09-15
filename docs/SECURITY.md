@@ -423,3 +423,5 @@ The security-relevant scenarios in `check:sql`, by name:
 - the amount received is the desk's fact and the amount sent the student's claim: the student can't write the desk's columns, an absurd claim is refused, the claim freezes on confirmation, a bare confirm records the bill
 - ready jobs take the lowest free shelf slot and free it on leaving 'ready'; the student can't move a packet, a junk slot is refused, a full shelf hands out nothing, a desk with no shelf assigns nothing; the board leads with ready, carries no name or file, and is dark for a shut desk
 - queue_status_mine returns the caller's newest live order and nothing for a stranger
+- a gateway payment is the server's write: a student or staff can't call the gateway functions or write the gateway columns; a short payment is refused; a retried webhook is a no-op; the fee is retained, not owed; a refund is recorded by the server only
+- a Cashfree webhook verifies over the raw bytes with the client secret in constant time; a reserialised body, a wrong secret, a missing header or a tampered timestamp all fail

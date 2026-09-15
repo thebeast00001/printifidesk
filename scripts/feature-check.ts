@@ -3,6 +3,7 @@ import { normalisePhone } from "../lib/phone";
 import { summarisePages } from "../lib/pages";
 import { buildSlots } from "../components/pickup-picker";
 import { cleanReference, handleOf, isQrOnlyMerchant, isValidVpa, normaliseVpa, parseUpiQr, upiLink, vpaProblem } from "../lib/upi";
+import { gatewayOrderId, vendorShare, vendorStatus, verifyWebhook, webhookSignature } from "../lib/server/cashfree";
 import { shelfLabel, shelfSlots } from "../lib/orders";
 import { pickBadges } from "../components/operator-picker";
 import { paise, quoteOrder, rateCardOf, roundedTotal } from "../lib/pricing";
@@ -150,6 +151,27 @@ check("@paytm merchant is QR-only", isQrOnlyMerchant("paytmqr2810050501011abcd@p
 check("a personal @paytm id is not", isQrOnlyMerchant("ansh@paytm", "personal"), false);
 check("PhonePe Business is not QR-only", isQrOnlyMerchant("Q123456789@ybl", "merchant"), false);
 check("GPay Business is not QR-only", isQrOnlyMerchant("gpay-11234567890@okbizaxis", "merchant"), false);
+
+console.log("\n— paying through Printify (Cashfree) —");
+const secret = "cf_test_secret";
+const raw = '{"data":{"order":{"order_id":"PFabc","order_amount":14.00},"payment":{"cf_payment_id":1,"payment_status":"SUCCESS","payment_amount":14.00}},"type":"PAYMENT_SUCCESS_WEBHOOK"}';
+const ts = "1617695238078";
+const sig = webhookSignature(ts, raw, secret);
+check("a genuine signature verifies", verifyWebhook(raw, ts, sig, secret), true);
+check("a reserialised body does not", verifyWebhook(JSON.stringify(JSON.parse(raw)), ts, sig, secret), false);
+check("a wrong secret does not", verifyWebhook(raw, ts, sig, "other"), false);
+check("a missing header does not", verifyWebhook(raw, null, sig, secret), false);
+check("a tampered timestamp does not", verifyWebhook(raw, "1617695238079", sig, secret), false);
+check("gateway order id from a uuid", gatewayOrderId("0b7a2f6e-4c3d-4e5f-8a9b-0c1d2e3f4a5b"), "PF0b7a2f6e4c3d4e5f8a9b0c1d2e3f4a5b");
+check("a second attempt is suffixed", gatewayOrderId("0b7a2f6e-4c3d-4e5f-8a9b-0c1d2e3f4a5b", 2), "PF0b7a2f6e4c3d4e5f8a9b0c1d2e3f4a5b-2");
+check("gateway order id fits Cashfree", /^[A-Za-z0-9_-]{3,45}$/.test(gatewayOrderId("0b7a2f6e-4c3d-4e5f-8a9b-0c1d2e3f4a5b", 3)), true);
+check("vendor share is the bill less the fee", vendorShare(14, 0.42), 13.58);
+check("vendor share keeps the rounding", vendorShare(14, 0.41), 13.59);
+check("vendor share never negative", vendorShare(1, 5), 0);
+check("ACTIVE → active", vendorStatus("ACTIVE"), "active");
+check("IN_BENE_CREATION → pending", vendorStatus("IN_BENE_CREATION"), "pending");
+check("BLOCKED → blocked", vendorStatus("BLOCKED"), "blocked");
+check("unknown → pending", vendorStatus(undefined), "pending");
 
 const link = upiLink({
   vpa: "ansh@okhdfcbank",

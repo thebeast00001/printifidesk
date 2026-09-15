@@ -305,6 +305,8 @@ function PaymentLine({ order }: { order: OrderRow }) {
     text = `The desk received ${money(balance.received ?? 0)} of ${money(Number(order.total))} — pay the remaining ${money(balance.short)} in cash when you collect.`;
   } else if (paid && balance.over > 0) {
     text = `The desk received ${money(balance.received ?? 0)} for a ${money(Number(order.total))} bill — it will return ${money(balance.over)} to you.`;
+  } else if (paid && order.payment_method === "gateway") {
+    text = `Paid online through Printify${order.payment_reference ? ` · ref ${order.payment_reference}` : ""}.`;
   } else if (paid) {
     text = `Paid${method ? ` by ${method}` : ""}, confirmed by the desk${
       order.payment_reference ? ` · ref ${order.payment_reference}` : ""

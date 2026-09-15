@@ -221,7 +221,9 @@ const OPERATOR = "11111111-1111-1111-1111-111111111111";
  * the trigger and function logic, not the policies.
  */
 async function actingAs(userId) {
-  const claims = userId === null ? "" : JSON.stringify({ sub: userId });
+  // null is Printify's own server: Supabase's service key carries role =
+  // service_role and no sub, which is what assert_server() (0032) looks for.
+  const claims = userId === null ? JSON.stringify({ role: "service_role" }) : JSON.stringify({ sub: userId });
   await db.query(`select set_config('request.jwt.claims', $1, false);`, [claims]);
 }
 
@@ -1722,6 +1724,111 @@ await scenario("ready jobs take the lowest free shelf slot; the slot frees on co
   if (shut.length !== 0) throw new Error("a shut desk still shows a board");
   await db.query(`delete from public.orders where user_id like 'shelf_%';`);
   return `A1, A2, none; student can't move; freed A1 reassigned by hand, A2 reused on the next ready; Z99 refused; no shelf → no slot; board leads with ready, no names, dark when shut`;
+});
+
+/* ---------- 0032: paid through Printify ---------- */
+
+await scenario("a gateway payment is the server's write: marks paid and queued once, retains the fee, and nobody else can touch it", async () => {
+  await actingAs(null);
+  await db.exec(`update public.platform_settings set fee_percent = 3, fee_min = 0 where id;`);
+  await actingAs("student_gw");
+  const { rows: placed } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "g.pdf", pages: 20, colour_pages: 0, config: { copies: 1, sides: "single" } }]),
+  ]);
+  const id = placed[0].id;
+  const { rows: o } = await db.query(`select total, platform_fee from public.orders where id = $1;`, [id]);
+  const total = Number(o[0].total);
+  const fee = Number(o[0].platform_fee);
+  if (fee <= 0) throw new Error("no fee on the order; the scenario needs one");
+
+  // A browser — student, staff — gets nothing from the gateway functions.
+  for (const who of ["student_gw", "op_test"]) {
+    await actingAs(who);
+    let refused = false;
+    try {
+      await db.query(`select public.gateway_begin($1, 'PFTEST1');`, [id]);
+    } catch {
+      refused = true;
+    }
+    if (!refused) throw new Error(`${who} could call gateway_begin`);
+  }
+  // And can't write the columns by hand.
+  await actingAs("student_gw");
+  await db.query(`update public.orders set gateway_order_id = 'PFHACK', gateway_paid_at = now(), fee_settled_at = now() where id = $1;`, [id]);
+  const { rows: pinned } = await db.query(`select gateway_order_id, gateway_paid_at, fee_settled_at from public.orders where id = $1;`, [id]);
+  if (pinned[0].gateway_order_id !== null || pinned[0].gateway_paid_at !== null || pinned[0].fee_settled_at !== null) {
+    throw new Error(`a student wrote gateway columns: ${JSON.stringify(pinned[0])}`);
+  }
+
+  // The server (service role — the harness is superuser, which passes the grant).
+  await actingAs(null);
+  await db.query(`select public.gateway_begin($1, 'PFTEST1');`, [id]);
+  let bad = false;
+  try {
+    await db.query(`select public.gateway_paid($1, 'cf_1', $2, 'upi', now());`, [id, total - 1]);
+  } catch {
+    bad = true;
+  }
+  if (!bad) throw new Error("a short gateway payment was accepted");
+  const { rows: first } = await db.query(`select public.gateway_paid($1, 'cf_1', $2, 'upi', now()) as fresh;`, [id, total]);
+  if (first[0].fresh !== true) throw new Error("first webhook wasn't fresh");
+  const { rows: again } = await db.query(`select public.gateway_paid($1, 'cf_1', $2, 'upi', now()) as fresh;`, [id, total]);
+  if (again[0].fresh !== false) throw new Error("a retried webhook was treated as a second payment");
+  const { rows: paid } = await db.query(
+    `select status, payment_method, payment_taken_at, payment_received, gateway_payment_id, fee_settled_at, note from public.orders where id = $1;`,
+    [id],
+  );
+  const r = paid[0];
+  if (r.status !== "queued" || r.payment_method !== "gateway" || !r.payment_taken_at || Number(r.payment_received) !== total
+      || r.gateway_payment_id !== "cf_1" || !r.fee_settled_at) {
+    throw new Error(`paid row: ${JSON.stringify(r)}`);
+  }
+  if (!/Paid online/.test(r.note ?? "")) throw new Error(`note: ${r.note}`);
+
+  // The desk finishes it; the fee is not in what it owes, and is "retained" for the admin.
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'printing' where id = $1;`, [id]);
+  await db.query(`update public.orders set status = 'ready' where id = $1;`, [id]);
+  await db.query(`update public.orders set status = 'collected' where id = $1;`, [id]);
+  const { rows: win } = await db.query(`select * from public.fee_window($1, now() - interval '1 hour');`, [OPERATOR]);
+  if (Number(win[0].retained) < fee) throw new Error(`retained ${win[0].retained} < fee ${fee}`);
+  const { rows: bal0 } = await db.query(`select * from public.fee_balance($1);`, [OPERATOR]);
+  const { rows: stats } = await db.query(`select online_total, upi_total from public.operator_stats_range($1, now() - interval '1 hour');`, [OPERATOR]);
+  if (Number(stats[0].online_total) < total) throw new Error(`online_total ${stats[0].online_total} < ${total}`);
+  // Sanity: the same order paid by UPI would have added its fee to the balance.
+  await actingAs("student_gw");
+  const { rows: placed2 } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "h.pdf", pages: 20, colour_pages: 0, config: { copies: 1, sides: "single" } }]),
+  ]);
+  await actingAs("op_test");
+  for (const st of ["queued", "printing", "ready", "collected"]) {
+    await db.query(`update public.orders set status = $2 where id = $1;`, [placed2[0].id, st]);
+  }
+  const { rows: bal1 } = await db.query(`select * from public.fee_balance($1);`, [OPERATOR]);
+  if (Math.round((Number(bal1[0].accrued) - Number(bal0[0].accrued)) * 100) !== Math.round(fee * 100)) {
+    throw new Error(`a UPI order added ${Number(bal1[0].accrued) - Number(bal0[0].accrued)} to the balance, expected ${fee}`);
+  }
+  await actingAs("admin_test");
+  const { rows: desks } = await db.query(`select retained, gateway_status from public.admin_fee_desks(now() - interval '1 hour') where operator_id = $1;`, [OPERATOR]);
+  if (Number(desks[0].retained) < fee || desks[0].gateway_status !== "off") throw new Error(`admin row: ${JSON.stringify(desks[0])}`);
+
+  // A refund through the gateway is written by the server; a student can't.
+  await actingAs("student_gw");
+  let noRefund = false;
+  try {
+    await db.query(`select public.gateway_refunded($1, 'rf_1', 5, 'test');`, [id]);
+  } catch {
+    noRefund = true;
+  }
+  if (!noRefund) throw new Error("a student could call gateway_refunded");
+  await actingAs(null);
+  await db.query(`select public.gateway_refunded($1, 'rf_1', 5, 'Print came out wrong');`, [id]);
+  const { rows: rf } = await db.query(`select refunded_at, refund_amount, gateway_refund_id from public.orders where id = $1;`, [id]);
+  if (!rf[0].refunded_at || Number(rf[0].refund_amount) !== 5 || rf[0].gateway_refund_id !== "rf_1") throw new Error(`refund: ${JSON.stringify(rf[0])}`);
+  await db.query(`delete from public.orders where user_id = 'student_gw';`);
+  return `paid ${total} (fee ${fee}) → queued once, retry a no-op, short refused; fee retained, not owed; online_total counted; refund by the server only`;
 });
 
 await scenario("the upload ceiling holds", async () => {

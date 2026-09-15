@@ -151,7 +151,11 @@ export function FeePanel({ operator }: { operator: Operator }) {
         <>
           <dl className="m-0 grid gap-2 sm:grid-cols-3">
             <Stat label={`Collected ${PERIODS.find((p) => p.id === period)?.label.toLowerCase()}`} value={String(window.orders)} sub="orders" />
-            <Stat label="Fee on those" value={money(window.fee, currency)} />
+            <Stat
+              label="Fee on those"
+              value={money(window.fee, currency)}
+              sub={(window.retained ?? 0) > 0 ? `+ ${money(window.retained ?? 0, currency)} already taken on online payments` : undefined}
+            />
             <Stat label="Outstanding, all time" value={money(outstanding, currency)} strong />
           </dl>
 

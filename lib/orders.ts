@@ -51,7 +51,8 @@ export interface OrderRow {
   is_priority: boolean;
   operator_note: string | null;
   cancelled_by: "student" | "operator" | null;
-  payment_method: "upi" | "cash" | null;
+  /** "gateway" is a payment through Printify (Cashfree), marked by the server. */
+  payment_method: "upi" | "cash" | "gateway" | null;
   payment_claimed_at: string | null;
   payment_taken_at: string | null;
   payment_reference: string | null;
@@ -62,6 +63,12 @@ export interface OrderRow {
   shortfall_cleared_at?: string | null;
   /** 0030: where the packet is, e.g. "B3". Assigned on 'ready'; the desk can change it. */
   shelf_slot?: string | null;
+  /* 0032: the gateway's facts, written by the server only. */
+  gateway_order_id?: string | null;
+  gateway_payment_id?: string | null;
+  gateway_paid_at?: string | null;
+  fee_settled_at?: string | null;
+  gateway_refund_id?: string | null;
   refunded_at: string | null;
   refund_amount: number | null;
   refund_note: string | null;
@@ -143,6 +150,8 @@ export interface Operator {
   shelf_cols?: number;
   /** 0031: the standee's QR text, exactly as printed, when read from a photo. */
   upi_qr?: string | null;
+  /** 0032: Cashfree Easy Split — "active" is the only state that takes a payment. */
+  gateway_status?: "off" | "pending" | "active" | "blocked";
   accepts_cash: boolean;
   paper_stock: number | null;
   low_paper_at: number;
@@ -206,6 +215,7 @@ const OPERATOR_SELECT_LEGACY =
 // 42703 ("column does not exist") steps down one list at a time, so a
 // project on 0028 still gets 0027's columns rather than none of them.
 const OPERATOR_SELECTS = [
+  OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status", // 0032
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr", // 0031
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols", // 0030
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee", // 0028

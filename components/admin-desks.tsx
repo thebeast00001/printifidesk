@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { AlertCircle, Loader2, Plus, RotateCcw, ShieldOff, Ticket, UserRoundCheck, Users, X } from "lucide-react";
 import { adminDesks, createDesk, restoreDesk, shutDesk, type Desk } from "@/lib/operator";
 import { createInvite, runDeskMyself } from "@/lib/desk";
+import { GatewayPanel } from "./admin-gateway";
 import { useRouter } from "next/navigation";
 import { useSurface } from "./surface-provider";
 import { InviteCard } from "./operator/invite-card";
@@ -376,6 +377,10 @@ export function AdminDesks() {
                 </motion.form>
               )}
             </AnimatePresence>
+
+            {/* Paying through Printify: the admin connects the desk's settlement
+                account to Cashfree; the desk sees only the result. */}
+            {!desk.shut_at && <GatewayPanel desk={desk} onChanged={load} />}
 
             {/* The live owner code stays readable here until the owner joins —
                 a lost message is re-read, not re-minted. */}

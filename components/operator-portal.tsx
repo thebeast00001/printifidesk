@@ -7,6 +7,7 @@ import {
   Banknote,
   Check,
   Coins,
+  CreditCard,
   Package,
   ChevronDown,
   Clock,
@@ -41,6 +42,7 @@ import {
   type OperatorStats,
 } from "@/lib/operator";
 import { NEXT_STATUS, STATUS_LABEL, paymentBalance, type Operator, type OrderRow, type OrderStatus } from "@/lib/orders";
+import { refundOnline } from "@/lib/gateway";
 import { money, paise, type PrintConfig } from "@/lib/pricing";
 import { summarisePages } from "@/lib/pages";
 import { openReports, resolveReport, type OrderReport } from "@/lib/reports";
@@ -440,7 +442,11 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
                   onPriority={() => run(order.id, () => setPriority(order.id, !order.is_priority))}
                   onNote={(note) => run(order.id, () => setOperatorNote(order.id, note))}
                   onRefund={(amount, reason) =>
-                    run(order.id, () => refundOrder(order.id, amount, reason))
+                    run(order.id, () =>
+                      // Paid through Printify: the refund moves money, via Cashfree.
+                      // Paid to the desk: the desk moves it, and this writes it down.
+                      order.gateway_payment_id ? refundOnline(order.id, amount, reason) : refundOrder(order.id, amount, reason),
+                    )
                   }
                   reports={reports.filter((r) => r.order_id === order.id)}
                   onResolve={(id, resolution) =>
@@ -641,6 +647,15 @@ function OrderCard({
               <span className="flex items-center gap-1 rounded-full bg-ink px-2.5 py-1 text-[10.5px] font-semibold text-paper">
                 <Star size={10} strokeWidth={2.6} />
                 Priority
+              </span>
+            )}
+            {order.payment_method === "gateway" && order.gateway_paid_at && (
+              <span
+                className="flex items-center gap-1 rounded-full bg-sage px-2.5 py-1 text-[10.5px] font-semibold text-sage-ink"
+                title="Paid through Printify's payment partner. Your share settles to your account; the fee was taken at source."
+              >
+                <CreditCard size={10} strokeWidth={2.4} />
+                paid online
               </span>
             )}
             {order.payment_claimed_at && !order.payment_taken_at && (
@@ -1450,11 +1465,19 @@ function RefundRow({
         </button>
       ) : (
         <div className="rounded-[14px] bg-clay/40 p-3.5">
-          <p className="m-0 mb-2.5 text-[12px] leading-relaxed">
-            <strong className="font-semibold">Send the money yourself first.</strong> This only
-            writes it down — the student sees it on their order and it comes off today&apos;s
-            takings.
-          </p>
+          {order.gateway_payment_id ? (
+            <p className="m-0 mb-2.5 text-[12px] leading-relaxed">
+              <strong className="font-semibold">This one was paid through Printify</strong> — confirming here
+              sends the money back through the payment partner, onto whatever they paid with (a few days
+              for cards). Your share of it comes out of your next settlement.
+            </p>
+          ) : (
+            <p className="m-0 mb-2.5 text-[12px] leading-relaxed">
+              <strong className="font-semibold">Send the money yourself first.</strong> This only
+              writes it down — the student sees it on their order and it comes off today&apos;s
+              takings.
+            </p>
+          )}
 
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1.5">

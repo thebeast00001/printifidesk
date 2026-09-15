@@ -99,6 +99,8 @@ export async function setPlatformFee(input: {
 /* ---------- the ledger ---------- */
 
 export interface FeeWindow {
+  /** Fees on orders paid through Printify: retained at source, not owed. Zero before 0032. */
+  retained?: number;
   orders: number;
   fee: number;
 }
@@ -157,6 +159,9 @@ export interface DeskFeeRow {
   accrued: number;
   settled: number;
   outstanding: number;
+  /** Fees taken at source on orders paid through Printify, in the window. Zero before 0032. */
+  retained: number;
+  gateway_status: "off" | "pending" | "active" | "blocked";
 }
 
 /** Fee owed on orders collected in a window. Staff of the desk, or the admin. */
@@ -169,8 +174,8 @@ export async function feeWindow(operatorId: string, from: Date, to: Date = new D
     p_to: to.toISOString(),
   });
   if (error) throw new Error(explain(error.message));
-  const row = data?.[0] as { orders: number; fee: number | string } | undefined;
-  return { orders: Number(row?.orders ?? 0), fee: Number(row?.fee ?? 0) };
+  const row = data?.[0] as { orders: number; fee: number | string; retained?: number | string } | undefined;
+  return { orders: Number(row?.orders ?? 0), fee: Number(row?.fee ?? 0), retained: Number(row?.retained ?? 0) };
 }
 
 export async function feeBalance(operatorId: string): Promise<FeeBalance> {
@@ -216,6 +221,8 @@ export async function adminFeeDesks(from: Date, to: Date = new Date()): Promise<
     accrued: Number(r.accrued),
     settled: Number(r.settled),
     outstanding: Number(r.outstanding),
+    retained: Number(r.retained ?? 0),
+    gateway_status: (["off", "pending", "active", "blocked"].includes(String(r.gateway_status)) ? r.gateway_status : "off") as DeskFeeRow["gateway_status"],
   }));
 }
 

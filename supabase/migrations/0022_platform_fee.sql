@@ -364,6 +364,8 @@ $$;
  * Collected and not fully refunded — the two conditions everything below
  * shares, so they live in one place.
  */
+-- 0032 widens the return type; on a replay the old shape must go first.
+drop function if exists public.fee_window(uuid, timestamptz, timestamptz);
 create or replace function public.fee_window(p_operator uuid, p_from timestamptz, p_to timestamptz default now())
 returns table (orders integer, fee numeric)
 language sql stable security definer set search_path = public as $$
@@ -395,6 +397,7 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 /** Every desk in one window, with its all-time balance. Admin only. */
+drop function if exists public.admin_fee_desks(timestamptz, timestamptz);
 create or replace function public.admin_fee_desks(p_from timestamptz, p_to timestamptz default now())
 returns table (
   operator_id uuid, name text, campus text,

@@ -405,6 +405,15 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
       <p className="label-caps m-0 mb-2">Getting paid</p>
       <p className="m-0 mb-3 max-w-[60ch] text-[11.5px] leading-relaxed text-muted">
         Students pay this id directly. Leave it blank to take cash only.
+        {operator.gateway_status === "active" ? (
+          <span className="mt-1 block text-sage-ink">
+            Online payments through Printify are on: students can also pay by any UPI app or card with the
+            amount filled in; those arrive already confirmed, your share settles to your account daily, and
+            the Printify fee on them is taken at source.
+          </span>
+        ) : operator.gateway_status === "pending" ? (
+          <span className="mt-1 block">Online payments through Printify: Cashfree is still verifying your settlement account.</span>
+        ) : null}
       </p>
 
       <div className="mb-2.5 grid gap-2 sm:grid-cols-[1fr_auto]">

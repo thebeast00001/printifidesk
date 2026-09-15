@@ -1,0 +1,42 @@
+import "server-only";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { auth } from "@clerk/nextjs/server";
+
+/**
+ * The server's own connection: the service role, which RLS doesn't bind.
+ * Every route that uses it decides for itself who the caller is, with the
+ * helpers below, before touching anything — the key is capability, not
+ * permission.
+ */
+export function serviceClient(): SupabaseClient | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+/** The signed-in Clerk user, or null. */
+export async function callerId(): Promise<string | null> {
+  const { userId } = await auth();
+  return userId ?? null;
+}
+
+export async function isAdminUser(supabase: SupabaseClient, userId: string): Promise<boolean> {
+  const { data } = await supabase.from("admins").select("user_id").eq("user_id", userId).maybeSingle();
+  return Boolean(data);
+}
+
+export async function isStaffOf(supabase: SupabaseClient, userId: string, operatorId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("staff")
+    .select("user_id")
+    .eq("user_id", userId)
+    .eq("operator_id", operatorId)
+    .maybeSingle();
+  return Boolean(data);
+}
+
+/** A JSON error the client can show. */
+export function fail(message: string, status = 400): Response {
+  return Response.json({ ok: false, error: message }, { status });
+}

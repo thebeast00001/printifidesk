@@ -108,9 +108,11 @@ export default clerkMiddleware(
         "worker-src": ["'self'", "blob:"],
         "style-src": ["'self'", "'unsafe-inline'"],
         // PostgREST, storage and realtime all sit on the one Supabase origin.
-        "connect-src": ["'self'", supabaseOrigin, supabaseSocket],
-        // Clerk's bot check renders in a Cloudflare iframe; nothing else does.
-        "frame-src": ["'self'", "https://challenges.cloudflare.com"],
+        // Cashfree's SDK talks to its own API from the page.
+        "connect-src": ["'self'", supabaseOrigin, supabaseSocket, "https://*.cashfree.com"],
+        // Clerk's bot check renders in a Cloudflare iframe; Cashfree's
+        // checkout is an iframe on cashfree.com. Nothing else is framed.
+        "frame-src": ["'self'", "https://challenges.cloudflare.com", "https://*.cashfree.com"],
         ...(process.env.NODE_ENV === "production" ? { "upgrade-insecure-requests": [] } : {}),
       },
     },

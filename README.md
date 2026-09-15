@@ -838,6 +838,60 @@ sent. `tr` is alphanumeric and padded (`PRINTIFYB66…`) because the strict
 apps refuse punctuation and very short references; `tn` is letters,
 digits and spaces.
 
+### Paying through Printify (Cashfree, `0032`)
+
+The direct-to-desk flows above cost nothing and hold nobody's money, and
+they stay. Beside them, a desk that Printify has **connected to Cashfree
+Easy Split** can be paid online: the student taps *Pay ₹14 · UPI, card*,
+Cashfree's own checkout opens (UPI intent signed by Cashfree's PSP —
+every app takes it, PhonePe included, amount filled in — or a card), and
+**Cashfree's webhook marks the order paid**. The split happens at source:
+the desk's share (bill less fee, rounding included) to the desk's vendor
+account, Printify's fee to Printify. No desk confirmation — the order
+lands as *queued* with *paid online* on the card — and no monthly
+settle-up for those orders: their fee shows as *retained* on the admin's
+Fees page and never as owed.
+
+How the pieces sit:
+
+- **Server only holds the secret.** `lib/server/cashfree.ts` is a thin
+  client for the 2023-08-01 API: create order (with `order_splits`), get
+  order and payments, create and get an Easy Split vendor, refund,
+  and verify a webhook — HMAC-SHA256 of `timestamp + rawBody` with the
+  client secret, base64, compared in constant time over the *raw* bytes
+  (a reserialised body turns `14.00` into `14` and no longer matches).
+- **Five routes** under `/api/payments`: `session` (the student's own
+  placed order at an active desk → a Cashfree order, reused while live,
+  replaced when expired → a payment session id), `webhook`
+  (`PAYMENT_SUCCESS_WEBHOOK` → paid; anything else acknowledged),
+  `status` (the poll after checkout; asks Cashfree and marks if paid),
+  `vendor` (admin: create the desk's vendor from a bank account or UPI
+  id, or re-check its verification), `refund` (staff or admin: a real
+  refund through Cashfree, the split unwound in proportion).
+- **Three SQL functions** the server calls with the service role —
+  `gateway_begin`, `gateway_paid`, `gateway_refunded` — each guarded by
+  `assert_server()` (no Clerk `sub`, role `service_role`) and setting a
+  transaction-local flag the write guard honours. `gateway_paid` refuses
+  a short amount and is a no-op on a retry, so a webhook racing the poll
+  is harmless. The guard pins every gateway column against students and
+  staff alike.
+- **The browser** (`lib/gateway.ts`) only ever sees a payment session
+  id. It loads Cashfree's SDK from a script it creates (trusted under the
+  strict-dynamic CSP; the checkout iframe is allowed by `frame-src`),
+  opens the modal, then polls `status` for up to twelve seconds; after
+  that the order's realtime row moves on its own when the webhook lands.
+  A student without a phone number in Settings is sent to add one —
+  Cashfree needs one on every order and a made-up one would be a lie.
+- **Refunds** of online payments go through Cashfree from the card's
+  *Record a refund*, and the copy says so; refunds of direct payments are
+  still the desk's to make and this only writes them down.
+- **Configuration:** `CASHFREE_APP_ID`, `CASHFREE_SECRET_KEY`,
+  `CASHFREE_ENV` (`sandbox`|`production`) on the server;
+  `NEXT_PUBLIC_CASHFREE_MODE` for the browser. All empty → nothing is
+  offered anywhere. The desk's own status (`operators.gateway_status`)
+  must be `active` — Cashfree's verdict on the settlement account — before
+  its students see the button.
+
 **One id is paid only by its own QR.** A Paytm merchant id (`@pty`,
 `@paytm`, `@ptys`, `@ptaxis`…) accepts nothing but a scan of the standee
 Paytm signed — not a link with the amount, not the id typed into another
@@ -1003,7 +1057,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0031** in the SQL editor, pasted from the files. Until
+2. **Run 0022 → 0032** in the SQL editor, pasted from the files. Until
    0025, the fee panel shows no due date; until 0024, the join page shows a
    migration message in the application panel; until 0026, *Shut this
    desk* on `/admin/desks` errors with a missing function; until 0027,
@@ -1012,8 +1066,21 @@ Things the code can't do on its own, in the order they bite:
    until 0029, the capsule's queue position errors quietly and shows no
    place in the queue; until 0030, the board says "reconnecting…", no
    slot is assigned, and saving the shelf fails; until 0031, a Paytm
-   desk's standee QR isn't kept and the pay sheet draws Printify's copy.
-3. **Move the database nearer.** The Supabase project resolves to Tokyo
+   desk's standee QR isn't kept and the pay sheet draws Printify's copy;
+   until 0032, online payment is never offered.
+3. **Cashfree.** Create a Cashfree Payments account for Printify (business
+   KYC: PAN, bank account; GST if you have it), enable **Easy Split** on
+   it (a request in the dashboard), then: `CASHFREE_APP_ID`,
+   `CASHFREE_SECRET_KEY`, `CASHFREE_ENV=sandbox` first and
+   `NEXT_PUBLIC_CASHFREE_MODE=sandbox` on both Vercel projects; in the
+   Cashfree dashboard → Developers → Webhooks add
+   `https://printifi.store/api/payments/webhook` for the payment
+   webhooks (2023-08-01). Connect a desk from `/admin/desks` (*Connect
+   this desk*: the owner's name as the bank has it, email, phone, bank
+   account or UPI id), wait for *on*, and pay a sandbox order with
+   Cashfree's test UPI id. Then switch both variables to `production`.
+   Cashfree's cut on UPI is theirs to quote; check it against the 3%.
+4. **Move the database nearer.** The Supabase project resolves to Tokyo
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
    project, so: create a new project in **Mumbai (`ap-south-1`)**, run
@@ -1024,11 +1091,11 @@ Things the code can't do on its own, in the order they bite:
    `.env.local`, redeploy, and run `check:rls` against it. Nothing in the
    old project is worth carrying over before launch. Confirm the region
    first under Project Settings → General.
-4. **`npm run check:rls` with two ordinary accounts** — a student who is
+5. **`npm run check:rls` with two ordinary accounts** — a student who is
    *not* the admin and a desk account that *is* on a desk, both signed in
    recently. The run so far (anonymous + the admin account) passed 21 probes;
    the four admin-only refusals need a non-admin account to mean anything.
-5. **One VAPID pair.** Both Vercel projects get the same
+6. **One VAPID pair.** Both Vercel projects get the same
    `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`, and both need
    `SUPABASE_SERVICE_ROLE_KEY` and `NOTIFY_WEBHOOK_SECRET`, because either
    site may be the one that sends: the app **pokes the dispatcher itself**
@@ -1038,11 +1105,11 @@ Things the code can't do on its own, in the order they bite:
    allows; they run on whichever project keeps the file — both is harmless.
    `/diagnostics` shows the key's last twelve characters on each site so
    you can compare.
-6. **Both Clerk domains in Supabase → Third-Party Auth**, and both apps on
+7. **Both Clerk domains in Supabase → Third-Party Auth**, and both apps on
    production instances before launch (dev instances are capped).
-7. **All three host variables on both projects** — `/diagnostics` flags a
+8. **All three host variables on both projects** — `/diagnostics` flags a
    pinned desk with no student host.
-8. **Page counts are client-reported.** A claimed page count prices the
+9. **Page counts are client-reported.** A claimed page count prices the
    order; the operator opens the file before printing, which is where a
    wrong one is caught. Server-side counting needs a server that opens
    PDFs — not built.
