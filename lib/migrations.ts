@@ -48,6 +48,8 @@ export const MIGRATION_PROBES: MigrationProbe[] = [
   { id: "0032", without: "online payment is never offered", check: column("orders", "gateway_paid_at") },
   { id: "0033", without: "Orders under a desk on /admin errors", check: fn("admin_fee_orders", { p_operator: "00000000-0000-0000-0000-000000000000", p_from: new Date(0).toISOString() }) },
   { id: "0035", without: "online payment can't be turned on for a desk; no payouts ledger", check: column("orders", "gateway_split") },
+  // is_server() is granted to nobody in a browser: "permission denied" means present, "no such function" means missing.
+  { id: "0036", without: "every function is callable by anyone with the anon key; the notification queue is readable", check: fn("is_server") },
 ];
 
 export interface MigrationReport {

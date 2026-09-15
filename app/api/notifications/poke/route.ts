@@ -1,4 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
+import { refuseCrossOrigin } from "@/lib/server/db";
 import { drain } from "../dispatch/route";
 
 export const runtime = "nodejs";
@@ -16,7 +17,9 @@ export const dynamic = "force-dynamic";
  * sends nothing twice. The scheduled run stays as the backstop for anything
  * queued by hand or while nobody was looking.
  */
-export async function POST() {
+export async function POST(request: Request) {
+  const foreign = await refuseCrossOrigin(request);
+  if (foreign) return foreign;
   const { userId } = await auth();
   if (!userId) return Response.json({ ok: false, error: "Sign in first" }, { status: 401 });
   return drain();

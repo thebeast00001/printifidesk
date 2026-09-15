@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { auth } from "@clerk/nextjs/server";
+import { sameOriginRequest } from "./surface";
 
 /**
  * The server's own connection: the service role, which RLS doesn't bind.
@@ -39,4 +40,15 @@ export async function isStaffOf(supabase: SupabaseClient, userId: string, operat
 /** A JSON error the client can show. */
 export function fail(message: string, status = 400): Response {
   return Response.json({ ok: false, error: message }, { status });
+}
+
+/**
+ * For a route that changes something on the strength of the session
+ * cookie: the request must come from a page of ours. The cookie is
+ * SameSite=Lax, which already keeps it off cross-site POSTs in every
+ * current browser; this is the same rule stated a second time, in the
+ * route, where it can't be undone by a cookie setting elsewhere.
+ */
+export async function refuseCrossOrigin(request: Request): Promise<Response | null> {
+  return (await sameOriginRequest(request)) ? null : fail("This request didn't come from Printify.", 403);
 }

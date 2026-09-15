@@ -298,14 +298,25 @@ for (const column of [
   check(`pins ${column}`, new RegExp(`new\\.${column}\\s*:=\\s*old\\.${column}`).test(body), true);
 }
 
-// The two the student is *supposed* to write, or paying breaks.
-check("leaves payment_claimed_at", /new\.payment_claimed_at\s*:=\s*old\./.test(body), false);
-check("reference pinned only after check", body.includes("old.payment_taken_at is not null"), true);
+// The two the student is *supposed* to write, or paying breaks. Since 0036
+// the staff branch (which ends at its own `return new`) pins the claim —
+// it's the student's — so only the student's section, after it, is read.
+const staffEnd = body.indexOf("return new;", body.indexOf("is_staff(old.operator_id)"));
+const studentBody = body.slice(staffEnd);
+check("student section found after the staff branch", staffEnd > 0 && studentBody.includes("You can only cancel"), true);
+check("leaves payment_claimed_at", /new\.payment_claimed_at\s*:=\s*old\./.test(studentBody.slice(0, studentBody.indexOf("old.payment_taken_at is not null"))), false);
+check("reference pinned only after check", studentBody.includes("old.payment_taken_at is not null"), true);
 // The student's amount is a claim like the reference: theirs until the desk
 // confirms, frozen after — so it's pinned inside that same block, not above it.
-const freezeBlock = body.slice(body.indexOf("old.payment_taken_at is not null"));
+const freezeBlock = studentBody.slice(studentBody.indexOf("old.payment_taken_at is not null"));
 check("claimed amount frozen only after confirmation", /new\.payment_claimed_amount\s*:=\s*old\.payment_claimed_amount/.test(freezeBlock), true);
-check("claimed amount free before it", /new\.payment_claimed_amount\s*:=\s*old\./.test(body.slice(0, body.indexOf("old.payment_taken_at is not null"))), false);
+check("claimed amount free before it", /new\.payment_claimed_amount\s*:=\s*old\./.test(studentBody.slice(0, studentBody.indexOf("old.payment_taken_at is not null"))), false);
+// 0036: the staff branch pins the student's claim, and the common block pins the bill and the owner for both.
+check("staff can't rewrite the claim", /new\.payment_claimed_amount\s*:=\s*old\./.test(body.slice(0, staffEnd)), true);
+for (const column of ["id", "created_at", "user_id", "operator_id", "total", "pages", "config"]) {
+  check(`pinned for everyone: ${column}`, new RegExp(`new\\.${column}\\s*:=\\s*old\\.${column}`).test(body.slice(0, body.indexOf("is_staff(old.operator_id)"))), true);
+}
+check("a student can't claim 'gateway'", body.includes("recorded by Printify"), true);
 
 console.log("\n— migration hygiene —");
 const numbers = migrations.map((f) => f.slice(0, 4));

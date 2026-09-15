@@ -147,6 +147,20 @@ async function main() {
   const { data: ps } = await A.from("platform_settings").select("fee_percent").limit(1);
   report("anon can read the fee rate (a quote needs it)", (ps ?? []).length === 1, `${(ps ?? []).length} row`);
 
+  // 0036: the grants. "permission denied" is the answer wanted; "could not
+  // find the function" means 0036 isn't on the project yet.
+  const denied = (message: string | undefined) => /permission denied/i.test(message ?? "");
+  const seq = await A.from("token_sequence").select("*").limit(1);
+  report("anon can't read token_sequence", Boolean(seq.error) && denied(seq.error?.message), seq.error ? seq.error.message.slice(0, 60) : `${(seq.data ?? []).length} rows READ`);
+  const claim = await A.rpc("claim_notifications", { p_limit: 1 });
+  if (missing(claim.error?.message)) skip("anon can't claim the notification queue", "claim_notifications isn't on the project — run 0006");
+  else report("anon can't claim the notification queue", Boolean(claim.error) && denied(claim.error?.message), claim.error ? claim.error.message.slice(0, 60) : `${(claim.data ?? []).length} rows CLAIMED`);
+  const qs = await A.rpc("queue_status", { p_order: "00000000-0000-0000-0000-000000000000" });
+  report("anon can't call queue_status (0036)", Boolean(qs.error) && denied(qs.error?.message), qs.error ? qs.error.message.slice(0, 60) : "answered");
+  const srv = await A.rpc("is_server");
+  if (missing(srv.error?.message)) report("0036 is on the project", false, "is_server() isn't there — run 0036");
+  else report("0036 is on the project", denied(srv.error?.message), srv.error ? srv.error.message.slice(0, 60) : "callable (should be permission denied)");
+
   console.log("\n— the student —");
   const { data: sOrders } = await S.from("orders").select("id, user_id").limit(200);
   const foreign = (sOrders ?? []).filter((o) => o.user_id !== student.userId);
@@ -193,6 +207,16 @@ async function main() {
   }
   const staffIns = await S.from("staff").insert({ user_id: student.userId, operator_id: deskIds[0] ?? "00000000-0000-0000-0000-000000000000" });
   report("student can't insert themselves as staff", Boolean(staffIns.error), staffIns.error ? staffIns.error.message.slice(0, 60) : "INSERTED");
+  const sClaim = await S.rpc("claim_notifications", { p_limit: 1 });
+  if (!missing(sClaim.error?.message)) report("student can't claim the notification queue", Boolean(sClaim.error) && denied(sClaim.error?.message), sClaim.error ? sClaim.error.message.slice(0, 60) : `${(sClaim.data ?? []).length} rows CLAIMED`);
+  const sSeq = await S.from("token_sequence").select("*").limit(1);
+  report("student can't read token_sequence", Boolean(sSeq.error) && denied(sSeq.error?.message), sSeq.error ? sSeq.error.message.slice(0, 60) : `${(sSeq.data ?? []).length} rows READ`);
+  if (own) {
+    const { data: b0 } = await S.from("orders").select("created_at").eq("id", own.id).single();
+    await S.from("orders").update({ created_at: new Date(0).toISOString() }).eq("id", own.id);
+    const { data: a0 } = await S.from("orders").select("created_at").eq("id", own.id).single();
+    report("student can't back-date their order (0036 guard)", String(a0?.created_at) === String(b0?.created_at), `${b0?.created_at} → ${a0?.created_at}`);
+  }
 
   console.log("\n— the desk —");
   if (deskIds.length > 0) {
@@ -221,6 +245,14 @@ async function main() {
       report("desk can't update another desk", (upd.data ?? []).length === 0, `${(upd.data ?? []).length} rows changed`);
     } else {
       console.log("     (only one desk exists; cross-desk probes skipped)");
+    }
+    if (deskIsAdmin) {
+      skip("desk can't switch on online payment for itself", "this account is the admin");
+    } else {
+      const { data: g0 } = await D.from("operators").select("gateway_status").eq("id", mine).single();
+      const flip = await D.from("operators").update({ gateway_status: g0?.gateway_status === "collect" ? "off" : "collect" }).eq("id", mine);
+      const { data: g1 } = await D.from("operators").select("gateway_status").eq("id", mine).single();
+      report("desk can't switch on online payment for itself (0036)", Boolean(flip.error) && g1?.gateway_status === g0?.gateway_status, flip.error ? flip.error.message.slice(0, 60) : `${g0?.gateway_status} → ${g1?.gateway_status} CHANGED`);
     }
   }
   if (deskIsAdmin) {

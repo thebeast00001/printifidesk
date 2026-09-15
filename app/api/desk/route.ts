@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { clerkClient } from "@clerk/nextjs/server";
+import { sameOriginRequest } from "@/lib/server/surface";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,10 @@ interface Body {
 }
 
 export async function POST(request: Request) {
+  // A device token plus a PIN is a credential; only a page of ours presents it.
+  if (!(await sameOriginRequest(request))) {
+    return Response.json({ ok: false, message: "This request didn't come from Printify." }, { status: 403 });
+  }
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -56,12 +61,15 @@ export async function POST(request: Request) {
 
   if (error) {
     const needsMigration = /does not exist|schema cache/i.test(error.message);
+    // The database's own wording stays on the server; a sign-in door
+    // doesn't describe its lock to whoever is knocking.
+    console.error("desk_verify_pin:", error.message);
     return Response.json(
       {
         ok: false,
         message: needsMigration
           ? "Desk sign-in needs migration 0018 — run it in the Supabase SQL editor."
-          : error.message,
+          : "The desk couldn't check the PIN just now. Try again.",
       },
       { status: needsMigration ? 503 : 500 },
     );

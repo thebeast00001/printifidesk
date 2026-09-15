@@ -351,6 +351,69 @@ owed minus that. A desk can read its own window and balance
 is `set_platform_fee()`, admin only, bounded 0–25%, and touches only
 orders placed afterwards — verified.
 
+### 14. Every function was callable by anyone — **fixed, 0036**
+
+Postgres grants EXECUTE to PUBLIC on every new function, and `anon` and
+`authenticated` are members of PUBLIC. Every `revoke … from anon` before 0036
+removed anon's own grant and left PUBLIC's in place, so it changed nothing;
+only the handful written `from public, anon, authenticated` (0019, 0020,
+0022, 0032, 0035) actually closed anything. Found by applying all 35
+migrations in PGlite with Supabase's default privileges in place and asking
+`has_function_privilege('anon', …)` for each function.
+
+Most functions gate themselves with `is_admin()`, `is_staff()` or
+`clerk_id()`, so the door was locked twice and this cost nothing. Two did
+not: `claim_notifications()` and `complete_notification()`, the queue's
+server-only pair. Through PostgREST, with the anon key that is in every
+page, anyone could pull every queued notification — `user_id`, `to_phone`,
+the message — and mark it *sending*, so it was never delivered.
+
+0036 revokes PUBLIC, anon and authenticated from every non-trigger function
+and grants each one back to exactly who calls it (`anon` for the wait, the
+board, the desk's front door; `authenticated` for the rest; the server alone
+for the queue and the gateway writes). Default privileges are changed at
+both levels Postgres keeps them — the PUBLIC grant is global, Supabase's
+anon/authenticated grant is per schema, and a per-schema entry is merged
+onto the global one — so a function added later starts closed. The two
+queue functions also call `assert_server()` in the body. `check:sql` asserts
+the whole matrix as the real roles (`set role anon` / `authenticated`), and
+fails on any function it doesn't have a line for.
+
+Found in the same pass, all in 0036:
+
+- **`token_sequence`** had no RLS and Supabase's default table grants — the
+  token counter was anyone's to read and rewrite. RLS on, no policies, no
+  grants; the token trigger is security definer and still reaches it.
+- **`operators.gateway_status`** was the desk's to write through its own
+  update policy: staff could switch on "pay through Printify" for their
+  desk. The operators guard now pins the three `gateway_*` columns to the
+  admin (`set_gateway_collect`) and the server (the vendor route), the way
+  `shut_*` were already pinned.
+- **The order guard** now pins `id`, `created_at`, `handover_code`,
+  `queued_at` and `cancelled_by` for a student (the queue is in
+  `created_at` order — a back-dated order jumped it), and `total`,
+  `user_id`, `operator_id`, `pages`, `config` and the student's own claim
+  for staff (the desk never wrote them; now it can't). A student can't
+  claim `payment_method = 'gateway'`. A staff refund is bounded by the bill.
+- **`queue_status()`** compared `o.user_id <> clerk_id()`, which is null
+  when `clerk_id()` is, and a null condition doesn't return — a caller with
+  a guessed uuid and no session got the place and the wait. `is distinct
+  from`, and the function is no longer granted to anon.
+- **`profiles`** update policy had no WITH CHECK, so a row could be renamed
+  to another id. It has one.
+- **`order_messages`** / **`order_reports`**: a student could rewrite the
+  desk's message body through the "mark read" policy, and a report's words
+  after filing it. Triggers pin everything but `read_at` / the resolution.
+
+On the app side, in the same pass: the cookie-authenticated mutation routes
+(`payments/session`, `payments/refund`, `payments/vendor`, `notifications/poke`,
+`desk`) refuse a request whose `Origin` isn't the host it arrived on — the
+session cookie is already `SameSite=Lax`, so this is the same rule stated in
+the route; `requestOrigin()` — which becomes the return and webhook URLs
+handed to Cashfree — only ever yields one of the configured hosts, so a
+poisoned Host header can't point a webhook elsewhere; and `/api/desk` no
+longer returns Postgres's own error text on a 500.
+
 ### Reviewed and left alone
 
 - **No XSS sinks.** No `dangerouslySetInnerHTML`, `innerHTML`, or `eval` anywhere.
@@ -373,8 +436,14 @@ orders placed afterwards — verified.
   pay to it, so it is public by design. Stock levels are also visible; that is
   business information, not a security boundary.
 - **Realtime** uses `postgres_changes`, which applies RLS per subscriber.
-- **`queue_status(uuid)`** is callable by anon and takes an order id. Ids are
-  v4 UUIDs; a guessed one returns a queue position and a wait, nothing else.
+- **`admins`** — `is_admin()` is one row in one table that no policy
+  writes; the desk's Clerk application issues different `sub`s, so a desk
+  account can't collide with the admin's id. `shut_by` and
+  `platform_settings.updated_by` expose the admin's Clerk user id on public
+  rows; an id is not a credential.
+- **Webhook replay.** Cashfree signs `timestamp + body`; a replayed success
+  reaches `gateway_paid`, which is a no-op the second time. No freshness
+  window on purpose — Cashfree's retries are what the poll is patient for.
 
 ## Still open
 
@@ -418,6 +487,7 @@ The security-relevant scenarios in `check:sql`, by name:
 - the platform fee: to the paisa on top of the minimum; floored; student refused the rate; pinned; ledger excludes a full refund; settlements admin-only
 - an overdue fee locks the desk closed until it's settled; within grace it opens
 - the admin shuts a desk: unlisted, closed, codes revoked; its staff refused at every door by triggers, but finish the live order; restored, open again
+- as the real roles (`set role`): every function's grants match the allowlist and PUBLIC holds none; a new function starts closed; the notification queue refuses anon, a student, and a Clerk token in the body; token_sequence is unreadable and unwritable; staff can't switch the gateway on, admin and server can; a student can't back-date or reprice or claim "gateway", staff can't reprice or rewrite the claim, a refund is bounded; anon sees desks and no orders or profiles, a stranger sees none of another's order, pins, devices, admins or notifications
 - a desk's UPI id is personal until it says merchant (junk kinds and codes refused); the fee id the same, and a five-argument set_platform_fee leaves it
 - a desk that rounds is priced to the rupee in SQL and the browser alike (30 jobs; fee and lines untouched, rounding on the row and in the snapshot)
 - the amount received is the desk's fact and the amount sent the student's claim: the student can't write the desk's columns, an absurd claim is refused, the claim freezes on confirmation, a bare confirm records the bill

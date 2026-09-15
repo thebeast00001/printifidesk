@@ -1,4 +1,4 @@
-import { callerId, fail, isAdminUser, isStaffOf, serviceClient } from "@/lib/server/db";
+import { callerId, fail, isAdminUser, isStaffOf, refuseCrossOrigin, serviceClient } from "@/lib/server/db";
 import { CashfreeError, cashfreeConfigured, createRefund, vendorShare } from "@/lib/server/cashfree";
 
 export const runtime = "nodejs";
@@ -13,6 +13,8 @@ export const dynamic = "force-dynamic";
  * the server, like the payment was.
  */
 export async function POST(request: Request) {
+  const foreign = await refuseCrossOrigin(request);
+  if (foreign) return foreign;
   if (!cashfreeConfigured()) return fail("Online payment isn't set up on this deployment.", 503);
   const userId = await callerId();
   if (!userId) return fail("Sign in first", 401);

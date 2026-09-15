@@ -18,10 +18,51 @@ export async function requestSurface(): Promise<Surface> {
   return surfaceFor(h.get("x-forwarded-host") ?? h.get("host"), HOSTS, process.env.NEXT_PUBLIC_SURFACE);
 }
 
-/** `https://desk.printifi.store` — scheme and host of this request, no path. */
-export async function requestOrigin(): Promise<string> {
+/**
+ * The host this request arrived on, lower-cased, without a port on the
+ * standard ones. `x-forwarded-host` is what the browser typed when a proxy
+ * sits in front (Vercel sets it and overwrites whatever the client sent).
+ */
+export async function requestHost(): Promise<string> {
   const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
-  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") || host.includes(".localhost") ? "http" : "https");
-  return `${proto}://${host}`;
+  return (h.get("x-forwarded-host") ?? h.get("host") ?? "").trim().toLowerCase().replace(/:(80|443)$/, "");
+}
+
+/**
+ * `https://desk.printifi.store` — scheme and host of this request, no path.
+ *
+ * Only ever one of the configured hosts. This origin becomes the return
+ * and webhook URLs handed to the payment partner, so a request arriving
+ * under a host that isn't ours (a poisoned Host header at some proxy, a
+ * preview alias) must not be able to point those anywhere else: it gets
+ * the student site's origin instead. With no hosts configured — a bare
+ * localhost — the request's own host is the only thing there is.
+ */
+export async function requestOrigin(): Promise<string> {
+  const host = await requestHost();
+  const known = [HOSTS.student, HOSTS.desk].filter(Boolean);
+  const chosen = known.length === 0 ? host : known.includes(host) ? host : (HOSTS.student || HOSTS.desk);
+  const h = await headers();
+  const local = chosen.startsWith("localhost") || chosen.includes(".localhost");
+  const proto = local ? (h.get("x-forwarded-proto") ?? "http") : "https";
+  return `${proto}://${chosen}`;
+}
+
+/**
+ * Was this request sent by a page of ours? For routes that act on the
+ * signed-in cookie: a cross-site page can't read the reply, but with the
+ * cookie along it could make the request — this refuses that. Browsers put
+ * `Origin` on every POST and DELETE; a request without one is not a page
+ * of ours. The two sites are two origins, and each may only call its own.
+ */
+export async function sameOriginRequest(request: Request): Promise<boolean> {
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host.toLowerCase().replace(/:(80|443)$/, "");
+  } catch {
+    return false;
+  }
+  return originHost === (await requestHost());
 }

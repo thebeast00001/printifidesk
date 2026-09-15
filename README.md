@@ -1124,7 +1124,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0035** in the SQL editor, pasted from the files, **in
+2. **Run 0022 → 0036** in the SQL editor, pasted from the files, **in
    number order** — a later migration can name a column an earlier one
    adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
    student update on an order failed and the X on /orders did nothing).
@@ -1143,6 +1143,10 @@ Things the code can't do on its own, in the order they bite:
    the admin's fee rows errors quietly; until 0034, a too-late cancel is
    refused by the policy alone (silently) rather than by the guard (in words);
    until 0035, online payment can't be turned on for a desk.
+   **Then 0036, now** — it's the security pass (`docs/SECURITY.md` §14):
+   until it runs, every function in the database is callable by anyone
+   with the anon key, and two of them hand out the notification queue —
+   students' phone numbers — to whoever asks.
 3. **Cashfree.** Create a Cashfree Payments account for Printify (business
    KYC: PAN, bank account; GST if you have it), enable **Easy Split** on
    it (a request in the dashboard), then: `CASHFREE_APP_ID`,
@@ -1159,7 +1163,7 @@ Things the code can't do on its own, in the order they bite:
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
    project, so: create a new project in **Mumbai (`ap-south-1`)**, run
-   `0001 → 0029` in its SQL editor, create the private `documents` bucket,
+   `0001 → 0036` in its SQL editor, create the private `documents` bucket,
    add both Clerk domains under Authentication → Third-Party Auth, then
    swap `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    and `SUPABASE_SERVICE_ROLE_KEY` on both Vercel projects and in

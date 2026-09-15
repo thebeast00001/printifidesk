@@ -1,4 +1,4 @@
-import { callerId, fail, isAdminUser, serviceClient } from "@/lib/server/db";
+import { callerId, fail, isAdminUser, refuseCrossOrigin, serviceClient } from "@/lib/server/db";
 import { CashfreeError, cashfreeConfigured, cashfreeEnv, createVendor, getVendor, vendorStatus } from "@/lib/server/cashfree";
 import { isValidVpa, normaliseVpa } from "@/lib/upi";
 
@@ -13,6 +13,8 @@ export const dynamic = "force-dynamic";
  * "pay online" only once Cashfree says ACTIVE.
  */
 export async function POST(request: Request) {
+  const foreign = await refuseCrossOrigin(request);
+  if (foreign) return foreign;
   const gate = await adminGate();
   if (gate.fail) return gate.fail;
   const { supabase } = gate;
@@ -124,6 +126,8 @@ export async function GET(request: Request) {
  * offered online payment until it's connected again.
  */
 export async function DELETE(request: Request) {
+  const foreign = await refuseCrossOrigin(request);
+  if (foreign) return foreign;
   const gate = await adminGate();
   if (gate.fail) return gate.fail;
   const { supabase } = gate;

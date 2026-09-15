@@ -125,6 +125,16 @@ async function boot() {
       create publication supabase_realtime;
     end if;
   end $do$;`);
+  // What a Supabase project hands its API roles before any migration runs:
+  // the schema, and every table, sequence and function created after this
+  // by default. This is exactly the exposure 0036 takes back on functions,
+  // so it has to be here for the grant scenarios to prove anything.
+  await db.exec(`
+    grant usage on schema public, auth, storage to anon, authenticated, service_role;
+    alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+    alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+    alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+  `);
   return db;
 }
 
@@ -225,6 +235,36 @@ async function actingAs(userId) {
   // service_role and no sub, which is what assert_server() (0032) looks for.
   const claims = userId === null ? JSON.stringify({ role: "service_role" }) : JSON.stringify({ sub: userId });
   await db.query(`select set_config('request.jwt.claims', $1, false);`, [claims]);
+}
+
+/**
+ * Becomes one of the API roles for real — `set role` — so grants and RLS
+ * are enforced for the statements that follow, exactly as PostgREST would
+ * have them. `anon` carries no claims; `authenticated` carries the user's.
+ * Always paired with asRoot() afterwards, so a failure can't strand the
+ * next scenario in the wrong role.
+ */
+async function asRole(role, userId = null) {
+  const claims = role === "anon" ? "" : JSON.stringify({ sub: userId, role: "authenticated" });
+  await db.query(`select set_config('request.jwt.claims', $1, false);`, [claims]);
+  await db.exec(`set role ${role};`);
+}
+async function asRoot() {
+  await db.exec(`reset role;`);
+  await actingAs(null);
+}
+
+/** Runs one statement as a role and reports whether the database refused it, and how. */
+async function refused(role, userId, sql, params = []) {
+  await asRole(role, userId);
+  try {
+    await db.query(sql, params);
+    return null;
+  } catch (error) {
+    return String(error?.message ?? error).split("\n")[0];
+  } finally {
+    await asRoot();
+  }
 }
 
 await scenario("an order gets a token", async () => {
@@ -2033,6 +2073,270 @@ await scenario("the upload ceiling holds", async () => {
   return "600 MB refused, with the message the student sees";
 });
 
+/* ============================================================
+   0036 — the grants, as the roles that hold them
+   ============================================================ */
+
+/**
+ * Who may call what. Every non-trigger function in `public` must be here,
+ * with exactly the roles that hold EXECUTE — a function added by a later
+ * migration without a line here fails below, which is the point: the
+ * decision of who calls it is made on purpose, once, and checked forever.
+ */
+const GRANTS = {
+  // Policies evaluate these as the asking role.
+  "clerk_id()": ["anon", "authenticated"],
+  "is_staff(uuid)": ["anon", "authenticated"],
+  "is_admin()": ["anon", "authenticated"],
+  // Signed out.
+  "operator_wait(uuid)": ["anon", "authenticated"],
+  "board(uuid)": ["anon", "authenticated"],
+  "desk_staff(text)": ["anon", "authenticated"],
+  "desk_verify_pin(text,text,text)": ["anon", "authenticated"],
+  "whoami()": ["anon", "authenticated"],
+  // Signed in; each gates itself.
+  "queue_status(uuid)": ["authenticated"],
+  "queue_status_mine()": ["authenticated"],
+  "my_totals()": ["authenticated"],
+  "place_order(uuid,jsonb,timestamp with time zone)": ["authenticated"],
+  "claim_document_access(uuid,text)": ["authenticated"],
+  "operator_stats(uuid)": ["authenticated"],
+  "operator_stats_range(uuid,timestamp with time zone,timestamp with time zone)": ["authenticated"],
+  "adjust_stock(uuid,integer,integer,text)": ["authenticated"],
+  "list_staff(uuid)": ["authenticated"],
+  "add_staff(uuid,text)": ["authenticated"],
+  "remove_staff(uuid,text)": ["authenticated"],
+  "close_desk(uuid,numeric,text)": ["authenticated"],
+  "set_my_pin(uuid,text)": ["authenticated"],
+  "pair_device(uuid,text)": ["authenticated"],
+  "revoke_device(uuid)": ["authenticated"],
+  "create_invite(uuid,text)": ["authenticated"],
+  "claim_invite(text)": ["authenticated"],
+  "revoke_invite(uuid)": ["authenticated"],
+  "create_operator(text,text)": ["authenticated"],
+  "admin_desks()": ["authenticated"],
+  "admins_exist()": ["authenticated"],
+  "set_platform_fee(numeric,numeric,text,text,integer,text)": ["authenticated"],
+  "record_settlement(uuid,numeric,text)": ["authenticated"],
+  "fee_window(uuid,timestamp with time zone,timestamp with time zone)": ["authenticated"],
+  "fee_balance(uuid)": ["authenticated"],
+  "fee_status(uuid)": ["authenticated"],
+  "admin_fee_desks(timestamp with time zone,timestamp with time zone)": ["authenticated"],
+  "admin_fee_orders(uuid,timestamp with time zone,timestamp with time zone)": ["authenticated"],
+  "apply_for_desk(text,text,text,text,text,text)": ["authenticated"],
+  "withdraw_application(uuid)": ["authenticated"],
+  "approve_application(uuid,text)": ["authenticated"],
+  "reject_application(uuid,text)": ["authenticated"],
+  "my_application()": ["authenticated"],
+  "admin_applications(text)": ["authenticated"],
+  "shut_operator(uuid,text)": ["authenticated"],
+  "restore_operator(uuid)": ["authenticated"],
+  "payout_balance(uuid)": ["authenticated"],
+  "payout_window(uuid,timestamp with time zone,timestamp with time zone)": ["authenticated"],
+  "record_payout(uuid,numeric,text)": ["authenticated"],
+  "admin_payout_desks(timestamp with time zone,timestamp with time zone)": ["authenticated"],
+  "set_gateway_collect(uuid,boolean)": ["authenticated"],
+  // The server's.
+  "claim_notifications(integer)": [],
+  "complete_notification(bigint,text,text)": [],
+  "gateway_begin(uuid,text,boolean)": [],
+  "gateway_paid(uuid,text,numeric,text,timestamp with time zone)": [],
+  "gateway_refunded(uuid,text,numeric,text)": [],
+  // Internal: called from definer bodies, which run as their owner.
+  "assert_server()": [],
+  "is_server()": [],
+  "can_invite_for(uuid)": [],
+  "new_join_code()": [],
+  "pin_digest(text,text)": [],
+  "platform_fee_for(numeric,numeric,numeric)": [],
+  "price_line(integer,integer,jsonb,operators,double precision)": [],
+  "to_paise(double precision)": [],
+  "desk_share(orders)": [],
+};
+
+await scenario("every function is granted to exactly who calls it, and nothing to PUBLIC", async () => {
+  const { rows } = await db.query(`
+    select p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' as raw,
+           p.proname || '(' || array_to_string(p.proargtypes::regtype[], ',') || ')' as sig,
+           has_function_privilege('anon', p.oid, 'execute') as anon,
+           has_function_privilege('authenticated', p.oid, 'execute') as authenticated,
+           has_function_privilege('service_role', p.oid, 'execute') as service_role,
+           coalesce((select bool_or(a.grantee = 0) from aclexplode(p.proacl) a), false) as to_public
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      join pg_type t on t.oid = p.prorettype
+     where n.nspname = 'public' and p.prokind = 'f' and t.typname <> 'trigger'
+     order by 1;`);
+  const problems = [];
+  const seen = new Set();
+  for (const f of rows) {
+    seen.add(f.sig);
+    const want = GRANTS[f.sig];
+    if (!want) {
+      problems.push(`${f.sig}: not in GRANTS — decide who may call it`);
+      continue;
+    }
+    if (f.to_public) problems.push(`${f.sig}: PUBLIC may execute`);
+    for (const role of ["anon", "authenticated"]) {
+      if (f[role] !== want.includes(role)) problems.push(`${f.sig}: ${role} ${f[role] ? "may" : "may not"} execute`);
+    }
+    if (!f.service_role) problems.push(`${f.sig}: service_role may not execute`);
+  }
+  for (const sig of Object.keys(GRANTS)) if (!seen.has(sig)) problems.push(`${sig}: in GRANTS but not in the database`);
+  if (problems.length) throw new Error(problems.join("; "));
+  // A function made after 0036 must start with nothing.
+  await db.exec(`create or replace function public._probe_0036() returns int language sql as $$ select 1 $$;`);
+  const { rows: probe } = await db.query(`
+    select has_function_privilege('anon', 'public._probe_0036()', 'execute') as anon,
+           has_function_privilege('authenticated', 'public._probe_0036()', 'execute') as authenticated,
+           has_function_privilege('service_role', 'public._probe_0036()', 'execute') as service_role;`);
+  await db.exec(`drop function public._probe_0036();`);
+  if (probe[0].anon || probe[0].authenticated) throw new Error("a new function is executable by the API roles by default");
+  if (!probe[0].service_role) throw new Error("a new function isn't executable by the server by default");
+  return `${rows.length} functions match; a new one starts closed to anon and authenticated, open to the server`;
+});
+
+await scenario("the notification queue answers only the server, in grant and in body", async () => {
+  const asAnon = await refused("anon", null, `select * from public.claim_notifications(1);`);
+  if (!/permission denied/.test(asAnon ?? "")) throw new Error(`anon: ${asAnon ?? "allowed"}`);
+  const asStudent = await refused("authenticated", "student_test", `select * from public.claim_notifications(1);`);
+  if (!/permission denied/.test(asStudent ?? "")) throw new Error(`student: ${asStudent ?? "allowed"}`);
+  const done = await refused("authenticated", "student_test", `select public.complete_notification(1, 'sent', 'x');`);
+  if (!/permission denied/.test(done ?? "")) throw new Error(`complete as student: ${done ?? "allowed"}`);
+  // The body's own check: even with the grant, a Clerk token is refused.
+  await actingAs("student_test");
+  let inBody = null;
+  try {
+    await db.query(`select * from public.claim_notifications(1);`);
+  } catch (error) {
+    inBody = String(error?.message ?? error).split("\n")[0];
+  }
+  if (!/Only Printify's server/.test(inBody ?? "")) throw new Error(`body with a sub: ${inBody ?? "allowed"}`);
+  await actingAs(null);
+  await db.query(`select * from public.claim_notifications(1);`);
+  return "anon and a student: permission denied; a Clerk token inside the body: refused; the server: fine";
+});
+
+// A student with no orders yet: the ones above have used up student_test's hour.
+const LOCK_STUDENT = "student_lock";
+
+await scenario("token_sequence is nobody's to read or write", async () => {
+  const { rows } = await db.query(`select relrowsecurity from pg_class where oid = 'public.token_sequence'::regclass;`);
+  if (!rows[0].relrowsecurity) throw new Error("RLS is off");
+  const read = await refused("authenticated", "student_test", `select * from public.token_sequence;`);
+  if (!/permission denied/.test(read ?? "")) throw new Error(`read: ${read ?? "allowed"}`);
+  const write = await refused("authenticated", "student_test", `update public.token_sequence set last_value = 0;`);
+  if (!/permission denied/.test(write ?? "")) throw new Error(`write: ${write ?? "allowed"}`);
+  const asAnon = await refused("anon", null, `select * from public.token_sequence;`);
+  if (!/permission denied/.test(asAnon ?? "")) throw new Error(`anon: ${asAnon ?? "allowed"}`);
+  // The token trigger (security definer) still gets through.
+  await actingAs(LOCK_STUDENT);
+  const { rows: placed } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "seq.pdf", pages: 1, colour_pages: 0, config: { copies: 1, sides: "single" } }]),
+  ]);
+  const { rows: tok } = await db.query(`select token from public.orders where id = $1;`, [placed[0].id]);
+  if (!tok[0]?.token) throw new Error("no token after the lockdown");
+  await actingAs(null);
+  await db.query(`delete from public.orders where id = $1;`, [placed[0].id]);
+  return "RLS on, no grants; the trigger still hands out tokens";
+});
+
+await scenario("online payment is switched on by the admin or the server, never by the desk", async () => {
+  await actingAs(null);
+  await db.query(`update public.operators set gateway_status = 'off', gateway_vendor_id = null where id = $1;`, [OPERATOR]);
+  // Staff, through the policy that lets them edit their own desk.
+  const byStaff = await refused("authenticated", "op_test", `update public.operators set gateway_status = 'collect' where id = $1;`, [OPERATOR]);
+  if (!/Only Printify switches/.test(byStaff ?? "")) throw new Error(`staff: ${byStaff ?? "allowed"}`);
+  const vendor = await refused("authenticated", "op_test", `update public.operators set gateway_vendor_id = 'desk_x' where id = $1;`, [OPERATOR]);
+  if (!/Only Printify switches/.test(vendor ?? "")) throw new Error(`staff vendor: ${vendor ?? "allowed"}`);
+  // Staff can still run their desk.
+  const open = await refused("authenticated", "op_test", `update public.operators set status_note = 'back at 3' where id = $1;`, [OPERATOR]);
+  if (open) throw new Error(`staff's own note refused: ${open}`);
+  // The admin, through the function.
+  await actingAs("admin_test");
+  await db.query(`select public.set_gateway_collect($1, true);`, [OPERATOR]);
+  // The server, through the vendor route's plain update.
+  await actingAs(null);
+  await db.query(`update public.operators set gateway_vendor_id = 'desk_test', gateway_status = 'pending' where id = $1;`, [OPERATOR]);
+  const { rows } = await db.query(`select gateway_status, gateway_vendor_id from public.operators where id = $1;`, [OPERATOR]);
+  await db.query(`update public.operators set gateway_status = 'off', gateway_vendor_id = null, status_note = null where id = $1;`, [OPERATOR]);
+  if (rows[0].gateway_status !== "pending" || rows[0].gateway_vendor_id !== "desk_test") throw new Error("the server's update didn't land");
+  return "staff refused on both columns and still edit the rest; admin via set_gateway_collect and the server's update go through";
+});
+
+await scenario("a student can't back-date an order or mark it paid online; staff can't reprice it", async () => {
+  await actingAs(LOCK_STUDENT);
+  const { rows: placed } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "pin.pdf", pages: 4, colour_pages: 0, config: { copies: 1, sides: "single" } }]),
+  ]);
+  const id = placed[0].id;
+  const before = (await db.query(`select created_at, total, user_id from public.orders where id = $1;`, [id])).rows[0];
+  // As the real role, through the cancel policy that lets a student update their own row.
+  const backdate = await refused("authenticated", LOCK_STUDENT,
+    `update public.orders set created_at = now() - interval '1 day', total = 1, user_id = 'someone_else' where id = $1;`, [id]);
+  if (backdate) throw new Error(`the update itself was refused (${backdate}) — it should be silently pinned`);
+  const after = (await db.query(`select created_at, total, user_id from public.orders where id = $1;`, [id])).rows[0];
+  if (String(after.created_at) !== String(before.created_at)) throw new Error("created_at moved");
+  if (Number(after.total) !== Number(before.total)) throw new Error("total moved");
+  if (after.user_id !== LOCK_STUDENT) throw new Error("user_id moved");
+  const online = await refused("authenticated", LOCK_STUDENT,
+    `update public.orders set payment_method = 'gateway', payment_claimed_at = now() where id = $1;`, [id]);
+  if (!/recorded by Printify/.test(online ?? "")) throw new Error(`gateway claim: ${online ?? "allowed"}`);
+  // Staff: the bill, the owner and the student's claim are pinned; the desk's own fields aren't.
+  const reprice = await refused("authenticated", "op_test",
+    `update public.orders set total = 999, user_id = 'op_test', payment_claimed_amount = 0 where id = $1;`, [id]);
+  if (reprice) throw new Error(`staff update refused (${reprice}) — it should be pinned`);
+  const s = (await db.query(`select total, user_id, payment_claimed_amount from public.orders where id = $1;`, [id])).rows[0];
+  if (Number(s.total) !== Number(before.total) || s.user_id !== LOCK_STUDENT || s.payment_claimed_amount !== null) throw new Error("staff moved a pinned column");
+  const refund = await refused("authenticated", "op_test", `update public.orders set refund_amount = 5000, refunded_at = now() where id = $1;`, [id]);
+  if (!/between nothing and the bill/.test(refund ?? "")) throw new Error(`oversized refund: ${refund ?? "allowed"}`);
+  const ok = await refused("authenticated", "op_test", `update public.orders set status = 'queued', payment_received = 10 where id = $1;`, [id]);
+  if (ok) throw new Error(`staff's own confirm refused: ${ok}`);
+  await actingAs(null);
+  await db.query(`delete from public.orders where id = $1;`, [id]);
+  return "created_at/total/user_id pinned for the student, 'gateway' refused; total/user_id/claim pinned for staff, refund bounded, confirm fine";
+});
+
+await scenario("as the API roles, RLS shows each what's theirs and nothing more", async () => {
+  await actingAs(LOCK_STUDENT);
+  const { rows: placed } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "rls.pdf", pages: 2, colour_pages: 0, config: { copies: 1, sides: "single" } }]),
+  ]);
+  const id = placed[0].id;
+  const count = async (role, user, sql) => {
+    await asRole(role, user);
+    try {
+      return (await db.query(sql)).rows.length;
+    } finally {
+      await asRoot();
+    }
+  };
+  const anonOrders = await count("anon", null, `select id from public.orders;`);
+  const anonProfiles = await count("anon", null, `select id from public.profiles;`);
+  const anonOps = await count("anon", null, `select id from public.operators;`);
+  const anonPins = await refused("anon", null, `select * from public.staff_pins;`);
+  const strangerOrders = await count("authenticated", "someone_else", `select id from public.orders where id = '${id}';`);
+  const ownOrders = await count("authenticated", LOCK_STUDENT, `select id from public.orders where id = '${id}';`);
+  const staffOrders = await count("authenticated", "op_test", `select id from public.orders where id = '${id}';`);
+  const strangerPins = await count("authenticated", "someone_else", `select * from public.staff_pins;`);
+  const strangerDevices = await count("authenticated", "someone_else", `select * from public.desk_devices;`);
+  const strangerAdmins = await count("authenticated", "someone_else", `select * from public.admins;`);
+  const strangerNotes = await count("authenticated", "someone_else", `select * from public.notifications;`);
+  await actingAs(null);
+  await db.query(`delete from public.orders where id = $1;`, [id]);
+  if (anonOrders || anonProfiles) throw new Error(`anon sees ${anonOrders} orders, ${anonProfiles} profiles`);
+  if (!anonOps) throw new Error("anon can't see the desks");
+  if (anonPins && !/permission denied/.test(anonPins)) throw new Error(`anon on staff_pins: ${anonPins}`);
+  if (strangerOrders) throw new Error("a stranger sees the order");
+  if (ownOrders !== 1) throw new Error("the owner can't see their order");
+  if (staffOrders !== 1) throw new Error("the desk can't see its order");
+  if (strangerPins || strangerDevices || strangerAdmins || strangerNotes) throw new Error("a stranger sees pins/devices/admins/notifications");
+  return "anon: desks yes, orders/profiles no; the order: owner and desk yes, stranger no; pins, devices, admins, notifications: nothing";
+});
+
 await actingAs(null);
 
 // Last, because it needs every table the scenarios above filled.
@@ -2072,11 +2376,12 @@ console.log(
     : `\nFAIL - ${failed} problem(s)`,
 );
 console.log(
-  "\nNot covered: whether the RLS policies grant the right rows. The JWT is set, so\n" +
-    "clerk_id() and is_staff() are real here, but PGlite runs as superuser and\n" +
-    "superusers bypass RLS — so a policy could be wrong and everything above would\n" +
-    "still pass. Storage behaviour beyond the table shape, and realtime delivery,\n" +
-    "also still need a real project.",
+  "\nCovered as the real roles (set role anon / authenticated): every function's\n" +
+    "grants, the server-only queue, token_sequence, the gateway switch, the order\n" +
+    "pins, and row visibility on orders, profiles, pins, devices, admins and\n" +
+    "notifications. Other policies are still exercised as superuser, which bypasses\n" +
+    "RLS; check:rls runs them all against the live project. Storage behaviour\n" +
+    "beyond the table shape, and realtime delivery, still need a real project.",
 );
 
 await db.close();

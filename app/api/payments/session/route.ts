@@ -1,5 +1,5 @@
 import { requestOrigin } from "@/lib/server/surface";
-import { callerId, fail, serviceClient } from "@/lib/server/db";
+import { callerId, fail, refuseCrossOrigin, serviceClient } from "@/lib/server/db";
 import {
   CashfreeError,
   cashfreeConfigured,
@@ -25,6 +25,8 @@ export const dynamic = "force-dynamic";
  * from Cashfree's word, never from the browser's.
  */
 export async function POST(request: Request) {
+  const foreign = await refuseCrossOrigin(request);
+  if (foreign) return foreign;
   if (!cashfreeConfigured()) return fail("Online payment isn't set up on this deployment.", 503);
   const userId = await callerId();
   if (!userId) return fail("Sign in first", 401);
