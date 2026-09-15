@@ -178,22 +178,95 @@ export const CASHFREE_APPS = [
  * back, the server is asked whether it landed.
  */
 export async function payWithElement(cf: CashfreeSdk, element: CashfreeElement, session: OnlineSession, orderId: string): Promise<OnlineOutcome> {
-  let result: PayResult;
-  try {
-    // No returnUrl, on purpose: with one, a cancelled app switch lands the
-    // student on Cashfree's own result page. Without it the SDK resolves
-    // here, in the sheet, and the sheet asks the server what happened.
-    result = await cf.pay({
-      paymentMethod: element,
-      paymentSessionId: session.paymentSessionId,
-      redirect: "if_required",
-    });
-  } catch (e) {
-    return { kind: "error", message: e instanceof Error ? e.message : "The payment didn't start." };
-  }
-  const early = outcomeOf(result);
-  if (early) return early;
-  return awaitPaid(orderId);
+  // No returnUrl, on purpose: with one, a cancelled app switch lands the
+  // student on Cashfree's own result page. Without it the SDK resolves
+  // here, in the sheet, and the sheet asks the server what happened.
+  const viaSdk: Promise<OnlineOutcome> = cf
+    .pay({ paymentMethod: element, paymentSessionId: session.paymentSessionId, redirect: "if_required" })
+    .then((result) => outcomeOf(result) ?? awaitPaid(orderId))
+    .catch((e: unknown) => ({ kind: "error", message: e instanceof Error ? e.message : "The payment didn't start." }) as OnlineOutcome);
+
+  // The SDK draws its own "check your UPI app" sheet while it waits, and
+  // when the student backs out of the app it can sit there spinning —
+  // "Closing…" — for as long as its own poll takes. So the sheet watches
+  // the student come back and asks the server itself; whichever answers
+  // first wins, and if it was us, the SDK's sheet is taken down.
+  const viaReturn = watchReturn(orderId);
+  const outcome = await Promise.race([viaSdk, viaReturn.promise]);
+  viaReturn.stop();
+  dismissSdkOverlays();
+  return outcome;
+}
+
+/**
+ * Removes whatever full-screen iframe the SDK has appended for a payment
+ * in progress. Idempotent; harmless when there's nothing there.
+ */
+export function dismissSdkOverlays() {
+  if (typeof document === "undefined") return;
+  document.querySelectorAll('iframe[name^="framemodal-"]').forEach((f) => f.remove());
+  document.body.style.removeProperty("overflow");
+}
+
+/**
+ * Waits for the page to come back into view (the app switch returning)
+ * and then asks the server, every second and a half, what the latest
+ * attempt did. Paid, dropped or failed answers at once; nothing after a
+ * dozen asks answers "pending". A page that never left (a collect
+ * request approved in another app while this one stays open) is given
+ * much longer before it gives up.
+ */
+function watchReturn(orderId: string): { promise: Promise<OnlineOutcome>; stop: () => void } {
+  let stopped = false;
+  let onVisible: (() => void) | null = null;
+  const promise = new Promise<OnlineOutcome>((resolve) => {
+    const hidAt = { value: null as number | null };
+    const poll = async (tries: number, returned: boolean) => {
+      let untouched = 0;
+      for (let i = 0; i < tries && !stopped; i++) {
+        try {
+          const check = await fetch(`/api/payments/status?order=${encodeURIComponent(orderId)}`, { cache: "no-store" });
+          const status = (await check.json().catch(() => ({}))) as { paid?: boolean; attempt?: string };
+          if (status.paid) return resolve({ kind: "paid" });
+          if (status.attempt === "dropped") return resolve({ kind: "cancelled" });
+          if (status.attempt === "failed") return resolve({ kind: "error", message: "The bank didn't approve it. Nothing was charged — try again or another app." });
+          // Back from the app with no attempt on record at all, twice over:
+          // they backed out before anything started.
+          if (returned && status.attempt === "none" && ++untouched >= 2) return resolve({ kind: "cancelled" });
+        } catch {
+          /* a blip; ask again */
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      if (!stopped) resolve({ kind: "pending" });
+    };
+    onVisible = () => {
+      if (document.visibilityState === "hidden") {
+        hidAt.value = Date.now();
+        return;
+      }
+      if (hidAt.value !== null) {
+        // Back from the app: a dozen asks, then it's on the webhook.
+        document.removeEventListener("visibilitychange", onVisible!);
+        void poll(8, true);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    // Never hid — a collect request or a desktop QR: patient, but not forever.
+    setTimeout(() => {
+      if (!stopped && hidAt.value === null) {
+        document.removeEventListener("visibilitychange", onVisible!);
+        void poll(40, false);
+      }
+    }, 4000);
+  });
+  return {
+    promise,
+    stop: () => {
+      stopped = true;
+      if (onVisible) document.removeEventListener("visibilitychange", onVisible);
+    },
+  };
 }
 
 /**

@@ -935,7 +935,14 @@ How the pieces sit:
   Cashfree's own result page; without it the promise resolves in the
   sheet, and `/api/payments/status` reports the latest attempt as
   `dropped` or `failed` so the sheet says *nothing was charged* at once
-  instead of waiting out the poll.
+  instead of waiting out the poll. The SDK also draws its own
+  "check your UPI app" sheet while `pay()` waits, and when a student backs
+  out of the app it can sit there spinning ("Closing…") for as long as
+  the SDK's own poll takes — so `payWithElement()` races the SDK against a
+  watcher of our own that waits for the page to come back into view, asks
+  the server, and, if it answers first, removes the SDK's full-screen
+  iframe (`iframe[name^="framemodal-"]`) itself. Back with no attempt on
+  record twice over counts as a cancel.
 - **The browser** (`lib/gateway.ts`) only ever sees a payment session
   id. It loads Cashfree's SDK from a script it creates (trusted under the
   strict-dynamic CSP), and the hosted checkout opens by **posting a form
