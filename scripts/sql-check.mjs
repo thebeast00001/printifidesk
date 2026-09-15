@@ -814,8 +814,12 @@ await scenario("a PIN must be four to six digits and not obvious", async () => {
     if (!refused) throw new Error(`'${weak}' was accepted`);
   }
   await db.query(`select public.set_my_pin($1, '4827');`, [OPERATOR]);
-  const { rows } = await db.query(`select pin_hash from public.staff_pins where user_id = 'op_test';`);
-  if (rows[0].pin_hash.includes("4827")) throw new Error("the PIN is stored in the clear");
+  const { rows } = await db.query(`select pin_hash, salt from public.staff_pins where user_id = 'op_test';`);
+  // A salted digest, not the digits. (Not "doesn't contain 4827": a random
+  // 64-hex string contains any given four digits now and then.)
+  if (!/^[0-9a-f]{64}$/.test(rows[0].pin_hash) || rows[0].pin_hash === "4827" || !rows[0].salt) {
+    throw new Error("the PIN is not stored as a salted digest");
+  }
   return "12, 1234, abcd, 0000 refused; 4827 set and hashed";
 });
 

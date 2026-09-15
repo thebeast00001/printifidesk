@@ -185,6 +185,7 @@ export function PaySheet({
                     onClaimed();
                     onOpenChange(false);
                   }}
+                  onCheckoutOpen={() => onOpenChange(false)}
                 />
                 {!showDirect && (
                   <button

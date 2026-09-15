@@ -928,6 +928,27 @@ How the pieces sit:
   the sheet; it was taken out because a cancelled app switch left the
   SDK's own "check your UPI app" sheet spinning over the page, and the
   hosted modal simply doesn't have that problem.)
+- **The tap is instant, and the sheet gets out of the way.** Two things
+  made the modal feel frozen for three or four seconds after the tap, and
+  neither was Cashfree's page being slow. First: constructing the SDK
+  (`window.Cashfree({mode})`) opens a hidden *ping* iframe on cashfree.com,
+  and `checkout()` then *waits* for that ping — polling every 300 ms,
+  giving up after two seconds — before it draws anything. Constructed at
+  the tap, that wait sat under the student's thumb; `warmCheckout()` now
+  loads the script, constructs the instance (kept per mode) and preconnects
+  to the checkout's two hosts the moment the sheet opens, so the ping has
+  answered before the amount has been read. Second, and measured rather
+  than guessed: the pay sheet is a modal drawer, and while it's open Radix
+  sets `pointer-events: none` on `body` and traps focus — Cashfree's modal
+  is appended to `body`, so it inherited that, and the first tap on their
+  UPI button landed on *our* backdrop (dismissing the sheet) and only the
+  next one reached them. So the sheet closes the moment the checkout
+  opens, and the checkout runs as a *flight* held in `lib/gateway.ts`
+  (`launchHosted` → `useCheckoutFlight`): the capsule watches it, and when
+  it ends unpaid — cancelled, pending, the bank said no — reopens the
+  sheet, whose pane takes the flight (`takeFlight`, once) and starts with
+  that outcome and the still-live session in hand. Paid needs no sheet;
+  the row says so.
 - **Heard on both sides (`0037`).** `gateway_paid()` moves the order from
   *placed* to *queued* itself — the money is in, there is nothing for the
   desk to check — and it used to do that in silence: the desk's push fires

@@ -1,35 +1,71 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CreditCard, Loader2 } from "lucide-react";
-import { awaitPaid, openSession, payHosted, type OnlineOutcome, type OnlineSession } from "@/lib/gateway";
+import {
+  awaitPaid,
+  gatewayMode,
+  launchHosted,
+  openSession,
+  takeFlight,
+  warmCheckout,
+  type OnlineOutcome,
+  type OnlineSession,
+} from "@/lib/gateway";
 import { money } from "@/lib/pricing";
 
 /**
  * Paying through Printify: Cashfree's hosted checkout, in a modal over the
- * sheet. The session is made the moment the sheet opens so the tap opens
- * the checkout at once; closing the modal without paying comes straight
- * back here. Nothing here can mark an order paid — Cashfree's webhook
- * does — but after the modal closes the server is asked, so the sheet can
- * close on "paid" without waiting for it.
+ * page. Two things happen the moment this opens so the tap is instant:
+ * the server makes the session, and the SDK is loaded and constructed —
+ * its checkout() waits on a ping the constructor starts, so constructed
+ * here it has answered before the amount has been read.
+ *
+ * The tap itself hands the checkout to the flight (lib/gateway) and asks
+ * the sheet to close: this sheet is a modal drawer, and while it's open
+ * the page outside it — Cashfree's modal included — takes no taps. When
+ * the checkout ends unpaid, the capsule reopens the sheet and this pane
+ * starts with that outcome in hand. Paid needs no sheet: the row says so.
+ * Nothing here can mark an order paid — Cashfree's webhook does.
  */
 export function OnlinePay({
   orderId,
   amount,
   currency,
   onPaid,
+  onCheckoutOpen,
 }: {
   orderId: string;
   amount: number;
   currency: string;
   onPaid: () => void;
+  /** The checkout is taking the screen; the sheet should get out of its way. */
+  onCheckoutOpen: () => void;
 }) {
   const [session, setSession] = useState<OnlineSession | null>(null);
   const [state, setState] = useState<"opening" | "ready" | "paying" | "checking" | OnlineOutcome>("opening");
+  // A flight is handed over once; a second run of the effect (strict mode
+  // in development) must not fetch a fresh session over the outcome.
+  const tookFlight = useRef(false);
 
   useEffect(() => {
     let alive = true;
+    const mode = gatewayMode();
+    if (mode) warmCheckout(mode);
+
+    // Back from a checkout that ended unpaid: its session is still live,
+    // and its outcome is the first thing to say.
+    const done = takeFlight(orderId);
+    if (done) {
+      tookFlight.current = true;
+      setSession(done.session);
+      setState(done.outcome ?? "ready");
+      if (done.outcome?.kind === "paid") onPaid();
+      return;
+    }
+    if (tookFlight.current) return;
+
     setState("opening");
     setSession(null);
     void openSession(orderId).then((r) => {
@@ -52,10 +88,11 @@ export function OnlinePay({
     if (outcome.kind === "paid") onPaid();
   }
 
-  async function pay() {
+  function pay() {
     if (!session) return;
     setState("paying");
-    finish(await payHosted(session, orderId));
+    launchHosted(session, orderId);
+    onCheckoutOpen();
   }
 
   async function recheck() {
@@ -85,7 +122,7 @@ export function OnlinePay({
   return (
     <div className="mb-4">
       <button
-        onClick={() => void pay()}
+        onClick={pay}
         disabled={busy || !session}
         className="flex h-[54px] w-full items-center justify-center gap-2.5 rounded-2xl bg-ink text-[15px] font-semibold text-paper disabled:opacity-60"
       >
@@ -93,7 +130,7 @@ export function OnlinePay({
         {state === "opening"
           ? "Getting ready…"
           : state === "paying"
-            ? "Finish in the checkout…"
+            ? "Opening the checkout…"
             : state === "checking"
               ? "Checking…"
               : `Pay ${money(amount, currency)} · UPI, card`}

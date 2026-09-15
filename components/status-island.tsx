@@ -13,6 +13,7 @@ import { money } from "@/lib/pricing";
 import { useApp } from "@/lib/store";
 import type { ConnectionState } from "@/lib/realtime";
 import { PaySheet } from "./pay-sheet";
+import { clearFlight, useCheckoutFlight } from "@/lib/gateway";
 import { ReportSheet } from "./report-sheet";
 import { DeskMessages } from "./desk-messages";
 import { isPairedDevice } from "@/lib/desk-auth";
@@ -32,6 +33,25 @@ export function StatusIsland() {
   const [reporting, setReporting] = useState(false);
   const openSheet = useApp((s) => s.openSheet);
   const { backend, order, events, queue, connection, reload } = useActiveOrder();
+
+  // A checkout that ended: paid needs nothing from here (the row moves on
+  // its own; ask once anyway so the capsule turns at once); anything else
+  // reopens the pay sheet, which starts with the outcome in hand.
+  const flight = useCheckoutFlight();
+  const flightDone = flight?.phase === "done" ? flight : null;
+  useEffect(() => {
+    if (!flightDone) return;
+    if (order?.id !== flightDone.orderId) {
+      clearFlight();
+      return;
+    }
+    if (flightDone.outcome?.kind === "paid") {
+      clearFlight();
+      reload();
+      return;
+    }
+    setPaying(true);
+  }, [flightDone, order?.id, reload]);
 
   if (backend.state === "loading") return <IslandSkeleton />;
 

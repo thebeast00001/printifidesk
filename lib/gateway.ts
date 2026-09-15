@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import type { Operator } from "./orders";
 
 /**
@@ -113,10 +114,52 @@ export async function openSession(orderId: string): Promise<SessionOutcome> {
   return { kind: "session", session: { paymentSessionId: session.paymentSessionId, mode: session.mode ?? mode } };
 }
 
-/** Cashfree's SDK handle, loaded on demand. */
+const instances = new Map<GatewayMode, CashfreeSdk>();
+
+/**
+ * Cashfree's SDK handle, loaded on demand and kept. Making the instance is
+ * not free: the SDK opens a hidden "ping" iframe on cashfree.com the
+ * moment it's constructed, and checkout() then *waits* for that ping —
+ * polling every 300 ms, giving up after two seconds — before it draws the
+ * modal. Made at the tap, that wait sits right under the student's thumb;
+ * made when the sheet opens (see warmCheckout), it's over before they've
+ * read the amount.
+ */
 async function sdk(mode: GatewayMode): Promise<CashfreeSdk> {
+  const kept = instances.get(mode);
+  if (kept) return kept;
   await loadSdk();
-  return window.Cashfree!({ mode });
+  const made = window.Cashfree!({ mode });
+  instances.set(mode, made);
+  return made;
+}
+
+const CASHFREE_HOSTS: Record<GatewayMode, string[]> = {
+  production: ["https://api.cashfree.com", "https://payments.cashfree.com"],
+  sandbox: ["https://sandbox.cashfree.com", "https://payments-test.cashfree.com"],
+};
+let warmed = false;
+
+/**
+ * Everything the tap will need, started while the sheet is being read:
+ * the SDK script, its ping, and connections to the two hosts the checkout
+ * posts to and draws from. Safe to call as often as the sheet opens.
+ */
+export function warmCheckout(mode: GatewayMode): void {
+  if (typeof document === "undefined") return;
+  if (!warmed) {
+    warmed = true;
+    for (const href of ["https://sdk.cashfree.com", ...CASHFREE_HOSTS[mode]]) {
+      const link = document.createElement("link");
+      link.rel = "preconnect";
+      link.href = href;
+      link.crossOrigin = "anonymous";
+      document.head.appendChild(link);
+    }
+  }
+  void sdk(mode).catch(() => {
+    /* the tap will try again and say why */
+  });
 }
 
 /**
@@ -148,37 +191,6 @@ function outcomeOf(result: CheckoutResult): OnlineOutcome | null {
 }
 
 /**
- * The whole thing: session from the server, Cashfree's checkout in a
- * modal, then the server asked whether it went through — a few times,
- * because the webhook and the checkout closing race by seconds. "pending"
- * means the checkout closed and Cashfree hasn't said yet; the order's
- * realtime row will move on its own when it does.
- */
-export async function payOnline(orderId: string): Promise<OnlineOutcome> {
-  const mode = gatewayMode();
-  if (!mode) return { kind: "error", message: "Online payment isn't set up here." };
-
-  const res = await fetch("/api/payments/session", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ orderId }),
-  });
-  const session = (await res.json().catch(() => ({}))) as {
-    ok?: boolean;
-    paid?: boolean;
-    paymentSessionId?: string;
-    mode?: GatewayMode;
-    needsPhone?: boolean;
-    error?: string;
-  };
-  if (session.paid) return { kind: "paid" };
-  if (session.needsPhone) return { kind: "needs-phone" };
-  if (!res.ok || !session.paymentSessionId) return { kind: "error", message: session.error ?? "Couldn't start the payment." };
-
-  return payHosted({ paymentSessionId: session.paymentSessionId, mode: session.mode ?? mode }, orderId);
-}
-
-/**
  * Cashfree's hosted checkout in a modal over the page: UPI (any app, the
  * amount filled in), cards, netbanking. Resolves when the modal closes,
  * then asks the server whether the money landed.
@@ -194,6 +206,66 @@ export async function payHosted(session: OnlineSession, orderId: string): Promis
   const early = outcomeOf(result);
   if (early) return early;
   return awaitPaid(orderId);
+}
+
+/* ---------- the checkout in flight ---------- */
+
+/**
+ * One hosted checkout, from the tap to its outcome, held outside any
+ * component. The pay sheet is a modal drawer: while it's open the page
+ * outside it takes no pointer events and keeps focus — and Cashfree's
+ * modal is appended outside it, so a tap on their UPI button used to land
+ * on our backdrop instead, dismissing the sheet, and only the next tap
+ * reached Cashfree. So the sheet now closes the moment the checkout opens,
+ * the checkout runs here, and the capsule reopens the sheet only when the
+ * outcome is something to read (cancelled, pending, failed); paid needs
+ * no sheet — the row says so.
+ */
+export interface CheckoutFlight {
+  orderId: string;
+  session: OnlineSession;
+  phase: "open" | "done";
+  outcome: OnlineOutcome | null;
+}
+
+let flight: CheckoutFlight | null = null;
+const watchers = new Set<() => void>();
+
+function setFlight(next: CheckoutFlight | null) {
+  flight = next;
+  for (const fn of watchers) fn();
+}
+
+/** The checkout in flight, for the capsule to watch. */
+export function useCheckoutFlight(): CheckoutFlight | null {
+  return useSyncExternalStore(
+    (fn) => {
+      watchers.add(fn);
+      return () => watchers.delete(fn);
+    },
+    () => flight,
+    () => null,
+  );
+}
+
+/** Opens Cashfree's modal for this order; the outcome lands on the flight, not on the caller. */
+export function launchHosted(session: OnlineSession, orderId: string): void {
+  setFlight({ orderId, session, phase: "open", outcome: null });
+  void payHosted(session, orderId).then((outcome) => {
+    if (flight?.orderId === orderId && flight.phase === "open") setFlight({ ...flight, phase: "done", outcome });
+  });
+}
+
+/** The finished flight for this order, if any — handed over once, then forgotten. */
+export function takeFlight(orderId: string): CheckoutFlight | null {
+  if (!flight || flight.orderId !== orderId || flight.phase !== "done") return null;
+  const done = flight;
+  setFlight(null);
+  return done;
+}
+
+export function clearFlight(): void {
+  setFlight(null);
 }
 
 /** A refund of a payment made through Printify, asked for by the desk. */
