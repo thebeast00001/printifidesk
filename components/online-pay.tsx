@@ -231,10 +231,12 @@ function plainHost(frame: HTMLElement, id: string): HTMLDivElement {
 }
 
 /**
- * One of Cashfree's `upiApp` elements, mounted into our own button frame.
- * The element draws the app's mark and handles the tap; we answer the tap
- * with pay(). Until the session exists the frame is drawn disabled, so
- * the layout never jumps.
+ * Our own button, with one of Cashfree's `upiApp` elements mounted behind
+ * it — sized, invisible, untouchable. The element is what pay() needs as
+ * its paymentMethod (and what tells us, via loaderror, that this browser
+ * can't open apps); the button is ours so the three look like the rest of
+ * the sheet instead of three different vendors' widgets. Until the session
+ * exists the button is drawn disabled, so the layout never jumps.
  */
 function AppButton({
   session,
@@ -266,13 +268,12 @@ function AppButton({
     void sdk(session.mode)
       .then((cf) => {
         if (!alive) return;
-        const element = cf.create("upiApp", { values: { upiApp: app, buttonText: label, buttonIcon: true } });
+        const element = cf.create("upiApp", { values: { upiApp: app, buttonText: label, buttonIcon: false } });
         element.on("loaderror", () => alive && onCannotMount());
+        // A tap that reaches the element itself (it's behind ours) still pays.
         element.on("click", () => onPay(() => element));
         elementRef.current = element;
         element.mount(`#${hostId}`);
-        // Shown as soon as it's in the frame; a loaderror (a laptop, an
-        // in-app browser) takes the whole row down and the modal steps in.
         if (alive) setMounted(true);
       })
       .catch(() => alive && onCannotMount());
@@ -290,15 +291,19 @@ function AppButton({
   }, [session?.paymentSessionId]);
 
   return (
-    <div
+    <button
+      type="button"
+      disabled={disabled || !mounted}
+      onClick={() => elementRef.current && onPay(() => elementRef.current!)}
       className={cn(
-        "relative flex h-[56px] items-center justify-center overflow-hidden rounded-2xl border border-line bg-surface",
+        "relative flex h-[56px] items-center justify-center overflow-hidden rounded-2xl bg-ink text-[13.5px] font-semibold text-paper transition-opacity",
         (disabled || !mounted) && "opacity-60",
       )}
     >
-      {!mounted && <span className="text-[13px] font-semibold text-muted">{label}</span>}
-      <div ref={frame} className={cn("absolute inset-0 [&>*]:h-full [&>*]:w-full [&>*>*]:h-full [&>*>*]:w-full", !mounted && "opacity-0")} />
-    </div>
+      {label}
+      {/* Cashfree's element: present for pay(), never seen, never tapped. */}
+      <div ref={frame} aria-hidden className="pointer-events-none absolute inset-0 opacity-0 [&>*]:h-full [&>*]:w-full [&>*>*]:h-full [&>*>*]:w-full" />
+    </button>
   );
 }
 

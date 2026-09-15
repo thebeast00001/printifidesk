@@ -1,6 +1,6 @@
 import { callerId, fail, isStaffOf, serviceClient } from "@/lib/server/db";
 import { cashfreeConfigured } from "@/lib/server/cashfree";
-import { reconcileOrder } from "../reconcile";
+import { reconcileDetailed } from "../reconcile";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,8 +32,8 @@ export async function GET(request: Request) {
   if (!order.gateway_order_id || !cashfreeConfigured()) return Response.json({ ok: true, paid: false, status: order.status });
 
   try {
-    const paid = await reconcileOrder(supabase, order.id, order.gateway_order_id);
-    return Response.json({ ok: true, paid, status: paid ? "queued" : order.status });
+    const { paid, attempt } = await reconcileDetailed(supabase, order.id, order.gateway_order_id);
+    return Response.json({ ok: true, paid, attempt, status: paid ? "queued" : order.status });
   } catch (e) {
     return fail(e instanceof Error ? e.message : "Couldn't check with Cashfree.", 502);
   }

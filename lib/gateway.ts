@@ -144,8 +144,11 @@ export async function sdk(mode: GatewayMode): Promise<CashfreeSdk> {
 export async function awaitPaid(orderId: string, tries = 8): Promise<OnlineOutcome> {
   for (let i = 0; i < tries; i++) {
     const check = await fetch(`/api/payments/status?order=${encodeURIComponent(orderId)}`, { cache: "no-store" });
-    const status = (await check.json().catch(() => ({}))) as { paid?: boolean };
+    const status = (await check.json().catch(() => ({}))) as { paid?: boolean; attempt?: string };
     if (status.paid) return { kind: "paid" };
+    // The student backed out of their app, or the bank said no: say so now.
+    if (status.attempt === "dropped") return { kind: "cancelled" };
+    if (status.attempt === "failed") return { kind: "error", message: "The bank didn't approve it. Nothing was charged — try again or another app." };
     await new Promise((r) => setTimeout(r, 1500));
   }
   return { kind: "pending" };
@@ -177,10 +180,12 @@ export const CASHFREE_APPS = [
 export async function payWithElement(cf: CashfreeSdk, element: CashfreeElement, session: OnlineSession, orderId: string): Promise<OnlineOutcome> {
   let result: PayResult;
   try {
+    // No returnUrl, on purpose: with one, a cancelled app switch lands the
+    // student on Cashfree's own result page. Without it the SDK resolves
+    // here, in the sheet, and the sheet asks the server what happened.
     result = await cf.pay({
       paymentMethod: element,
       paymentSessionId: session.paymentSessionId,
-      returnUrl: `${window.location.origin}/orders?paid=${orderId}`,
       redirect: "if_required",
     });
   } catch (e) {

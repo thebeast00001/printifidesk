@@ -927,7 +927,15 @@ How the pieces sit:
   when an element reports `loaderror` (an in-app browser, a laptop for the
   app buttons). Two things the SDK insists on, learned the hard way: mount
   by **selector**, into a div **React never touched** — it serialises the
-  node, and a React-owned node carries a circular fiber.
+  node, and a React-owned node carries a circular fiber. The app buttons
+  are ours (the element sits behind each, sized, invisible, untouchable,
+  because pay() needs it as the payment method) so the three match the
+  sheet rather than three vendors' widgets. `pay()` is called **without a
+  returnUrl**: with one, a cancelled app switch lands the student on
+  Cashfree's own result page; without it the promise resolves in the
+  sheet, and `/api/payments/status` reports the latest attempt as
+  `dropped` or `failed` so the sheet says *nothing was charged* at once
+  instead of waiting out the poll.
 - **The browser** (`lib/gateway.ts`) only ever sees a payment session
   id. It loads Cashfree's SDK from a script it creates (trusted under the
   strict-dynamic CSP), and the hosted checkout opens by **posting a form

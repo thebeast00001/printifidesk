@@ -35,14 +35,39 @@ export async function markPaid(
  * older Cashfree order already paid.
  */
 export async function reconcileOrder(supabase: SupabaseClient, orderId: string, gatewayOrderId: string): Promise<boolean> {
+  return (await reconcileDetailed(supabase, orderId, gatewayOrderId)).paid;
+}
+
+export type AttemptState = "none" | "pending" | "failed" | "dropped" | "success";
+
+/**
+ * The same, plus what the most recent attempt is doing — so the sheet can
+ * say "nothing was charged" the moment a student backs out of their app,
+ * rather than waiting out the poll.
+ */
+export async function reconcileDetailed(
+  supabase: SupabaseClient,
+  orderId: string,
+  gatewayOrderId: string,
+): Promise<{ paid: boolean; attempt: AttemptState }> {
   const payments = await getPayments(gatewayOrderId);
   const success = payments.find((p) => p.payment_status === "SUCCESS");
-  if (!success) return false;
+  if (!success) {
+    const latest = payments[payments.length - 1];
+    const attempt: AttemptState = !latest
+      ? "none"
+      : latest.payment_status === "FAILED" || latest.payment_status === "VOID" || latest.payment_status === "CANCELLED"
+        ? "failed"
+        : latest.payment_status === "USER_DROPPED"
+          ? "dropped"
+          : "pending";
+    return { paid: false, attempt };
+  }
   await markPaid(supabase, orderId, {
     id: String(success.cf_payment_id),
     amount: Number(success.payment_amount),
     group: success.payment_group ?? null,
     time: success.payment_time ?? null,
   });
-  return true;
+  return { paid: true, attempt: "success" };
 }
