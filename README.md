@@ -902,6 +902,15 @@ How the pieces sit:
   must be `active` — Cashfree's verdict on the settlement account — before
   its students see the button.
 
+**Pick the app by name.** On a phone the merchant flow shows Google Pay,
+PhonePe and Paytm as buttons — the same `upi://pay` query behind each
+app's own scheme (`tez://` on Android and `gpay://` on iOS for Google
+Pay, `phonepe://`, `paytmmp://`) so the phone opens that app and no
+other — plus *Another UPI app* for the phone's chooser. PhonePe's button
+says *may refuse* because it does: PhonePe declines payment links a
+website built, whatever the id. The personal flow offers the same row
+under its steps as "some accept it". A laptop gets no buttons; it scans.
+
 **One id is paid only by its own QR.** A Paytm merchant id (`@pty`,
 `@paytm`, `@ptys`, `@ptaxis`…) accepts nothing but a scan of the standee
 Paytm signed — not a link with the amount, not the id typed into another

@@ -7,7 +7,8 @@ import QRCode from "qrcode";
 import { AlertCircle, Banknote, Check, Copy, Loader2, Smartphone } from "lucide-react";
 import { getOperator, type Operator, type OrderRow } from "@/lib/orders";
 import { getSupabase } from "@/lib/supabase/client";
-import { isQrOnlyMerchant, isValidVpa, upiLink, type UpiRequest } from "@/lib/upi";
+import { UPI_APPS, appLink, isQrOnlyMerchant, isValidVpa, upiLink, type UpiRequest } from "@/lib/upi";
+import { useInstall } from "@/lib/install";
 import { canPayOnline, payOnline, type OnlineOutcome } from "@/lib/gateway";
 import Link from "next/link";
 import { CreditCard } from "lucide-react";
@@ -88,6 +89,10 @@ export function PaySheet({
 
   const link = request ? upiLink(request) : null;
   const amountText = order ? Number(order.total).toFixed(2) : "";
+  // Which schemes to hand out: a phone gets its apps by name; a laptop scans.
+  const { platform, ready: platformReady } = useInstall();
+  const onPhone = platformReady && platform !== "desktop";
+  const appPlatform = platform === "ios" ? "ios" : "android";
   const [copiedWhat, setCopiedWhat] = useState<"id" | "amount" | null>(null);
   async function copy(what: "id" | "amount", text: string) {
     await navigator.clipboard?.writeText(text);
@@ -253,17 +258,21 @@ export function PaySheet({
                   </div>
                 ) : merchant ? (
                   <>
-                    <a
-                      href={link ?? "#"}
-                      className="flex h-[54px] w-full items-center justify-center gap-2.5 rounded-2xl bg-ink text-[15px] font-semibold text-paper"
-                    >
-                      <Smartphone size={17} strokeWidth={2.2} />
-                      Open UPI app — amount filled in
-                    </a>
+                    {onPhone && request ? (
+                      <AppButtons request={request} platform={appPlatform} amount />
+                    ) : (
+                      <a
+                        href={link ?? "#"}
+                        className="flex h-[54px] w-full items-center justify-center gap-2.5 rounded-2xl bg-ink text-[15px] font-semibold text-paper"
+                      >
+                        <Smartphone size={17} strokeWidth={2.2} />
+                        Open UPI app — amount filled in
+                      </a>
+                    )}
                     <p className="m-0 mt-2 mb-3 text-[11px] leading-relaxed text-muted">
-                      Works in Google Pay, Paytm and most apps. <b className="font-semibold">PhonePe refuses
-                      payment links from websites</b> (&quot;banking partner is unable to process&quot;) — there,
-                      use the two steps below; it takes ten seconds.
+                      The amount is filled in for you. <b className="font-semibold">PhonePe refuses payment
+                      links from websites</b> (&quot;banking partner is unable to process&quot;) — there, use the
+                      two steps below; it takes ten seconds.
                     </p>
                   </>
                 ) : null}
@@ -348,13 +357,20 @@ export function PaySheet({
                 )}
                 {!merchant && (
                   <>
-                    <a
-                      href={link ?? "#"}
-                      className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-line bg-surface text-[12.5px] font-semibold text-ink-soft"
-                    >
-                      <Smartphone size={14} strokeWidth={2.2} />
-                      Try opening your app anyway
-                    </a>
+                    {onPhone && request ? (
+                      <div className="mt-3">
+                        <p className="m-0 mb-1.5 text-[11.5px] text-muted">Or try opening an app — some accept it:</p>
+                        <AppButtons request={request} platform={appPlatform} />
+                      </div>
+                    ) : (
+                      <a
+                        href={link ?? "#"}
+                        className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-line bg-surface text-[12.5px] font-semibold text-ink-soft"
+                      >
+                        <Smartphone size={14} strokeWidth={2.2} />
+                        Try opening your app anyway
+                      </a>
+                    )}
                     <p className="m-0 mt-2 text-[11px] leading-relaxed text-muted">
                       This desk uses a personal UPI id. UPI apps refuse a link with the amount already filled in
                       for those, so the amount is typed by hand.
@@ -456,6 +472,39 @@ export function PaySheet({
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>
+  );
+}
+
+/**
+ * One button per app the student is likely to have, each opening that app
+ * and no other, plus "another app" for the phone's own chooser. `amount`
+ * only changes the words: the link itself already carries the amount when
+ * the desk's id can take it.
+ */
+function AppButtons({ request, platform, amount }: { request: UpiRequest; platform: "android" | "ios"; amount?: boolean }) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {UPI_APPS.map((app) => (
+        <a
+          key={app.id}
+          href={appLink(app, request, platform)}
+          className={cn(
+            "flex h-[54px] flex-col items-center justify-center rounded-2xl text-[13px] font-semibold",
+            amount ? "bg-ink text-paper" : "border border-line bg-surface text-ink",
+          )}
+        >
+          {app.label}
+          {app.refuses && <span className={cn("text-[9.5px] font-normal", amount ? "text-paper/70" : "text-muted")}>may refuse</span>}
+        </a>
+      ))}
+      <a
+        href={upiLink(request)}
+        className="col-span-3 flex h-10 items-center justify-center gap-2 rounded-xl border border-line bg-surface text-[12.5px] font-semibold text-ink-soft"
+      >
+        <Smartphone size={14} strokeWidth={2.2} />
+        Another UPI app
+      </a>
+    </div>
   );
 }
 

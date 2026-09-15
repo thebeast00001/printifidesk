@@ -2,7 +2,7 @@ import { canInstall, platformFrom, type InstallState } from "../lib/install";
 import { normalisePhone } from "../lib/phone";
 import { summarisePages } from "../lib/pages";
 import { buildSlots } from "../components/pickup-picker";
-import { cleanReference, handleOf, isQrOnlyMerchant, isValidVpa, normaliseVpa, parseUpiQr, upiLink, vpaProblem } from "../lib/upi";
+import { UPI_APPS, appLink, cleanReference, handleOf, isQrOnlyMerchant, isValidVpa, normaliseVpa, parseUpiQr, upiLink, vpaProblem } from "../lib/upi";
 import { gatewayOrderId, vendorShare, vendorStatus, verifyWebhook, webhookSignature } from "../lib/server/cashfree";
 import { shelfLabel, shelfSlots } from "../lib/orders";
 import { pickBadges } from "../components/operator-picker";
@@ -210,6 +210,17 @@ check("reference capped at 35", cleanReference("A".repeat(50)).length, 35);
 check("note keeps letters, digits, spaces", /[?&]tn=Printify%20B66(&|$)/.test(toMerchant), true);
 const oddNote = upiLink({ vpa: "a@b", payeeName: "x", note: "Printify #B66 — colour!", reference: "r" });
 check("note punctuation becomes spaces", /[?&]tn=Printify%20B66%20colour(&|$)/.test(oddNote), true);
+// Picking an app by name: the same query behind each app's own scheme.
+const req = { vpa: "Q533273833@ybl", payeeName: "Shop", amount: 6, note: "Printify A03", reference: "A03abcd1234" };
+const gpay = UPI_APPS.find((a) => a.id === "gpay")!;
+const phonepe = UPI_APPS.find((a) => a.id === "phonepe")!;
+const paytm = UPI_APPS.find((a) => a.id === "paytm")!;
+check("Google Pay on Android", appLink(gpay, req, "android").startsWith("tez://upi/pay?"), true);
+check("Google Pay on iOS", appLink(gpay, req, "ios").startsWith("gpay://upi/pay?"), true);
+check("PhonePe scheme", appLink(phonepe, req).startsWith("phonepe://pay?"), true);
+check("Paytm scheme", appLink(paytm, req).startsWith("paytmmp://pay?"), true);
+check("the query is the same as the plain link", appLink(gpay, req).split("?")[1], upiLink(req).split("?")[1]);
+check("PhonePe is marked as refusing", phonepe.refuses, true);
 
 // Reading the shop's own QR: mc decides the kind.
 const business = parseUpiQr("upi://pay?pa=Q123456789@ybl&pn=SHARMA%20XEROX&mc=5111&mode=02&purpose=00");

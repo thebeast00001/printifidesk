@@ -154,15 +154,24 @@ export function cleanReference(reference: string): string {
   return withMark.slice(0, 35);
 }
 
-/** Apps that take the same URI but want their own scheme on Android. */
+/**
+ * The apps a student can pick by name. Each takes the same `upi://pay?…`
+ * query behind its own scheme, so the phone opens that app and no other;
+ * Google Pay's scheme differs between Android and iOS. `refuses` is the
+ * honest note under a button: PhonePe declines any payment link a website
+ * built, whatever the id, so the button is there because people look for
+ * it, and the copy says what will happen.
+ */
 export const UPI_APPS = [
-  { id: "gpay", label: "Google Pay", scheme: "tez://upi/pay" },
-  { id: "phonepe", label: "PhonePe", scheme: "phonepe://pay" },
-  { id: "paytm", label: "Paytm", scheme: "paytmmp://pay" },
+  { id: "gpay", label: "Google Pay", android: "tez://upi/pay", ios: "gpay://upi/pay", refuses: false },
+  { id: "phonepe", label: "PhonePe", android: "phonepe://pay", ios: "phonepe://pay", refuses: true },
+  { id: "paytm", label: "Paytm", android: "paytmmp://pay", ios: "paytmmp://pay", refuses: false },
 ] as const;
 
-export function appLink(app: (typeof UPI_APPS)[number], request: UpiRequest): string {
-  return upiLink(request).replace("upi://pay", app.scheme);
+export type UpiApp = (typeof UPI_APPS)[number];
+
+export function appLink(app: UpiApp, request: UpiRequest, platform: "android" | "ios" = "android"): string {
+  return upiLink(request).replace("upi://pay", platform === "ios" ? app.ios : app.android);
 }
 
 export interface ScannedUpi {
