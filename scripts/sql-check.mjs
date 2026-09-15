@@ -1626,6 +1626,104 @@ await scenario("queue_status_mine finds the caller's newest live order and nobod
   return `order ${String(mine[0].order_id).slice(0, 8)} place ${mine[0].place}, ${mine[0].wait_minutes} min; a stranger gets nothing`;
 });
 
+/* ---------- 0030: the shelf and the board ---------- */
+
+await scenario("ready jobs take the lowest free shelf slot; the slot frees on collection; full shelf means no slot", async () => {
+  await actingAs(null);
+  await db.query(`update public.operators set shelf_rows = 1, shelf_cols = 2 where id = $1;`, [OPERATOR]);
+  const place = async (who, name) => {
+    await actingAs(who);
+    const { rows } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+      OPERATOR,
+      JSON.stringify([{ name, pages: 2, colour_pages: 0, config: { copies: 1, sides: "single" } }]),
+    ]);
+    return rows[0].id;
+  };
+  const ids = [await place("shelf_a", "a.pdf"), await place("shelf_b", "b.pdf"), await place("shelf_c", "c.pdf")];
+  await actingAs("op_test");
+  for (const id of ids) {
+    await db.query(`update public.orders set status = 'queued' where id = $1;`, [id]);
+    await db.query(`update public.orders set status = 'printing' where id = $1;`, [id]);
+    await db.query(`update public.orders set status = 'ready' where id = $1;`, [id]);
+  }
+  const slots = async () => {
+    const { rows } = await db.query(`select id, status, shelf_slot from public.orders where id = any($1::uuid[]) order by created_at;`, [ids]);
+    return rows.map((r) => r.shelf_slot);
+  };
+  let got = await slots();
+  if (JSON.stringify(got) !== JSON.stringify(["A1", "A2", null])) throw new Error(`first fill: ${JSON.stringify(got)}`);
+
+  // The student can't touch the slot.
+  await actingAs("shelf_a");
+  await db.query(`update public.orders set shelf_slot = 'A2' where id = $1;`, [ids[0]]);
+  got = await slots();
+  if (got[0] !== "A1") throw new Error(`a student moved their packet: ${got[0]}`);
+
+  // A1 collected: the third job still has none (assignment is on the
+  // transition), but the desk can hand it the freed slot by hand.
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'collected' where id = $1;`, [ids[0]]);
+  await db.query(`update public.orders set shelf_slot = 'A1' where id = $1;`, [ids[2]]);
+  got = await slots();
+  if (JSON.stringify(got) !== JSON.stringify(["A1", "A2", "A1"])) throw new Error(`after collection: ${JSON.stringify(got)}`);
+  const { rows: inUse } = await db.query(
+    `select shelf_slot from public.orders where operator_id = $1 and status = 'ready' and shelf_slot is not null order by shelf_slot;`,
+    [OPERATOR],
+  );
+  if (inUse.map((r) => r.shelf_slot).join(",") !== "A1,A2") throw new Error(`in use: ${inUse.map((r) => r.shelf_slot)}`);
+
+  // A fourth job now finds nothing free; a fifth after a collection finds A2.
+  const d = await place("shelf_d", "d.pdf");
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'queued' where id = $1;`, [d]);
+  await db.query(`update public.orders set status = 'ready' where id = $1;`, [d]);
+  const { rows: dRow } = await db.query(`select shelf_slot from public.orders where id = $1;`, [d]);
+  if (dRow[0].shelf_slot !== null) throw new Error(`a full shelf handed out ${dRow[0].shelf_slot}`);
+  await db.query(`update public.orders set status = 'collected' where id = $1;`, [ids[1]]);
+  const e = await place("shelf_e", "e.pdf");
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'queued' where id = $1;`, [e]);
+  await db.query(`update public.orders set status = 'ready' where id = $1;`, [e]);
+  const { rows: eRow } = await db.query(`select shelf_slot from public.orders where id = $1;`, [e]);
+  if (eRow[0].shelf_slot !== "A2") throw new Error(`freed slot not reused: ${eRow[0].shelf_slot}`);
+
+  // Junk slots are refused; a desk with no shelf assigns nothing.
+  let bad = false;
+  try {
+    await db.query(`update public.orders set shelf_slot = 'Z99' where id = $1;`, [e]);
+  } catch {
+    bad = true;
+  }
+  if (!bad) throw new Error("a slot off the shelf was accepted");
+  await actingAs(null);
+  await db.query(`update public.operators set shelf_rows = 0 where id = $1;`, [OPERATOR]);
+  const f = await place("shelf_f", "f.pdf");
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'queued' where id = $1;`, [f]);
+  await db.query(`update public.orders set status = 'ready' where id = $1;`, [f]);
+  const { rows: fRow } = await db.query(`select shelf_slot from public.orders where id = $1;`, [f]);
+  if (fRow[0].shelf_slot !== null) throw new Error("a desk with no shelf assigned a slot");
+
+  // The board: tokens and slots for this desk, no names, nothing from a shut desk.
+  await actingAs(null);
+  const { rows: board } = await db.query(`select * from public.board($1);`, [OPERATOR]);
+  const cols = Object.keys(board[0] ?? {});
+  if (cols.some((c) => /user|name|file/i.test(c))) throw new Error(`the board leaks: ${cols}`);
+  const readyOnBoard = board.filter((r) => r.status === "ready").map((r) => r.shelf_slot).filter(Boolean).sort();
+  if (readyOnBoard.join(",") !== "A1,A2") throw new Error(`board slots: ${readyOnBoard}`);
+  if (board[0].status !== "ready") throw new Error("ready jobs don't lead the board");
+  await actingAs("admin_test");
+  await db.query(`select public.shut_operator($1, 'board check');`, [OPERATOR]);
+  await actingAs(null);
+  const { rows: shut } = await db.query(`select * from public.board($1);`, [OPERATOR]);
+  await actingAs("admin_test");
+  await db.query(`select public.restore_operator($1);`, [OPERATOR]);
+  await actingAs(null);
+  if (shut.length !== 0) throw new Error("a shut desk still shows a board");
+  await db.query(`delete from public.orders where user_id like 'shelf_%';`);
+  return `A1, A2, none; student can't move; freed A1 reassigned by hand, A2 reused on the next ready; Z99 refused; no shelf → no slot; board leads with ready, no names, dark when shut`;
+});
+
 await scenario("the upload ceiling holds", async () => {
   await actingAs("student_test");
   // 500 MB is the cap; one file over it must be refused.

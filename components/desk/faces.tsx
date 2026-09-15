@@ -6,6 +6,7 @@ import { OperatorDay } from "../operator-day";
 import { CloseoutPanel } from "../operator/closeout";
 import { StaffPanel } from "../operator/staff-panel";
 import { StockPanel } from "../operator/stock-panel";
+import { ShelfPanel } from "@/components/operator/shelf-panel";
 import { DevicePanel } from "../operator/device-panel";
 import { AccountPanel } from "./account-panel";
 import { FeePanel } from "./fee-panel";
@@ -40,6 +41,7 @@ export function DeskSettings() {
       <OpenSwitch operator={operator} onChanged={reload} />
       <OperatorPricing operator={operator} onSaved={reload} />
       <StockPanel operator={operator} onChanged={reload} />
+      <ShelfPanel operator={operator} onSaved={reload} />
       <StaffPanel operator={operator} me={userId} />
       <DevicePanel operator={operator} hasPin={hasPin} onPinChanged={refreshPin} />
       <AccountPanel />

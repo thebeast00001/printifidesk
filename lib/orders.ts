@@ -60,6 +60,8 @@ export interface OrderRow {
   payment_claimed_amount?: number | string | null;
   payment_received?: number | string | null;
   shortfall_cleared_at?: string | null;
+  /** 0030: where the packet is, e.g. "B3". Assigned on 'ready'; the desk can change it. */
+  shelf_slot?: string | null;
   refunded_at: string | null;
   refund_amount: number | null;
   refund_note: string | null;
@@ -136,6 +138,9 @@ export interface Operator {
   upi_mc?: string | null;
   /** 0028: totals lifted to the next rupee, as a line on the bill. */
   round_to_rupee?: boolean;
+  /** 0030: the shelf — rows A.. × slots per row. 0 rows means no shelf. */
+  shelf_rows?: number;
+  shelf_cols?: number;
   accepts_cash: boolean;
   paper_stock: number | null;
   low_paper_at: number;
@@ -180,6 +185,11 @@ export type OperatorSettings = Partial<
     | "toner_pages"
     | "low_paper_at"
     | "low_toner_at"
+    | "upi_kind"
+    | "upi_mc"
+    | "round_to_rupee"
+    | "shelf_rows"
+    | "shelf_cols"
   >
 >;
 
@@ -189,23 +199,29 @@ const OPERATOR_SELECT_LEGACY =
   "min_order, paper_gsm, pages_per_minute, handling_minutes, short_name, is_listed, opens_at, closes_at, " +
   "upi_vpa, upi_name, accepts_cash, paper_stock, low_paper_at, toner_pages, low_toner_at, " +
   "shut_at, shut_reason";
-const OPERATOR_SELECT = OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee";
-
-// The column list this project answers to. A deployment can go out before
-// its migration is run; 42703 ("column does not exist") on the newest
-// columns drops back to the list before them rather than showing no desk.
-let operatorColumns = OPERATOR_SELECT;
+// Newest first. A deployment can go out before its migration is run;
+// 42703 ("column does not exist") steps down one list at a time, so a
+// project on 0028 still gets 0027's columns rather than none of them.
+const OPERATOR_SELECTS = [
+  OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols", // 0030
+  OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee", // 0028
+  OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc", // 0027
+  OPERATOR_SELECT_LEGACY,
+];
+let operatorLevel = 0;
 
 async function operatorQuery<T>(
   run: (select: string) => PromiseLike<{ data: T; error: { code?: string } | null }>,
 ): Promise<{ data: T; error: { code?: string } | null }> {
-  // Judge by the list *this* call used: several run at once on a page load,
-  // and one switching the shared list mustn't stop the others retrying.
-  const used = operatorColumns;
-  let result = await run(used);
-  if (result.error?.code === "42703" && used !== OPERATOR_SELECT_LEGACY) {
-    operatorColumns = OPERATOR_SELECT_LEGACY;
-    result = await run(OPERATOR_SELECT_LEGACY);
+  // Judge by the level *this* call started at: several run at once on a
+  // page load, and one stepping the shared level down mustn't stop the
+  // others from retrying.
+  let level = operatorLevel;
+  let result = await run(OPERATOR_SELECTS[level]);
+  while (result.error?.code === "42703" && level < OPERATOR_SELECTS.length - 1) {
+    level += 1;
+    if (level > operatorLevel) operatorLevel = level;
+    result = await run(OPERATOR_SELECTS[level]);
   }
   return result;
 }
@@ -548,6 +564,40 @@ export async function activeOrderBundle(): Promise<{ order: OrderRow | null; eve
   const { order_events: embedded, ...rest } = data as OrderRow & { order_events?: OrderEventRow[] };
   const events = [...(embedded ?? [])].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
   return { order: rest as OrderRow, events };
+}
+
+/** One line on the counter board: a token, where it is, and since when. No names. */
+export interface BoardRow {
+  token: string;
+  status: OrderStatus;
+  shelf_slot: string | null;
+  since: string;
+}
+
+/**
+ * What the screen at the counter shows. Open to anyone — a token is on
+ * every slip on the shelf already — and empty for a shut desk.
+ */
+export async function boardRows(operatorId: string): Promise<BoardRow[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("board", { p_operator: operatorId });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as BoardRow[];
+}
+
+/** The slot label for row r (1-based) and column c: A1, B7. What the trigger writes. */
+export function shelfLabel(row: number, col: number): string {
+  return `${String.fromCharCode(64 + row)}${col}`;
+}
+
+/** Every slot on a desk's shelf, in the order the trigger fills them. Empty when there's no shelf. */
+export function shelfSlots(rows: number, cols: number): string[] {
+  const out: string[] = [];
+  for (let r = 1; r <= Math.min(8, Math.max(0, rows)); r++) {
+    for (let c = 1; c <= Math.min(20, Math.max(1, cols)); c++) out.push(shelfLabel(r, c));
+  }
+  return out;
 }
 
 /** Queue position for the caller's newest live order — no id needed, so it can run alongside the order fetch. */

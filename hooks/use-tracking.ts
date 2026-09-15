@@ -21,6 +21,7 @@ import {
   type OperatorWait,
   type OrderEventRow,
   type OrderRow,
+  type OrderStatus,
   type QueueStatus,
   type Totals,
 } from "@/lib/orders";
@@ -67,6 +68,21 @@ function useRealtime(onChange: () => void, enabled: boolean, filter?: string) {
     ];
     return () => stop.forEach((fn) => fn());
   }, [enabled, filter]);
+}
+
+/**
+ * A short buzz when the job moves, a longer one when it's ready. Only where
+ * the browser has the API and the page is visible — a hidden tab's push
+ * notification carries its own pattern from the service worker.
+ */
+function buzz(status: OrderStatus) {
+  if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
+  if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+  try {
+    navigator.vibrate(status === "ready" ? [70, 50, 70, 50, 120] : status === "cancelled" || status === "failed" ? [150] : [35]);
+  } catch {
+    /* some browsers throw on a vibrate outside a gesture; silence is fine */
+  }
 }
 
 /** Everything the student-facing tracking UI needs about the live job. */
@@ -148,6 +164,7 @@ export function useActiveOrder() {
 
           // The status the operator just set, painted this tick. No round trip.
           setOrder({ ...current, ...row });
+          if (row.status !== current.status) buzz(row.status);
           void reconcile(row.id);
         },
       }),

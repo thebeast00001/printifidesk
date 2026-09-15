@@ -295,7 +295,14 @@ function detail(order: OrderRow, queue: QueueStatus | null): string {
     case "finishing":
       return `${sheets} · ${order.config?.sides === "double" ? "both sides" : "one side"}`;
     case "ready":
-      return order.token ? `Show token ${order.token} to collect` : "Waiting for you to collect";
+      return [
+        order.shelf_slot ? `Shelf ${order.shelf_slot}` : null,
+        order.token ? `show token ${order.token} to collect` : "waiting for you to collect",
+      ]
+        .filter(Boolean)
+        .join(" · ")
+        .replace(/^show/, "Show")
+        .replace(/^waiting/, "Waiting");
     case "collected":
       return `${sheets} · collected`;
     case "failed":

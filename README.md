@@ -648,6 +648,43 @@ So the number of hops is what the code controls:
 The database's own region is the remaining lever, and it's yours — see
 *Marked for you*.
 
+### The shelf, the board, the badges, the buzz
+
+Four small things (`0030`), each one a fact the app already had, put
+where it's needed:
+
+- **A slot on the shelf.** A desk that sets *Shelf and board → rows ×
+  slots* (A–H × 1–20) gets every job a slot the moment it's marked ready:
+  the lowest one no *ready* job at that desk holds, assigned by a trigger
+  after the guard and the event recorder (`orders_shelf_slot`; triggers on
+  one event fire in name order). It's on the slip under the token, on the
+  card as *Shelf B3* (tap to move it; a full shelf shows *no slot* to
+  fill in by hand), on the handover panel, on the student's capsule and
+  order card, and on the board. It frees itself: the in-use set is "ready
+  jobs' slots", so collection, cancellation and failure all release it
+  without a write. The guard pins `shelf_slot` against the student.
+- **The board.** `/board?desk=<id>` — tokens *ready to collect* (with the
+  slot), *printing* and *in line*, in type readable from the door. No
+  names, no files: `board()` is security-definer and open to anon, since a
+  token is already on every slip on the shelf. It polls every five seconds
+  (a TV isn't signed in and realtime respects RLS) and rides the socket
+  too when the desk's own account is on it; a shut desk shows nothing.
+  *Shelf and board* in the desk's settings has the link and a copy
+  button. On both hosts.
+- **Cheapest / fastest on the desk picker.** Each listed desk is priced
+  for the job in the upload sheet (or, with nothing staged, ten pages
+  black & white — the note says which) with `quoteOrder()` and asked its
+  wait with `operator_wait()`, all at once. The strictly cheapest open
+  desk and the strictly quickest get a badge; ties earn nobody one, a
+  closed desk can't win, and one desk alone gets no badge at all.
+  `pickBadges()` is pure and checked.
+- **The buzz.** When the socket paints a new status, `navigator.vibrate`
+  — a tap for most moves, a longer pattern for *ready*, a single long one
+  for cancelled or failed — only when the page is visible and the browser
+  has the API. When the tab isn't open, the push notification carries the
+  same pattern, chosen by the dispatcher from the body 0006's trigger
+  wrote.
+
 ### Installing it as an app
 
 The site installs to the home screen on the student's say-so, not the
@@ -927,14 +964,15 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0029** in the SQL editor, pasted from the files. Until
+2. **Run 0022 → 0030** in the SQL editor, pasted from the files. Until
    0025, the fee panel shows no due date; until 0024, the join page shows a
    migration message in the application panel; until 0026, *Shut this
    desk* on `/admin/desks` errors with a missing function; until 0027,
    every desk pays as a personal id and saving *Business QR id* fails;
    until 0028, no bill rounds and the confirm row's amount is not kept;
    until 0029, the capsule's queue position errors quietly and shows no
-   place in the queue.
+   place in the queue; until 0030, the board says "reconnecting…", no
+   slot is assigned, and saving the shelf fails.
 3. **Move the database nearer.** The Supabase project resolves to Tokyo
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a

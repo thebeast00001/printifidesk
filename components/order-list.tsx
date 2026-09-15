@@ -180,6 +180,11 @@ function OrderCard({
                 ? "Declined"
                 : STATUS_LABEL[order.status]}
             </span>
+            {order.status === "ready" && order.shelf_slot && (
+              <span className="rounded-full border border-sage-ink/30 bg-sage px-2.5 py-1 font-mono text-[10.5px] font-semibold whitespace-nowrap text-sage-ink">
+                Shelf {order.shelf_slot}
+              </span>
+            )}
           </div>
 
           <p className="m-0 mt-1.5 font-mono text-[11.5px] text-muted">

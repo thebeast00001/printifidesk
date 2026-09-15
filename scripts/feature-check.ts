@@ -3,6 +3,8 @@ import { normalisePhone } from "../lib/phone";
 import { summarisePages } from "../lib/pages";
 import { buildSlots } from "../components/pickup-picker";
 import { isValidVpa, parseUpiQr, upiLink } from "../lib/upi";
+import { shelfLabel, shelfSlots } from "../lib/orders";
+import { pickBadges } from "../components/operator-picker";
 import { paise, quoteOrder, rateCardOf, roundedTotal } from "../lib/pricing";
 import type { Operator } from "../lib/orders";
 import { secretMatches } from "../lib/server/secret";
@@ -205,6 +207,8 @@ for (const column of [
   "rounding",
   "payment_received",
   "shortfall_cleared_at",
+  // 0030: where the packet is — the desk's to set, never the student's.
+  "shelf_slot",
 ]) {
   check(`pins ${column}`, new RegExp(`new\\.${column}\\s*:=\\s*old\\.${column}`).test(body), true);
 }
@@ -357,6 +361,27 @@ check("desktop Firefox is offered nothing", canInstall(base), false);
 check("Android that turned the dialog down still gets the menu route", canInstall({ ...base, platform: "android", dismissed: true }), true);
 check("desktop that turned it down gets nothing", canInstall({ ...base, dismissed: true }), false);
 check("student /terms passes", routeFor("student", "/terms", two), { kind: "pass" });
+check("desk /board passes", routeFor("desk", "/board", two), { kind: "pass" });
+check("student /board passes", routeFor("student", "/board", two), { kind: "pass" });
+
+console.log("\n— the shelf and the badges —");
+check("A1 is row 1 col 1", shelfLabel(1, 1), "A1");
+check("H20 is the last slot", shelfLabel(8, 20), "H20");
+check("2×3 shelf, filled row by row", shelfSlots(2, 3), ["A1", "A2", "A3", "B1", "B2", "B3"]);
+check("no rows, no shelf", shelfSlots(0, 9), []);
+check("rows capped at 8", shelfSlots(12, 1).length, 8);
+const desks = [
+  { id: "a", open: true, total: 40, wait: 12 },
+  { id: "b", open: true, total: 36, wait: 5 },
+  { id: "c", open: false, total: 20, wait: 1 },
+];
+check("cheapest open desk", pickBadges(desks).cheapest, "b");
+check("fastest open desk", pickBadges(desks).fastest, "b");
+check("a closed desk wins nothing", pickBadges(desks).cheapest === "c", false);
+check("one desk, no badges", pickBadges([desks[0]]), { cheapest: null, fastest: null });
+check("a tie on price earns no badge", pickBadges([{ ...desks[0], total: 36 }, desks[1]]).cheapest, null);
+check("a tie on wait earns no badge", pickBadges([{ ...desks[0], wait: 5 }, desks[1]]).fastest, null);
+check("unknown waits don't compete", pickBadges([{ ...desks[0], wait: null }, desks[1]]).fastest, null);
 check("desk /orders → student site", routeFor("desk", "/orders", two), { kind: "redirect", to: "/orders", host: "student" });
 check("desk /orders, single → the queue", routeFor("desk", "/orders", one), { kind: "redirect", to: "/" });
 

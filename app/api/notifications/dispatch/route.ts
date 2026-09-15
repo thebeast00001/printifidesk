@@ -150,6 +150,9 @@ export async function drain(): Promise<Response> {
                     body: row.body,
                     tag: row.order_id ? `order-${row.order_id}` : "printify",
                     url: "/orders",
+                    // The one worth feeling in a pocket is "ready"; the body
+                    // is written by the trigger in 0006 and starts with it.
+                    vibrate: /^ready to collect/i.test(row.body) ? [70, 50, 70, 50, 120] : [40],
                   },
             ),
           );

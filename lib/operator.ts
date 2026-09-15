@@ -282,6 +282,13 @@ export async function acceptOrder(orderId: string, received?: number): Promise<v
   });
 }
 
+/** Move a packet — or say where it is when the shelf was full. Empty clears it. */
+export async function setShelfSlot(orderId: string, slot: string): Promise<void> {
+  const clean = slot.trim().toUpperCase();
+  if (clean && !/^[A-H][0-9]{1,2}$/.test(clean)) throw new Error("A slot is a row letter and a number, like B3.");
+  await patchOrder(orderId, { shelf_slot: clean || null });
+}
+
 /** The counter took the rest in cash. */
 export async function clearShortfall(orderId: string): Promise<void> {
   await patchOrder(orderId, { shortfall_cleared_at: new Date().toISOString() });

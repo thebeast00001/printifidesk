@@ -26,6 +26,8 @@ self.addEventListener("push", (event) => {
       // than stacking three of them as a job moves through the queue.
       tag: payload.tag || "printify-order",
       renotify: true,
+      // The pattern the dispatcher chose: long for "ready", a tap otherwise.
+      vibrate: Array.isArray(payload.vibrate) ? payload.vibrate : [40],
       data: { url: payload.url || "/orders" },
       requireInteraction: payload.requireInteraction === true,
     }),

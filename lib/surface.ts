@@ -83,6 +83,8 @@ const SHARED_PREFIXES = [
   "/desk.webmanifest",
   "/privacy",
   "/terms",
+  // The counter screen. A TV at the shop may have either host typed in.
+  "/board",
 ];
 
 const under = (path: string, prefix: string) => path === prefix || path.startsWith(prefix + "/");

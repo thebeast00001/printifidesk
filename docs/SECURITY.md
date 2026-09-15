@@ -421,3 +421,5 @@ The security-relevant scenarios in `check:sql`, by name:
 - a desk's UPI id is personal until it says merchant (junk kinds and codes refused); the fee id the same, and a five-argument set_platform_fee leaves it
 - a desk that rounds is priced to the rupee in SQL and the browser alike (30 jobs; fee and lines untouched, rounding on the row and in the snapshot)
 - the amount received is the desk's fact and the amount sent the student's claim: the student can't write the desk's columns, an absurd claim is refused, the claim freezes on confirmation, a bare confirm records the bill
+- ready jobs take the lowest free shelf slot and free it on leaving 'ready'; the student can't move a packet, a junk slot is refused, a full shelf hands out nothing, a desk with no shelf assigns nothing; the board leads with ready, carries no name or file, and is dark for a shut desk
+- queue_status_mine returns the caller's newest live order and nothing for a stranger

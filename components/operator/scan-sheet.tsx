@@ -557,6 +557,11 @@ function MatchPanel({
       </p>
 
       <p className="font-figure m-0 mt-1 text-[44px] leading-none font-extrabold">{order.token}</p>
+      {order.shelf_slot && (
+        <p className="m-0 mt-1 font-mono text-[15px] font-semibold tracking-[0.1em] text-sage-ink">
+          SHELF {order.shelf_slot}
+        </p>
+      )}
 
       <p className="m-0 mt-2 text-[13px]">
         {order.order_items?.[0]?.name ?? `${order.pages} pages`}

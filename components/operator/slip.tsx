@@ -85,6 +85,11 @@ export function SlipDialog({
                   <p className="font-figure m-0 mt-1 text-[56px] leading-none font-extrabold tracking-[-0.03em]">
                     {order.token ?? "—"}
                   </p>
+                  {order.shelf_slot && (
+                    <p className="m-0 mt-1.5 font-mono text-[13px] font-semibold tracking-[0.1em] text-[#333]">
+                      SHELF {order.shelf_slot}
+                    </p>
+                  )}
                 </div>
                 {qr && (
                   /* eslint-disable-next-line @next/next/no-img-element */

@@ -7,6 +7,7 @@ import {
   Banknote,
   Check,
   Coins,
+  Package,
   ChevronDown,
   Clock,
   Download,
@@ -28,6 +29,7 @@ import {
   advance,
   clearShortfall,
   declineOrder,
+  setShelfSlot,
   openOrderFile,
   operatorOrders,
   operatorStats,
@@ -432,6 +434,7 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
                     void run(order.id, () => acceptOrder(order.id, received));
                   }}
                   onShortfallCleared={() => run(order.id, () => clearShortfall(order.id))}
+                  onShelf={(slot) => run(order.id, () => setShelfSlot(order.id, slot))}
                   onDecline={(reason) => run(order.id, () => declineOrder(order.id, reason))}
                   onAdvance={(to, label) => run(order.id, () => advance(order.id, to, label))}
                   onPriority={() => run(order.id, () => setPriority(order.id, !order.is_priority))}
@@ -535,6 +538,7 @@ function OrderCard({
   onAccept,
   confirmNow,
   onShortfallCleared,
+  onShelf,
   onDecline,
   onAdvance,
   onPriority,
@@ -556,6 +560,8 @@ function OrderCard({
   /** Opened by the Next-up bar when the amount needs checking. */
   confirmNow?: boolean;
   onShortfallCleared: () => void;
+  /** Where the packet is. Only while ready; the trigger fills it first. */
+  onShelf: (slot: string) => void;
   onDecline: (reason: string) => void;
   onAdvance: (to: OrderStatus, label: string) => void;
   onPriority: () => void;
@@ -654,6 +660,9 @@ function OrderCard({
                     ? ` · ${order.payment_reference}`
                     : " by UPI"}
               </span>
+            )}
+            {order.status === "ready" && (
+              <ShelfChip slot={order.shelf_slot ?? null} hasShelf={(operator.shelf_rows ?? 0) > 0} busy={busy} onChange={onShelf} />
             )}
             {balance.short > 0 && (
               <span
@@ -1230,6 +1239,64 @@ const REFUND_REASONS = [
   "Cancelled before printing",
   "Machine broke down",
 ];
+
+/**
+ * "Shelf B3" on a ready card, and a way to change it — a packet gets moved,
+ * or the shelf was full when the job came off the machine. Empty clears it.
+ */
+function ShelfChip({
+  slot,
+  hasShelf,
+  busy,
+  onChange,
+}: {
+  slot: string | null;
+  hasShelf: boolean;
+  busy: boolean;
+  onChange: (slot: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(slot ?? "");
+  useEffect(() => setValue(slot ?? ""), [slot]);
+  if (!hasShelf && !slot) return null;
+  if (editing) {
+    return (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          setEditing(false);
+          if (value.trim().toUpperCase() !== (slot ?? "")) onChange(value);
+        }}
+        className="flex items-center gap-1"
+      >
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value.toUpperCase().replace(/[^A-H0-9]/g, "").slice(0, 3))}
+          onBlur={() => setEditing(false)}
+          placeholder="B3"
+          aria-label="Shelf slot"
+          className="h-7 w-14 rounded-full border border-ink bg-surface px-2 font-mono text-[11px] font-semibold uppercase outline-none"
+        />
+      </form>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      disabled={busy}
+      title={slot ? "Tap to move it" : "The shelf was full when this came off the machine — tap to say where it went"}
+      className={cn(
+        "flex items-center gap-1 rounded-full px-2.5 py-1 text-[10.5px] font-semibold",
+        slot ? "bg-sage text-sage-ink" : "border border-dashed border-clay-ink text-clay-ink",
+      )}
+    >
+      <Package size={10} strokeWidth={2.4} />
+      {slot ? `Shelf ${slot}` : "no slot"}
+    </button>
+  );
+}
 
 function ConfirmRow({
   order,
