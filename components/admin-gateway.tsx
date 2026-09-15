@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Check, CreditCard, Loader2, RefreshCw } from "lucide-react";
-import { checkDesk, connectDesk, gatewayMode } from "@/lib/gateway";
+import { checkDesk, connectDesk, disconnectDesk, gatewayMode } from "@/lib/gateway";
 import type { Desk } from "@/lib/operator";
 import { cn, easeIos } from "@/lib/utils";
 
@@ -17,7 +17,7 @@ import { cn, easeIos } from "@/lib/utils";
 export function GatewayPanel({ desk, onChanged }: { desk: Desk; onChanged: () => Promise<void> | void }) {
   const mode = gatewayMode();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<"connect" | "check" | null>(null);
+  const [busy, setBusy] = useState<"connect" | "check" | "disconnect" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
@@ -62,6 +62,22 @@ export function GatewayPanel({ desk, onChanged }: { desk: Desk; onChanged: () =>
     }
   }
 
+  async function disconnect() {
+    if (!window.confirm(`Forget ${desk.name}'s Cashfree connection here? Students stop seeing online payment at this desk until it's connected again.`)) return;
+    setBusy("disconnect");
+    setError(null);
+    setNote(null);
+    try {
+      await disconnectDesk(desk.id);
+      setNote("Disconnected here. Connect again with the account for this environment.");
+      await onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't disconnect.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function check() {
     setBusy("check");
     setError(null);
@@ -101,14 +117,23 @@ export function GatewayPanel({ desk, onChanged }: { desk: Desk; onChanged: () =>
         {!mode ? (
           <p className="m-0 text-[11.5px] text-muted">Cashfree isn&apos;t configured on this deployment.</p>
         ) : desk.gateway_vendor_id ? (
-          <button
-            onClick={() => void check()}
-            disabled={busy !== null}
-            className="flex items-center gap-1.5 text-[11.5px] font-semibold text-muted underline-offset-2 hover:underline disabled:opacity-50"
-          >
-            {busy === "check" ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} strokeWidth={2.2} />}
-            Check with Cashfree
-          </button>
+          <span className="flex items-center gap-3">
+            <button
+              onClick={() => void check()}
+              disabled={busy !== null}
+              className="flex items-center gap-1.5 text-[11.5px] font-semibold text-muted underline-offset-2 hover:underline disabled:opacity-50"
+            >
+              {busy === "check" ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} strokeWidth={2.2} />}
+              Check with Cashfree
+            </button>
+            <button
+              onClick={() => void disconnect()}
+              disabled={busy !== null}
+              className="text-[11.5px] font-semibold text-muted underline-offset-2 hover:text-clay-ink hover:underline disabled:opacity-50"
+            >
+              {busy === "disconnect" ? "…" : "Disconnect"}
+            </button>
+          </span>
         ) : (
           <button
             onClick={() => setOpen((v) => !v)}

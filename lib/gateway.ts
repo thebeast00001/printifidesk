@@ -167,3 +167,10 @@ export async function checkDesk(operatorId: string): Promise<{ status: string; c
   if (!res.ok || !body.ok) throw new Error(body.error ?? "Couldn't check with Cashfree.");
   return { status: body.status ?? "off", cashfreeStatus: body.cashfreeStatus };
 }
+
+/** Forget the desk's vendor here (admin). Cashfree keeps its record; the desk is offered online payment again only once reconnected. */
+export async function disconnectDesk(operatorId: string): Promise<void> {
+  const res = await fetch(`/api/payments/vendor?operator=${encodeURIComponent(operatorId)}`, { method: "DELETE" });
+  const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+  if (!res.ok || !body.ok) throw new Error(body.error ?? "Couldn't disconnect.");
+}

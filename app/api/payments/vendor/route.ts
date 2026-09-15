@@ -117,6 +117,26 @@ export async function GET(request: Request) {
   }
 }
 
+/**
+ * Forget the desk's vendor here — needed when moving from sandbox to
+ * production (vendors live in one environment), or when a desk changes
+ * hands. Nothing at Cashfree is deleted; the desk simply stops being
+ * offered online payment until it's connected again.
+ */
+export async function DELETE(request: Request) {
+  const gate = await adminGate();
+  if (gate.fail) return gate.fail;
+  const { supabase } = gate;
+  const operatorId = new URL(request.url).searchParams.get("operator") ?? "";
+  if (!/^[0-9a-f-]{36}$/i.test(operatorId)) return fail("Which desk?");
+  const { error } = await supabase
+    .from("operators")
+    .update({ gateway_vendor_id: null, gateway_status: "off", gateway_checked_at: new Date().toISOString() })
+    .eq("id", operatorId);
+  if (error) return fail(error.message, 500);
+  return Response.json({ ok: true, status: "off" });
+}
+
 async function adminGate() {
   if (!cashfreeConfigured()) return { fail: fail("Cashfree isn't configured on this deployment (CASHFREE_APP_ID / CASHFREE_SECRET_KEY).", 503) };
   const userId = await callerId();
