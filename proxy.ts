@@ -98,7 +98,10 @@ export default clerkMiddleware(
         // No one may frame this page — the token QR and the pay button are
         // exactly what a clickjacking overlay would target.
         "frame-ancestors": ["'none'"],
-        "form-action": ["'self'"],
+        // Cashfree's SDK opens its checkout by posting a form into its own
+        // iframe (sandbox.cashfree.com / api.cashfree.com); with 'self' alone
+        // the post is blocked and the modal stays blank forever.
+        "form-action": ["'self'", "https://*.cashfree.com"],
         "manifest-src": ["'self'"],
         // next/font serves every face from this origin.
         "font-src": ["'self'"],

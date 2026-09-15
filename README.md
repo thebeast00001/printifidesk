@@ -917,7 +917,12 @@ How the pieces sit:
   staff alike.
 - **The browser** (`lib/gateway.ts`) only ever sees a payment session
   id. It loads Cashfree's SDK from a script it creates (trusted under the
-  strict-dynamic CSP; the checkout iframe is allowed by `frame-src`),
+  strict-dynamic CSP), and the SDK opens its checkout by **posting a form
+  into an iframe** on `*.cashfree.com` — so the CSP allows that host in
+  `frame-src`, `connect-src` and **`form-action`**. Without the last, the
+  post is blocked, the modal stays blank behind its blur and "Opening
+  checkout…" never ends; the console says
+  `violates … "form-action 'self'"`. It
   opens the modal, then polls `status` for up to twelve seconds; after
   that the order's realtime row moves on its own when the webhook lands.
   A student without a phone number in Settings is sent to add one —
