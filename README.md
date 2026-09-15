@@ -641,6 +641,15 @@ So the number of hops is what the code controls:
   writes drop the cache; the header's realtime reload bypasses it.
 - A status change still arrives over the socket and is painted from the
   payload before anything is refetched.
+- **The app's own writes don't wait for the socket.** `lib/changed.ts` is
+  one word from the code that writes to the hooks that read: `createOrder`,
+  `cancelOrder` and the pay sheet's claim say `changed("orders")`, and
+  `chooseOperator` says `changed("desk")`; `useReloadOn(topic, load)` in
+  the tracking hooks reloads on it. Before this the capsule learned of an
+  order it had just placed only from the INSERT event — late or lost, it
+  sat on *no active order* until a reload — and choosing a desk reloaded
+  only the picker, so the print sheet, top bar and upload card kept
+  pricing the colour toggle from the previous desk's rate card.
 - `vercel.json` pins the functions to **`bom1`** (Mumbai). Without it Vercel
   runs them in `iad1` (Washington), which put every server-rendered page
   a quarter of the way round the world from the people loading it.

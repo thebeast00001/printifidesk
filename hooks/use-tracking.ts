@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuthKey } from "./use-auth-key";
+import { useChanged, type Topic } from "@/lib/changed";
 import { ensureSession, getSupabase, type SessionState } from "@/lib/supabase/client";
 import { subscribeTable, type ConnectionState } from "@/lib/realtime";
 import {
@@ -71,6 +72,21 @@ function useRealtime(onChange: () => void, enabled: boolean, filter?: string) {
 }
 
 /**
+ * Reloads when the app itself changes the topic — an order placed or
+ * cancelled, a desk chosen. The socket is how other people's changes
+ * arrive; our own shouldn't wait on it. Reads `load` through a ref so a
+ * new load identity (a token rotation) doesn't count as a change.
+ */
+function useReloadOn(topic: Topic, load: () => Promise<void> | void) {
+  const version = useChanged(topic);
+  const current = useRef(load);
+  current.current = load;
+  useEffect(() => {
+    if (version > 0) void current.current();
+  }, [version]);
+}
+
+/**
  * A short buzz when the job moves, a longer one when it's ready. Only where
  * the browser has the API and the page is visible — a hidden tab's push
  * notification carries its own pattern from the service worker.
@@ -132,6 +148,7 @@ export function useActiveOrder() {
   useEffect(() => {
     void load();
   }, [load]);
+  useReloadOn("orders", load);
 
   /** Queue position and the timeline are derived; fetch them after painting. */
   const reconcile = useCallback(async (orderId: string) => {
@@ -211,6 +228,7 @@ export function useOrderHistory() {
   useEffect(() => {
     void load();
   }, [load]);
+  useReloadOn("orders", load);
 
   useRealtime(load, backend.state === "ready");
 
@@ -269,6 +287,7 @@ export function useOperatorWait() {
   useEffect(() => {
     void load();
   }, [load]);
+  useReloadOn("desk", load);
 
   useRealtime(load, ready);
 
@@ -298,6 +317,7 @@ export function useActiveCount() {
   useEffect(() => {
     void load();
   }, [load]);
+  useReloadOn("orders", load);
 
   useRealtime(load, ready);
 

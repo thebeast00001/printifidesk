@@ -10,6 +10,7 @@ import { getSupabase } from "@/lib/supabase/client";
 import { UPI_APPS, appLink, isQrOnlyMerchant, isValidVpa, upiLink, type UpiRequest } from "@/lib/upi";
 import { useInstall } from "@/lib/install";
 import { canPayOnline } from "@/lib/gateway";
+import { changed } from "@/lib/changed";
 import { OnlinePay } from "./online-pay";
 import { money } from "@/lib/pricing";
 import { cn, spring } from "@/lib/utils";
@@ -141,6 +142,7 @@ export function PaySheet({
         setError(writeError.message);
         return;
       }
+      changed("orders");
       onClaimed();
       onOpenChange(false);
     },

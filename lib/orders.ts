@@ -1,6 +1,7 @@
 "use client";
 
 import { ensureSession, getSupabase } from "./supabase/client";
+import { changed } from "./changed";
 import { platformSettings } from "./platform";
 import { pokeDispatch } from "./push";
 import type { PrintConfig, RateSource } from "./pricing";
@@ -392,6 +393,9 @@ export async function chooseOperator(operatorId: string): Promise<void> {
     .from("profiles")
     .upsert({ id: session.userId, default_operator_id: operatorId }, { onConflict: "id" });
   if (error) throw new Error(friendly(error.message));
+  // Every screen that prices from the desk — the sheet's colour toggle, the
+  // top bar, the upload card — re-reads it now, not on its next remount.
+  changed("desk");
 }
 
 /**
@@ -532,6 +536,8 @@ export async function createOrder(input: NewOrderInput): Promise<OrderRow> {
     throw new Error(friendly(readError?.message ?? "The order was placed but couldn't be read back."));
   }
 
+  // The capsule and the orders page hear it from here, not from the socket.
+  changed("orders");
   return order as OrderRow;
 }
 
@@ -668,6 +674,7 @@ export async function cancelOrder(orderId: string): Promise<void> {
   // RLS hides a row the student may no longer cancel (already printing) and
   // reports nothing; say so rather than reload into the same screen.
   if (!data || data.length === 0) throw new Error("Too late — the desk has already started on it. Ask at the counter.");
+  changed("orders");
 }
 
 /* ---------- operator side ---------- */
