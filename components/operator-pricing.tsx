@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { Camera, Check, Loader2, RotateCcw } from "lucide-react";
 import { updateOperator, type Operator, type OperatorSettings } from "@/lib/orders";
-import { isValidVpa, parseUpiQr, type UpiKind } from "@/lib/upi";
+import { normaliseVpa, parseUpiQr, vpaProblem, type UpiKind } from "@/lib/upi";
 import { decodePixels } from "./operator/scan-sheet";
 import { money, quote, rateCardOf, DEFAULT_CONFIG } from "@/lib/pricing";
 import { cn, spring } from "@/lib/utils";
@@ -329,8 +329,11 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
     setRound(operator.round_to_rupee === true);
   }, [operator.upi_vpa, operator.upi_name, operator.upi_kind, operator.upi_mc, operator.round_to_rupee]);
 
-  const trimmed = vpa.trim();
-  const looksValid = trimmed === "" || isValidVpa(trimmed);
+  // A paste from WhatsApp or a business app brings invisible characters,
+  // and some phones copy a QR's whole upi:// text — both become the id.
+  const trimmed = normaliseVpa(vpa);
+  const problem = vpaProblem(vpa);
+  const looksValid = problem === null;
   const dirty =
     trimmed !== (operator.upi_vpa ?? "") ||
     name.trim() !== (operator.upi_name ?? "") ||
@@ -481,7 +484,7 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
             )}
           />
           <span className={cn("text-[11px] leading-snug", looksValid ? "text-muted" : "text-clay-ink dark:text-clay")}>
-            {looksValid ? "Exactly as it appears in your UPI app" : "That doesn't look like a UPI id"}
+            {problem ?? (trimmed && trimmed !== vpa ? `Will be saved as ${trimmed}` : "Exactly as it appears in your UPI app")}
           </span>
         </label>
 

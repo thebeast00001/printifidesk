@@ -14,7 +14,7 @@ import {
   type PlatformSettings,
 } from "@/lib/platform";
 import { money } from "@/lib/pricing";
-import { isValidVpa, type UpiKind } from "@/lib/upi";
+import { normaliseVpa, vpaProblem, type UpiKind } from "@/lib/upi";
 import { cn, spring } from "@/lib/utils";
 
 const PERIODS: { id: FeePeriod; label: string }[] = [
@@ -251,14 +251,15 @@ function SettingsForm({ settings, onSaved }: { settings: PlatformSettings; onSav
     name.trim() !== (settings.payee_name ?? "") ||
     payeeKind !== settings.payee_kind ||
     Number(grace) !== settings.grace_days;
-  const vpaOk = vpa.trim() === "" || isValidVpa(vpa);
+  const vpaWhy = vpaProblem(vpa);
+  const vpaOk = vpaWhy === null;
 
   async function save() {
     setBusy(true);
     setError(null);
     setSaved(false);
     try {
-      await setPlatformFee({ percent: Number(percent), min: Number(min), vpa, name, graceDays: Number(grace), payeeKind });
+      await setPlatformFee({ percent: Number(percent), min: Number(min), vpa: normaliseVpa(vpa), name, graceDays: Number(grace), payeeKind });
       await onSaved();
       setSaved(true);
       setTimeout(() => setSaved(false), 1800);
@@ -360,7 +361,7 @@ function SettingsForm({ settings, onSaved }: { settings: PlatformSettings; onSav
           {saved ? "Saved" : "Save"}
         </button>
       </div>
-      {!vpaOk && <p className="m-0 mt-2 text-[12px] text-clay-ink dark:text-clay">That doesn&apos;t look like a UPI id.</p>}
+      {!vpaOk && <p className="m-0 mt-2 text-[12px] text-clay-ink dark:text-clay">{vpaWhy}</p>}
       {error && <p className="m-0 mt-2 text-[12px] text-clay-ink dark:text-clay">{error}</p>}
     </form>
   );

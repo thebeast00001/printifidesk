@@ -2,7 +2,7 @@ import { canInstall, platformFrom, type InstallState } from "../lib/install";
 import { normalisePhone } from "../lib/phone";
 import { summarisePages } from "../lib/pages";
 import { buildSlots } from "../components/pickup-picker";
-import { isValidVpa, parseUpiQr, upiLink } from "../lib/upi";
+import { isValidVpa, normaliseVpa, parseUpiQr, upiLink, vpaProblem } from "../lib/upi";
 import { shelfLabel, shelfSlots } from "../lib/orders";
 import { pickBadges } from "../components/operator-picker";
 import { paise, quoteOrder, rateCardOf, roundedTotal } from "../lib/pricing";
@@ -104,8 +104,45 @@ check("plain vpa", isValidVpa("ansh@okhdfcbank"), true);
 check("dots and dashes", isValidVpa("ansh.tyagi-1@ybl"), true);
 check("no handle rejected", isValidVpa("ansh"), false);
 check("empty rejected", isValidVpa(""), false);
-check("spaces rejected", isValidVpa("ansh tyagi@ybl"), false);
+// A space can only be a paste artefact — ids never have one — so it goes rather than refuses.
+check("inner space stripped, then valid", isValidVpa("ansh tyagi@ybl"), true);
 check("double at rejected", isValidVpa("a@b@c"), false);
+
+// Merchant ids, as the business apps actually issue them.
+for (const id of [
+  "Q123456789@ybl",
+  "paytmqr2810050501011ab2c3d4e5@paytm",
+  "gpay-11234567890@okbizaxis",
+  "BHARATPE09912345678@yesbankltd",
+  "merchant.name-01@icici",
+  "9876543210@ibl",
+  "shop_name@axl",
+]) {
+  check(`merchant id ${id.slice(0, 14)}… accepted`, isValidVpa(id), true);
+}
+// What a paste drags along: zero-width spaces, a BOM, a trailing newline, a soft hyphen.
+check("zero-width space stripped", normaliseVpa("Q1234\u200B56789@ybl"), "Q123456789@ybl");
+check("BOM and newline stripped", normaliseVpa("\uFEFFQ123456789@ybl\n"), "Q123456789@ybl");
+check("soft hyphen stripped", normaliseVpa("shop\u00ADname@axl"), "shopname@axl");
+check("inner space stripped", normaliseVpa("Q1234 56789@ybl"), "Q123456789@ybl");
+check("a pasted upi:// text yields its pa", normaliseVpa("upi://pay?pa=Q123456789@ybl&pn=SHOP&mc=5111"), "Q123456789@ybl");
+check("a pasted query fragment yields pa", normaliseVpa("pa=shop%40ybl&pn=x"), "shop@ybl");
+check("valid after normalising", isValidVpa("\u200BQ123456789@ybl "), true);
+// And the reason, when there is one.
+check("no problem when fine", vpaProblem("Q123456789@ybl"), null);
+check("no problem when empty", vpaProblem("   "), null);
+check("missing handle explained", vpaProblem("Q123456789"), "Missing the @bank part, e.g. name@ybl.");
+check("bad character named", vpaProblem("shop name#1@ybl"), 'Can\'t contain "#" before the @.');
+check("handle must start with a letter", vpaProblem("shop@9ybl"), "The part after @ starts with a letter, like ybl or okaxis.");
+// A bank's Bharat QR: EMVCo tags, the id inside, the category code in 52.
+const tlv = (id: string, v: string) => id + String(v.length).padStart(2, "0") + v;
+const bharat =
+  tlv("00", "01") + tlv("01", "12") +
+  tlv("26", tlv("00", "com.npci.upi.pay") + tlv("01", "shop@yesbank")) +
+  tlv("52", "5812") + tlv("53", "356") + tlv("59", "SHOPX") + tlv("60", "BANGALORE");
+check("Bharat QR → id", parseUpiQr(bharat)?.vpa, "shop@yesbank");
+check("Bharat QR → merchant by tag 52", parseUpiQr(bharat)?.kind, "merchant");
+check("Bharat QR → code", parseUpiQr(bharat)?.merchantCode, "5812");
 
 const link = upiLink({
   vpa: "ansh@okhdfcbank",

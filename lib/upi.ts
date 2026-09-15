@@ -26,11 +26,60 @@
  * from the payee's kind whether to put it in.
  */
 
-/** `name@bank` — letters, digits, a few punctuation marks, then a handle. */
+/**
+ * `name@bank` — letters, digits, dot, dash, underscore, then a handle.
+ * Merchant ids look stranger than personal ones — `Q123456789@ybl`,
+ * `paytmqr2810050501011abcd@paytm`, `gpay-11234567890@okbizaxis`,
+ * `BHARATPE09912345678@yesbankltd` — and every one of them fits this.
+ */
 const VPA_PATTERN = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9.\-_]{1,64}$/;
 
+/**
+ * Whitespace and the invisible characters a copy from WhatsApp, a PDF or
+ * a business app drags along (zero-width spaces, joiners, byte-order
+ * marks, soft hyphens). `trim()` takes some of these and not others; an
+ * id can't contain any of them, so all go.
+ */
+const INVISIBLE = /[\s\u200B-\u200F\u2028-\u202F\u2060-\u206F\uFEFF\u00AD]+/gu;
+
+/**
+ * What someone typed or pasted, made into an id. A whole `upi://pay?…`
+ * string (some phones copy the QR's text) yields its `pa`; anything else
+ * is stripped of what can't be in an id. Case is kept — handles are
+ * case-insensitive, but the id is shown back as entered.
+ */
+export function normaliseVpa(input: string): string {
+  const raw = input.replace(INVISIBLE, "");
+  const fromQr = /upi:\/\/pay\?/i.test(raw) ? parseUpiQr(raw)?.vpa : null;
+  if (fromQr) return fromQr;
+  const m = /(?:^|[?&])pa=([^&\s]+)/i.exec(raw);
+  if (m) return decodeURIComponent(m[1]).replace(INVISIBLE, "");
+  return raw;
+}
+
 export function isValidVpa(vpa: string): boolean {
-  return VPA_PATTERN.test(vpa.trim());
+  return VPA_PATTERN.test(normaliseVpa(vpa));
+}
+
+/**
+ * Why an id was refused, in words — so "invalid" never has to be guessed
+ * at. Null when it's fine.
+ */
+export function vpaProblem(input: string): string | null {
+  const vpa = normaliseVpa(input);
+  if (vpa === "") return null;
+  if (VPA_PATTERN.test(vpa)) return null;
+  const at = vpa.split("@");
+  if (at.length !== 2) return at.length < 2 ? "Missing the @bank part, e.g. name@ybl." : "More than one @.";
+  const [local, handle] = at;
+  const badLocal = local.match(/[^a-zA-Z0-9.\-_]/g);
+  if (badLocal) return `Can't contain ${[...new Set(badLocal)].map((c) => `"${c}"`).join(" ")} before the @.`;
+  const badHandle = handle.match(/[^a-zA-Z0-9.\-_]/g);
+  if (badHandle) return `Can't contain ${[...new Set(badHandle)].map((c) => `"${c}"`).join(" ")} after the @.`;
+  if (local.length < 2) return "Too short before the @.";
+  if (!/^[a-zA-Z]/.test(handle)) return "The part after @ starts with a letter, like ybl or okaxis.";
+  if (handle.length < 2) return "Too short after the @.";
+  return "That doesn't look like a UPI id.";
 }
 
 export type UpiKind = "personal" | "merchant";
@@ -93,14 +142,59 @@ export interface ScannedUpi {
  * that isn't a UPI QR at all.
  */
 export function parseUpiQr(text: string): ScannedUpi | null {
-  const raw = text.trim();
+  const raw = text.replace(INVISIBLE, "");
   const m = /^upi:\/\/pay\?(.*)$/i.exec(raw);
-  if (!m) return null;
+  if (!m) return parseBharatQr(raw);
   const params = new URLSearchParams(m[1]);
-  const vpa = (params.get("pa") ?? "").trim();
-  if (!isValidVpa(vpa)) return null;
+  const vpa = (params.get("pa") ?? "").replace(INVISIBLE, "");
+  if (!VPA_PATTERN.test(vpa)) return null;
   const mc = (params.get("mc") ?? "").trim();
   const merchantCode = /^\d{4}$/.test(mc) && mc !== "0000" ? mc : null;
   const name = (params.get("pn") ?? "").trim() || null;
   return { vpa, name, merchantCode, kind: merchantCode ? "merchant" : "personal" };
+}
+
+/**
+ * A bank's standee is often a Bharat QR — EMVCo tag-length-value text
+ * rather than a `upi://` link. The UPI id sits inside one of the
+ * merchant-account tags (26–51) as its own sub-tag; the category code is
+ * tag 52. Those are merchant QRs by construction, so a category code found
+ * there decides it; without one, the id alone is still worth reading.
+ */
+function parseBharatQr(raw: string): ScannedUpi | null {
+  // Tag 00, length 02, value 01: the payload format indicator every EMV QR opens with.
+  if (!/^000201/.test(raw)) return null;
+  const top = tlvEntries(raw);
+  if (!top) return null;
+  let vpa: string | null = null;
+  for (const { tag, value } of top) {
+    const n = Number(tag);
+    if (n < 26 || n > 51) continue;
+    const inner = tlvEntries(value) ?? [];
+    const hit = inner.find((e) => VPA_PATTERN.test(e.value));
+    if (hit) {
+      vpa = hit.value;
+      break;
+    }
+  }
+  if (!vpa) return null;
+  const mcc = top.find((e) => e.tag === "52")?.value ?? null;
+  const merchantCode = mcc && /^\d{4}$/.test(mcc) && mcc !== "0000" ? mcc : null;
+  const name = top.find((e) => e.tag === "59")?.value.trim() || null;
+  return { vpa, name, merchantCode, kind: merchantCode ? "merchant" : "personal" };
+}
+
+/** Walks an EMVCo tag-length-value string. Null if the lengths don't add up. */
+function tlvEntries(raw: string): { tag: string; value: string }[] | null {
+  const out: { tag: string; value: string }[] = [];
+  let i = 0;
+  while (i < raw.length) {
+    if (i + 4 > raw.length) return null;
+    const tag = raw.slice(i, i + 2);
+    const len = Number.parseInt(raw.slice(i + 2, i + 4), 10);
+    if (!/^\d{2}$/.test(tag) || !Number.isFinite(len) || i + 4 + len > raw.length) return null;
+    out.push({ tag, value: raw.slice(i + 4, i + 4 + len) });
+    i += 4 + len;
+  }
+  return out;
 }

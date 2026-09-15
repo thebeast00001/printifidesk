@@ -826,6 +826,18 @@ code off it, and `mc` present and not `0000` is what decides the kind.
 Printify's own settle-up id follows the same rule (`payee_kind`, set on
 the Fees page).
 
+The id field takes what people actually paste. `normaliseVpa()` strips
+whitespace and the invisible characters a copy from WhatsApp or a business
+app drags along (zero-width spaces, a BOM, soft hyphens), and a whole
+`upi://pay?…` text — some phones copy the QR's contents — yields its `pa`.
+The hint says *Will be saved as …* when that changed anything, and when an
+id is refused `vpaProblem()` says why in words ("Can't contain "#" before
+the @"), never a bare "invalid". Merchant ids as the apps issue them —
+`Q123456789@ybl`, `paytmqr…@paytm`, `gpay-…@okbizaxis`,
+`BHARATPE…@yesbankltd` — are all accepted and checked. A bank's Bharat QR
+(EMVCo tag-length-value, not a `upi://` link) is read too: the id from a
+merchant-account tag, the category code from tag 52.
+
 `OPERATOR_SELECT` can name a column the live project hasn't got yet if a
 deploy lands before its migration; the operator queries retry once with
 the previous column list on `42703`, so a desk never disappears for that.
