@@ -181,17 +181,17 @@ export async function payWithElement(cf: CashfreeSdk, element: CashfreeElement, 
   // No returnUrl, on purpose: with one, a cancelled app switch lands the
   // student on Cashfree's own result page. Without it the SDK resolves
   // here, in the sheet, and the sheet asks the server what happened.
-  const viaSdk: Promise<OnlineOutcome> = cf
-    .pay({ paymentMethod: element, paymentSessionId: session.paymentSessionId, redirect: "if_required" })
-    .then((result) => outcomeOf(result) ?? awaitPaid(orderId))
-    .catch((e: unknown) => ({ kind: "error", message: e instanceof Error ? e.message : "The payment didn't start." }) as OnlineOutcome);
-
   // The SDK draws its own "check your UPI app" sheet while it waits, and
   // when the student backs out of the app it can sit there spinning —
   // "Closing…" — for as long as its own poll takes. So the sheet watches
   // the student come back and asks the server itself; whichever answers
-  // first wins, and if it was us, the SDK's sheet is taken down.
+  // first wins, and if it was us, the SDK's sheet is taken down. The
+  // watcher is armed before pay() so the app switch can't slip past it.
   const viaReturn = watchReturn(orderId);
+  const viaSdk: Promise<OnlineOutcome> = cf
+    .pay({ paymentMethod: element, paymentSessionId: session.paymentSessionId, redirect: "if_required" })
+    .then((result) => outcomeOf(result) ?? awaitPaid(orderId))
+    .catch((e: unknown) => ({ kind: "error", message: e instanceof Error ? e.message : "The payment didn't start." }) as OnlineOutcome);
   const outcome = await Promise.race([viaSdk, viaReturn.promise]);
   viaReturn.stop();
   dismissSdkOverlays();
@@ -204,8 +204,20 @@ export async function payWithElement(cf: CashfreeSdk, element: CashfreeElement, 
  */
 export function dismissSdkOverlays() {
   if (typeof document === "undefined") return;
-  document.querySelectorAll('iframe[name^="framemodal-"]').forEach((f) => f.remove());
+  // Everything the SDK is known to append at body level while a payment
+  // runs (from its source): the modal iframe, the full-screen loader, the
+  // hosted-checkout container — and, as a net, any other direct child of
+  // body it pinned to the top of the stacking order.
+  const known = document.querySelectorAll(
+    'iframe[name^="framemodal-"], [id^="loaderfull-global"], #cashfree-modal-container, [id^="cfredirect_"], #css-cf-added-loader',
+  );
+  known.forEach((n) => n.remove());
+  for (const child of Array.from(document.body.children)) {
+    const style = getComputedStyle(child);
+    if (style.position === "fixed" && style.zIndex === "2147483647") child.remove();
+  }
   document.body.style.removeProperty("overflow");
+  document.documentElement.style.removeProperty("overflow");
 }
 
 /**
@@ -246,9 +258,11 @@ function watchReturn(orderId: string): { promise: Promise<OnlineOutcome>; stop: 
         return;
       }
       if (hidAt.value !== null) {
-        // Back from the app: a dozen asks, then it's on the webhook.
+        // Back from the app: five asks over ~7 s (the server reads Cashfree
+        // directly, so a real payment shows within one), then it's on the
+        // webhook and the SDK's sheet comes down either way.
         document.removeEventListener("visibilitychange", onVisible!);
-        void poll(8, true);
+        void poll(5, true);
       }
     };
     document.addEventListener("visibilitychange", onVisible);
