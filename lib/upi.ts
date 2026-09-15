@@ -91,10 +91,13 @@ export interface UpiRequest {
   amount?: number;
   /** Shown in the payer's app and in the operator's statement. */
   note: string;
-  /** Transaction reference — the order token, so it can be matched later. */
+  /**
+   * Transaction reference. Letters and digits only — the spec says
+   * alphanumeric and the strict apps mean it — and long enough that the
+   * PSPs that want more than a short token don't refuse it. Anything else
+   * is dropped before it goes in.
+   */
   reference: string;
-  /** Merchant category code from the shop's own QR, when it had one. */
-  merchantCode?: string | null;
 }
 
 /**
@@ -103,16 +106,34 @@ export interface UpiRequest {
  * Amount must be a plain decimal with at most two places; some UPI apps reject
  * a value with grouping separators or more precision, and the failure is a
  * silent "invalid request" rather than anything useful.
+ *
+ * No `mc` and no `mode`/`orgid`/`sign`, deliberately. Those mark a link as
+ * a merchant-generated intent, and the apps then hold it to the merchant
+ * rules — a signature from the merchant's PSP above all — which a link a
+ * website built can't meet; PhonePe answers "our banking partner is unable
+ * to process your request". Whether the payee is a merchant is a fact of
+ * the id itself, known to the PSP, and a plain `pa`/`am` link to a
+ * merchant id goes through on that alone.
  */
-export function upiLink({ vpa, payeeName, amount, note, reference, merchantCode }: UpiRequest): string {
+export function upiLink({ vpa, payeeName, amount, note, reference }: UpiRequest): string {
   const params = new URLSearchParams({ pa: vpa.trim(), pn: payeeName.trim() });
-  if (merchantCode && /^\d{4}$/.test(merchantCode)) params.set("mc", merchantCode);
   if (amount !== undefined) params.set("am", amount.toFixed(2));
   params.set("cu", "INR");
-  params.set("tn", note.slice(0, 50));
-  params.set("tr", reference.slice(0, 35));
+  params.set("tn", note.replace(/[^A-Za-z0-9 ]/g, " ").replace(/\s+/g, " ").trim().slice(0, 50));
+  params.set("tr", cleanReference(reference));
   // URLSearchParams encodes spaces as "+", which some UPI apps show literally.
   return `upi://pay?${params.toString().replace(/\+/g, "%20")}`;
+}
+
+/**
+ * A reference the strictest app accepts: alphanumeric, at most 35, and
+ * padded with the Printify mark when the token alone is only a few
+ * characters. `B66` becomes `PRINTIFYB66`; a raw id keeps its hex.
+ */
+export function cleanReference(reference: string): string {
+  const bare = reference.replace(/[^A-Za-z0-9]/g, "");
+  const withMark = bare.length < 8 ? `PRINTIFY${bare}` : bare;
+  return withMark.slice(0, 35);
 }
 
 /** Apps that take the same URI but want their own scheme on Android. */

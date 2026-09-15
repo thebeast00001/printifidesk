@@ -63,9 +63,9 @@ export function PaySheet({
       payeeName: operator.upi_name?.trim() || operator.short_name || operator.name,
       // A personal id can't take the amount in the link; the payer types it.
       amount: operator.upi_kind === "merchant" ? Number(order.total) : undefined,
-      merchantCode: operator.upi_kind === "merchant" ? operator.upi_mc : null,
       note: `Printify ${order.token ?? ""}`.trim(),
-      reference: order.token ?? order.id.slice(0, 12),
+      // Token plus the order's first hex so two B66s on different days differ.
+      reference: `${order.token ?? ""}${order.id.replace(/-/g, "").slice(0, 8)}`,
     };
   }, [order, operator]);
 

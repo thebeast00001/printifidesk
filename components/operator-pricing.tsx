@@ -440,7 +440,7 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
           <>
             The id behind your PhonePe Business, Paytm for Business or GPay Business QR — the one on
             the standee. UPI apps let those take the amount in the link; the student taps once.
-            {mc && <> Merchant code <span className="font-mono">{mc}</span> from your QR is sent with it.</>}
+            {mc && <> Your QR&apos;s merchant code is <span className="font-mono">{mc}</span>.</>}
           </>
         ) : (
           <>

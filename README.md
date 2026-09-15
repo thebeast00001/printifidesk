@@ -826,6 +826,18 @@ code off it, and `mc` present and not `0000` is what decides the kind.
 Printify's own settle-up id follows the same rule (`payee_kind`, set on
 the Fees page).
 
+The link to a merchant id carries `pa`, `pn`, `am`, `cu`, `tn`, `tr` and
+nothing else — no `mc`, `mode`, `orgid` or `sign`. Those mark a link as
+a *merchant-generated* intent, and the apps then hold it to the merchant
+rules, above all a signature from the merchant's own PSP, which a link a
+website built can't carry; PhonePe answers "our banking partner is unable
+to process your request". Whether the payee is a merchant is a fact of
+the id, known to the PSP, and a plain link goes through on that alone.
+The merchant code read off the QR is kept on the row for the record, not
+sent. `tr` is alphanumeric and padded (`PRINTIFYB66…`) because the strict
+apps refuse punctuation and very short references; `tn` is letters,
+digits and spaces.
+
 The id field takes what people actually paste. `normaliseVpa()` strips
 whitespace and the invisible characters a copy from WhatsApp or a business
 app drags along (zero-width spaces, a BOM, soft hyphens), and a whole

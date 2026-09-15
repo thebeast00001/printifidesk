@@ -88,7 +88,7 @@ export function FeePanel({ operator }: { operator: Operator }) {
         payeeName: settings!.payee_name || "Printify",
         amount: payeeMerchant ? outstanding : undefined,
         note: `Printify fee · ${operator.short_name || operator.name}`.slice(0, 50),
-        reference: `PF-${operator.id.slice(0, 8)}`,
+        reference: `PRINTIFYFEE${operator.id.replace(/-/g, "").slice(0, 8)}`,
       })
     : null;
 

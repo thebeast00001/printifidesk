@@ -2,7 +2,7 @@ import { canInstall, platformFrom, type InstallState } from "../lib/install";
 import { normalisePhone } from "../lib/phone";
 import { summarisePages } from "../lib/pages";
 import { buildSlots } from "../components/pickup-picker";
-import { isValidVpa, normaliseVpa, parseUpiQr, upiLink, vpaProblem } from "../lib/upi";
+import { cleanReference, isValidVpa, normaliseVpa, parseUpiQr, upiLink, vpaProblem } from "../lib/upi";
 import { shelfLabel, shelfSlots } from "../lib/orders";
 import { pickBadges } from "../components/operator-picker";
 import { paise, quoteOrder, rateCardOf, roundedTotal } from "../lib/pricing";
@@ -154,7 +154,7 @@ const link = upiLink({
 check("scheme", link.startsWith("upi://pay?"), true);
 check("amount has 2 decimals", /[?&]am=55\.00(&|$)/.test(link), true);
 check("currency set", /[?&]cu=INR(&|$)/.test(link), true);
-check("reference carried", /[?&]tr=A47(&|$)/.test(link), true);
+check("reference carried, padded to a real length", /[?&]tr=PRINTIFYA47(&|$)/.test(link), true);
 // "+" for a space is shown literally by some UPI apps.
 check("no plus-encoded spaces", link.includes("+"), false);
 check("space is %20", link.includes("Printify%20Block%20C"), true);
@@ -168,11 +168,19 @@ check("half rupee formats", /[?&]am=12\.50(&|$)/.test(rounded), true);
 // it, so the link carries none and the payer types it.
 const personal = upiLink({ vpa: "ansh@ybl", payeeName: "Ansh", note: "Printify B12", reference: "B12" });
 check("no amount → no am=", /[?&]am=/.test(personal), false);
-check("no amount still carries the reference", /[?&]tr=B12(&|$)/.test(personal), true);
-const withMc = upiLink({ vpa: "shop@ybl", payeeName: "Shop", amount: 10, note: "n", reference: "r", merchantCode: "5111" });
-check("merchant code carried", /[?&]mc=5111(&|$)/.test(withMc), true);
-const badMc = upiLink({ vpa: "shop@ybl", payeeName: "Shop", amount: 10, note: "n", reference: "r", merchantCode: "51" });
-check("a malformed merchant code is dropped", /[?&]mc=/.test(badMc), false);
+check("no amount still carries the reference", /[?&]tr=PRINTIFYB12(&|$)/.test(personal), true);
+// Nothing that marks the link as a merchant-generated intent: the apps then
+// demand the merchant PSP's signature, and PhonePe refuses without it.
+const toMerchant = upiLink({ vpa: "Q123456789@ybl", payeeName: "Shop", amount: 10, note: "Printify B66", reference: "B66abcd1234" });
+check("no mc in the link", /[?&](mc|mode|orgid|sign)=/.test(toMerchant), false);
+check("reference is alphanumeric", /[?&]tr=([A-Za-z0-9]+)(&|$)/.test(toMerchant), true);
+check("a short token is padded", cleanReference("B66"), "PRINTIFYB66");
+check("a long reference keeps itself", cleanReference("B66abcd1234"), "B66abcd1234");
+check("punctuation dropped from the reference", cleanReference("PF-1234-ABCD"), "PF1234ABCD");
+check("reference capped at 35", cleanReference("A".repeat(50)).length, 35);
+check("note keeps letters, digits, spaces", /[?&]tn=Printify%20B66(&|$)/.test(toMerchant), true);
+const oddNote = upiLink({ vpa: "a@b", payeeName: "x", note: "Printify #B66 — colour!", reference: "r" });
+check("note punctuation becomes spaces", /[?&]tn=Printify%20B66%20colour(&|$)/.test(oddNote), true);
 
 // Reading the shop's own QR: mc decides the kind.
 const business = parseUpiQr("upi://pay?pa=Q123456789@ybl&pn=SHARMA%20XEROX&mc=5111&mode=02&purpose=00");
