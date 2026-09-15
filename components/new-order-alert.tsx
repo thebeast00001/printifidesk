@@ -17,9 +17,10 @@ const STORAGE_KEY = "printify.operator.alert";
  * The tone is synthesised rather than shipped as an audio file: no asset to
  * load, no failure if it 404s, and it can't be blocked as third-party media.
  */
-export function useNewOrderAlert(pendingCount: number | null) {
+export function useNewOrderAlert(pendingCount: number | null, paid?: PaidSignal) {
   const [enabled, setEnabled] = useState(false);
   const previous = useRef<number | null>(null);
+  const previousPaid = useRef<number | null>(null);
   const audio = useRef<AudioContext | null>(null);
 
   useEffect(() => {
@@ -30,7 +31,7 @@ export function useNewOrderAlert(pendingCount: number | null) {
     }
   }, []);
 
-  const chime = useCallback(() => {
+  const chime = useCallback((notes: readonly (readonly [number, number])[] = NEW_ORDER_NOTES) => {
     try {
       audio.current ??= new AudioContext();
       const ctx = audio.current;
@@ -41,7 +42,7 @@ export function useNewOrderAlert(pendingCount: number | null) {
       const now = ctx.currentTime;
       // Two short notes — distinct from a phone notification, easy to hear
       // over a printer without being startling.
-      for (const [at, freq] of [[0, 880], [0.18, 1175]] as const) {
+      for (const [at, freq] of notes) {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = "sine";
@@ -81,6 +82,23 @@ export function useNewOrderAlert(pendingCount: number | null) {
     notify(pendingCount);
   }, [pendingCount, enabled, chime, notify]);
 
+  // A payment through Printify: the order skips New and lands in the queue
+  // already paid, so the count above never rises for it. Its own three
+  // notes, and a notification that names the token.
+  useEffect(() => {
+    if (!paid) return;
+    const before = previousPaid.current;
+    previousPaid.current = paid.count;
+    if (before === null || paid.count <= before || !enabled) return;
+    chime(PAID_NOTES);
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    new Notification("Paid online", {
+      body: paid.latest ? `${paid.latest} is paid and in the queue.` : "An order was paid and is in the queue.",
+      tag: "printify-paid-online",
+      icon: "/icon-192.png",
+    });
+  }, [paid, enabled, chime]);
+
   const toggle = useCallback(async () => {
     const next = !enabled;
     setEnabled(next);
@@ -102,6 +120,16 @@ export function useNewOrderAlert(pendingCount: number | null) {
 
   return { enabled, toggle };
 }
+
+/** How many payments through Printify this screen has seen land, and the newest one's token and amount. */
+export interface PaidSignal {
+  count: number;
+  latest: string | null;
+}
+
+const NEW_ORDER_NOTES = [[0, 880], [0.18, 1175]] as const;
+// Rising, one more than the new-order chime: money in, nothing to check.
+const PAID_NOTES = [[0, 784], [0.14, 988], [0.28, 1319]] as const;
 
 export function AlertToggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
   return (

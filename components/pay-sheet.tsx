@@ -61,6 +61,16 @@ export function PaySheet({
     void getOperator(order.operator_id).then(setOperator);
   }, [open, order]);
 
+  // The row is live. When the money is confirmed — Cashfree's webhook, or
+  // the desk taking a direct payment — while this is open, there is
+  // nothing left to do here; it closes on its own instead of asking the
+  // student to say they paid.
+  useEffect(() => {
+    if (!open || !order?.payment_taken_at) return;
+    onClaimed();
+    onOpenChange(false);
+  }, [open, order?.payment_taken_at, onClaimed, onOpenChange]);
+
   const merchant = operator?.upi_kind === "merchant";
   // A Paytm merchant id: nothing but its own signed QR is accepted, so that
   // is what's drawn, and the link is not offered as if it might work.

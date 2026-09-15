@@ -48,7 +48,7 @@ import { summarisePages } from "@/lib/pages";
 import { openReports, resolveReport, type OrderReport } from "@/lib/reports";
 import { useAuthKey } from "@/hooks/use-auth-key";
 import { subscribeTable, type ConnectionState } from "@/lib/realtime";
-import { AlertToggle, useNewOrderAlert } from "./new-order-alert";
+import { AlertToggle, useNewOrderAlert, type PaidSignal } from "./new-order-alert";
 import { useApp } from "@/lib/store";
 import { AgeBadge, DueBadge, hourLabel, useNow } from "./operator/age";
 import { HandledBy } from "./operator/handled-by";
@@ -119,6 +119,41 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
   const [heroInView, setHeroInView] = useState(true);
   const heroRef = useRef<HTMLDivElement | null>(null);
   const heroObserver = useRef<IntersectionObserver | null>(null);
+  // Payments through Printify that landed while this screen was open. The
+  // order moves itself from New to the queue, so nothing else on the page
+  // rises to say so; this does — a chime, a notification, and a strip under
+  // the tabs that jumps to the card. Seeded from the first load so what was
+  // already paid stays quiet.
+  const paidSeen = useRef<Set<string> | null>(null);
+  const [paidSignal, setPaidSignal] = useState<PaidSignal>({ count: 0, latest: null });
+  const [paidToasts, setPaidToasts] = useState<{ id: string; token: string | null; total: number; at: number }[]>([]);
+  const notePaid = useCallback((rows: OrderRow[], seed = false) => {
+    const paid = rows.filter((o) => o.gateway_paid_at && o.payment_method === "gateway");
+    if (!paidSeen.current) {
+      // Only a full load may seed; a socket event that beats it would
+      // otherwise make every already-paid order look new a moment later.
+      if (seed) paidSeen.current = new Set(paid.map((o) => o.id));
+      return;
+    }
+    const fresh = paid.filter((o) => !paidSeen.current!.has(o.id));
+    if (fresh.length === 0) return;
+    for (const o of fresh) paidSeen.current.add(o.id);
+    const newest = fresh[fresh.length - 1];
+    setPaidSignal((s) => ({ count: s.count + fresh.length, latest: newest.token ? `Token ${newest.token} · ${money(Number(newest.total), operator.currency)}` : null }));
+    setPaidToasts((t) => [...t, ...fresh.map((o) => ({ id: o.id, token: o.token, total: Number(o.total), at: Date.now() }))].slice(-4));
+  }, [operator.currency]);
+  // Each strip stays a quarter minute, long enough to be read from the machine.
+  useEffect(() => {
+    if (paidToasts.length === 0) return;
+    const id = setTimeout(() => setPaidToasts((t) => t.filter((x) => Date.now() - x.at < 15_000)), 15_000);
+    return () => clearTimeout(id);
+  }, [paidToasts]);
+  const jumpTo = useCallback((orderId: string) => {
+    setPaidToasts((t) => t.filter((x) => x.id !== orderId));
+    setTab("working");
+    // After the tab has drawn.
+    setTimeout(() => document.getElementById(`order-${orderId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+  }, []);
 
   const observeHero = useCallback((node: HTMLDivElement | null) => {
     heroObserver.current?.disconnect();
@@ -146,6 +181,7 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
     ]);
     setOrders(rows);
     setStats(s);
+    notePaid(rows, true);
     // Scoped to this operator's own orders. RLS would refuse the rest anyway,
     // but asking for them would still be wrong.
     try {
@@ -155,7 +191,7 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
       // must not be silent either — that is how "not showing" happens.
       setError(e instanceof Error ? e.message : "Couldn't load student reports.");
     }
-  }, [operator.id, authKey]);
+  }, [operator.id, authKey, notePaid]);
 
   useEffect(() => {
     void load();
@@ -171,6 +207,7 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
       onState: setConnection,
       onChange: ({ eventType, row }) => {
         if (!row) return;
+        if (eventType !== "DELETE") notePaid([row]);
 
         setOrders((prev) => {
           if (!prev) return prev;
@@ -186,7 +223,7 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
         void operatorStats(operator.id).then(setStats);
       },
     });
-  }, [operator.id]);
+  }, [operator.id, notePaid]);
 
   /* A report is the one thing that arrives without the order row changing, so
      it needs its own subscription. No filter: `order_reports` carries no
@@ -275,8 +312,9 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
     );
   }, [orders, tab, query, reported, reports]);
 
-  // Rings when the number waiting to be accepted goes up.
-  const alert = useNewOrderAlert(stats ? stats.pending : null);
+  // Rings when the number waiting to be accepted goes up, and when a
+  // payment through Printify lands.
+  const alert = useNewOrderAlert(stats ? stats.pending : null, paidSignal);
 
   const nextUp =
     !query && (tab === "inbox" || tab === "working" || tab === "ready") && filtered.length > 0
@@ -334,6 +372,27 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
           {error}
         </p>
       )}
+
+      <AnimatePresence initial={false}>
+        {paidToasts.map((t) => (
+          <motion.button
+            key={t.id}
+            layout
+            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+            transition={spring}
+            onClick={() => jumpTo(t.id)}
+            className="flex w-full items-center gap-2.5 rounded-[14px] border border-sage-ink/25 bg-sage px-4 py-3 text-left text-[13px] font-semibold text-sage-ink"
+          >
+            <CreditCard size={15} strokeWidth={2.4} className="shrink-0" />
+            <span className="min-w-0 flex-1 truncate">
+              {money(t.total, operator.currency)} paid online{t.token ? ` · Token ${t.token}` : ""} — in the queue, nothing to check
+            </span>
+            <span className="shrink-0 text-[12px] font-semibold underline-offset-2 hover:underline">Show</span>
+          </motion.button>
+        ))}
+      </AnimatePresence>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1">

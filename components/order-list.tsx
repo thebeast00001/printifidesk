@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertCircle, ChevronDown, Flag, Loader2, Receipt, X } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, Flag, Loader2, Receipt, X } from "lucide-react";
 import { useOrderHistory } from "@/hooks/use-tracking";
 import { paymentBalance, cancelOrder, getOperator, STATUS_LABEL, type Operator, type OrderRow, type OrderStatus } from "@/lib/orders";
+import { awaitPaid } from "@/lib/gateway";
 import { billFor } from "@/lib/bill";
 import { Bill } from "./bill";
 import { money } from "@/lib/pricing";
@@ -29,6 +30,23 @@ const STATUS_STYLE: Record<OrderStatus, string> = {
 export function OrderList() {
   const { backend, orders, reload } = useOrderHistory();
   const openSheet = useApp((s) => s.openSheet);
+
+  // Back from Cashfree's own page (`/orders?paid=<id>`): on a phone, a UPI
+  // app switch can end there instead of in the modal. The server is asked
+  // straight away — it reads Cashfree, not the webhook — so the card turns
+  // paid now rather than when the webhook lands; the row itself arrives
+  // over realtime. The address is tidied so a reload doesn't ask again.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const paid = url.searchParams.get("paid");
+    if (!paid || !/^[0-9a-f-]{36}$/i.test(paid)) return;
+    url.searchParams.delete("paid");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    void awaitPaid(paid, 8).then((outcome) => {
+      if (outcome.kind === "paid") reload();
+    });
+  }, [reload]);
   const [busy, setBusy] = useState<string | null>(null);
   const [reporting, setReporting] = useState<OrderRow | null>(null);
   // A refused cancel says why under the card, instead of a button that does nothing.
@@ -192,6 +210,13 @@ function OrderCard({
             {order.status === "ready" && order.shelf_slot && (
               <span className="rounded-full border border-sage-ink/30 bg-sage px-2.5 py-1 font-mono text-[10.5px] font-semibold whitespace-nowrap text-sage-ink">
                 Shelf {order.shelf_slot}
+              </span>
+            )}
+            {/* The desk's word (or Cashfree's), never the student's own claim. */}
+            {order.payment_taken_at && !order.refunded_at && order.status !== "cancelled" && order.status !== "failed" && (
+              <span className="flex items-center gap-1 rounded-full bg-sage px-2.5 py-1 text-[10.5px] font-semibold whitespace-nowrap text-sage-ink">
+                <Check size={10} strokeWidth={2.8} />
+                {order.payment_method === "gateway" ? "Paid online" : "Paid"}
               </span>
             )}
           </div>

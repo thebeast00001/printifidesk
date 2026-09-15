@@ -274,6 +274,9 @@ function headline(order: OrderRow, queue: QueueStatus | null): string {
 
 function detail(order: OrderRow, queue: QueueStatus | null): string {
   const sheets = `${order.pages} ${order.pages === 1 ? "page" : "pages"}`;
+  // Confirmed by the desk or by Cashfree — a fact on the row, so it leads.
+  const paid = order.payment_taken_at && !order.refunded_at ? (order.payment_method === "gateway" ? "Paid online" : "Paid") : null;
+  const lead = (rest: string) => (paid ? `${paid} · ${rest}` : rest);
 
   switch (order.status) {
     case "placed":
@@ -281,19 +284,17 @@ function detail(order: OrderRow, queue: QueueStatus | null): string {
         ? `${sheets} · waiting for the operator to confirm`
         : `${sheets} · pay to join the queue`;
     case "queued": {
-      if (!queue) return sheets;
+      if (!queue) return lead(sheets);
       const by = readyBy(order, queue);
-      return [
-        remaining(order, queue),
-        by ? `ready by ${by}` : null,
-        `${queue.pages_ahead} pages ahead of you`,
-      ]
-        .filter(Boolean)
-        .join(" · ");
+      return lead(
+        [remaining(order, queue), by ? `ready by ${by}` : null, `${queue.pages_ahead} pages ahead of you`]
+          .filter(Boolean)
+          .join(" · "),
+      );
     }
     case "printing":
     case "finishing":
-      return `${sheets} · ${order.config?.sides === "double" ? "both sides" : "one side"}`;
+      return lead(`${sheets} · ${order.config?.sides === "double" ? "both sides" : "one side"}`);
     case "ready":
       return [
         order.shelf_slot ? `Shelf ${order.shelf_slot}` : null,

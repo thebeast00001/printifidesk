@@ -2073,6 +2073,69 @@ await scenario("the upload ceiling holds", async () => {
   return "600 MB refused, with the message the student sees";
 });
 
+/* ---------- 0037: a payment through Printify is heard on both sides ---------- */
+
+await scenario("a gateway payment pushes 'paid online' to the desk and 'paid ₹x' to the student, once", async () => {
+  await actingAs(null);
+  await db.exec(`
+    insert into public.push_subscriptions (user_id, endpoint, p256dh, auth, desk)
+    values ('op_test', 'https://fcm.googleapis.com/fcm/send/desk-1', 'k', 'a', true),
+           ('student_paid', 'https://fcm.googleapis.com/fcm/send/student-paid', 'k', 'a', false)
+    on conflict (endpoint) do nothing;
+    insert into public.profiles (id, name) values ('student_paid', 'Paid Student') on conflict (id) do nothing;
+  `);
+  await actingAs("student_paid");
+  const { rows: placed } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "paid.pdf", pages: 3, colour_pages: 1, config: { copies: 1, sides: "single" } }]),
+  ]);
+  const id = placed[0].id;
+  await actingAs(null);
+  const { rows: ord } = await db.query(`select token, total from public.orders where id = $1;`, [id]);
+  const amount = Number(ord[0].total) % 1 === 0 ? String(Number(ord[0].total)) : Number(ord[0].total).toFixed(2);
+  await db.query(`select public.gateway_begin($1, $2, false);`, [id, `PF${id.replace(/-/g, "")}`]);
+  await db.query(`select public.gateway_paid($1, 'cf_paid', $2, 'upi', now());`, [id, Number(ord[0].total)]);
+  // A retried webhook: no second round of pushes.
+  await db.query(`select public.gateway_paid($1, 'cf_paid', $2, 'upi', now());`, [id, Number(ord[0].total)]);
+
+  const { rows: desk } = await db.query(
+    `select user_id, body from public.notifications where order_id = $1 and audience = 'desk' and body like 'Paid online%' order by id;`,
+    [id],
+  );
+  const expectedDesk = `Paid online · ${ord[0].token} · ₹${amount} · 3 pages, 1 colour — in the queue`;
+  if (desk.length !== 1) throw new Error(`${desk.length} desk 'paid' rows (want 1): ${desk.map((r) => r.user_id).join(", ")}`);
+  if (desk[0].user_id !== "op_test") throw new Error(`desk row went to ${desk[0].user_id}`);
+  if (desk[0].body !== expectedDesk) throw new Error(`desk body "${desk[0].body}" ≠ "${expectedDesk}"`);
+
+  const { rows: student } = await db.query(
+    `select channel, body, status from public.notifications where order_id = $1 and audience = 'student' order by id;`,
+    [id],
+  );
+  const expectedStudent = `Paid ₹${amount} online — order ${ord[0].token} is in the queue at Block C.`;
+  const push = student.find((r) => r.channel === "push");
+  if (!push) throw new Error("no student push row");
+  if (push.body !== expectedStudent) throw new Error(`student body "${push.body}" ≠ "${expectedStudent}"`);
+  if (push.status !== "queued") throw new Error(`student push ${push.status}`);
+  if (student.length !== 2) throw new Error(`${student.length} student rows for one queued event (want push + whatsapp)`);
+
+  // A desk confirming a direct payment still reads as it always did.
+  await actingAs("student_paid");
+  const { rows: placed2 } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "cash.pdf", pages: 2, colour_pages: 0, config: { copies: 1, sides: "single" } }]),
+  ]);
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'queued', note = 'Payment taken' where id = $1;`, [placed2[0].id]);
+  await actingAs(null);
+  const { rows: plain } = await db.query(
+    `select body from public.notifications where order_id = $1 and audience = 'student' and channel = 'push';`,
+    [placed2[0].id],
+  );
+  if (!/^Order .* is in the queue at Block C\.$/.test(plain[0]?.body ?? "")) throw new Error(`direct: "${plain[0]?.body}"`);
+  await db.query(`delete from public.orders where id in ($1, $2);`, [id, placed2[0].id]);
+  return `desk: "${desk[0].body}"; student: "${push.body}"; retry silent; a desk-confirmed order unchanged`;
+});
+
 /* ============================================================
    0036 — the grants, as the roles that hold them
    ============================================================ */

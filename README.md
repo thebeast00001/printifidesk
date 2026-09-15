@@ -928,6 +928,28 @@ How the pieces sit:
   the sheet; it was taken out because a cancelled app switch left the
   SDK's own "check your UPI app" sheet spinning over the page, and the
   hosted modal simply doesn't have that problem.)
+- **Heard on both sides (`0037`).** `gateway_paid()` moves the order from
+  *placed* to *queued* itself — the money is in, there is nothing for the
+  desk to check — and it used to do that in silence: the desk's push fires
+  on the order's *insert* (still unpaid), so on the desk an order simply
+  left New. Now a payment landing is announced everywhere it matters. The
+  desk gets a push — *Paid online · B12 · ₹28 · 10 pages — in the queue* —
+  to the same devices as the new-order push, sent seconds later because
+  the server drains the queue right after marking the order; on the portal
+  itself the row arrives over realtime and `notePaid()` notices the
+  `gateway_paid_at` flip (seeded from the first load, so what was already
+  paid stays quiet): its own three-note chime and a system notification
+  from the alert hook, and a sage strip under the tabs — *₹28 paid online ·
+  Token B12 — in the queue, nothing to check · Show* — that jumps to the
+  card in Printing. The student's queued push leads with the money — *Paid
+  ₹28 online — order B12 is in the queue at Desk* — their order card wears
+  a **Paid online** chip (a **Paid** one once a desk confirms a direct
+  payment; the desk's word, never the student's own claim), the capsule's
+  detail line leads with it, the pay sheet closes itself the moment the
+  live row says paid, and a return to `/orders?paid=<id>` (a UPI app
+  switch on a phone can end on Cashfree's page rather than in the modal)
+  asks the server straight away, which reads Cashfree rather than waiting
+  on the webhook.
 - **The browser** (`lib/gateway.ts`) only ever sees a payment session
   id. It loads Cashfree's SDK from a script it creates (trusted under the
   strict-dynamic CSP), and the hosted checkout opens by **posting a form
@@ -1124,7 +1146,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0036** in the SQL editor, pasted from the files, **in
+2. **Run 0022 → 0037** in the SQL editor, pasted from the files, **in
    number order** — a later migration can name a column an earlier one
    adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
    student update on an order failed and the X on /orders did nothing).
@@ -1146,7 +1168,11 @@ Things the code can't do on its own, in the order they bite:
    **Then 0036, now** — it's the security pass (`docs/SECURITY.md` §14):
    until it runs, every function in the database is callable by anyone
    with the anon key, and two of them hand out the notification queue —
-   students' phone numbers — to whoever asks.
+   students' phone numbers — to whoever asks. **Then 0037** — until it
+   runs, a payment through Printify reaches the desk portal live but
+   without a push, and the student's push doesn't mention the money.
+   (No probe on `/diagnostics` for it: it's two triggers, and a trigger
+   can't be asked for from a browser.)
 3. **Cashfree.** Create a Cashfree Payments account for Printify (business
    KYC: PAN, bank account; GST if you have it), enable **Easy Split** on
    it (a request in the dashboard), then: `CASHFREE_APP_ID`,
@@ -1163,7 +1189,7 @@ Things the code can't do on its own, in the order they bite:
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
    project, so: create a new project in **Mumbai (`ap-south-1`)**, run
-   `0001 → 0036` in its SQL editor, create the private `documents` bucket,
+   `0001 → 0037` in its SQL editor, create the private `documents` bucket,
    add both Clerk domains under Authentication → Third-Party Auth, then
    swap `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    and `SUPABASE_SERVICE_ROLE_KEY` on both Vercel projects and in
