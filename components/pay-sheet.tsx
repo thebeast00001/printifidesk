@@ -45,7 +45,6 @@ export function PaySheet({
   const [operator, setOperator] = useState<Operator | null>(null);
   const [qr, setQr] = useState<string | null>(null);
   const [busy, setBusy] = useState<"upi" | "cash" | null>(null);
-  const [reference, setReference] = useState("");
   // What their app's success screen showed. Pre-filled with the bill; a
   // different number is a warning now instead of a surprise at the counter.
   const [sent, setSent] = useState("");
@@ -119,9 +118,9 @@ export function PaySheet({
         .update({
           payment_method: method,
           payment_claimed_at: new Date().toISOString(),
-          // The UPI reference turns the operator's check from a guess into a
-          // lookup in their own statement.
-          payment_reference: method === "upi" ? reference.trim() || null : null,
+          // The desk checks a direct payment by the amount and the note (the
+          // token), against its own app — nothing else is asked for.
+          payment_reference: null,
           payment_claimed_amount:
             method === "upi" && sent.trim() !== "" && Number.isFinite(Number(sent)) ? Number(sent) : null,
         })
@@ -135,7 +134,7 @@ export function PaySheet({
       onClaimed();
       onOpenChange(false);
     },
-    [order, reference, sent, onClaimed, onOpenChange],
+    [order, sent, onClaimed, onOpenChange],
   );
 
   const sentValue = Number(sent);
@@ -385,22 +384,6 @@ export function PaySheet({
                           return it.
                         </span>
                       )}
-                    </label>
-                  )}
-                  {request && (
-                    <label className="mb-3 flex flex-col gap-1.5">
-                      <span className="text-[12px] font-semibold tracking-[-0.01em]">
-                        UPI reference{" "}
-                        <span className="font-normal text-faint">optional, speeds up the check</span>
-                      </span>
-                      <input
-                        value={reference}
-                        onChange={(e) => setReference(e.target.value)}
-                        inputMode="numeric"
-                        maxLength={24}
-                        placeholder="The 12-digit number in your UPI app"
-                        className="rounded-xl border border-line bg-surface px-3 py-2.5 font-mono text-[13px] outline-none focus:border-ink"
-                      />
                     </label>
                   )}
                   <div className="flex flex-col gap-2 sm:flex-row">

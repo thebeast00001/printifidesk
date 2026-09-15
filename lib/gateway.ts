@@ -7,7 +7,7 @@ import type { Operator } from "./orders";
  *
  * The server holds the Cashfree secret and makes the order; the browser
  * only ever sees a payment session id, opens Cashfree's own checkout with
- * it (UPI intent, cards, netbanking — Cashfree's page, not ours), and then
+ * it (UPI intent, cards, netbanking — Cashfree's page, in a modal), and then
  * asks the server whether the money arrived. Nothing here can mark an
  * order paid.
  *
@@ -32,31 +32,14 @@ export function canPayOnline(operator: Operator | null | undefined): boolean {
   return gatewayMode() !== null && (operator?.gateway_status === "active" || operator?.gateway_status === "collect");
 }
 
-/** One of Cashfree's mountable elements: a UPI app button, a QR, a collect field. */
-export interface CashfreeElement {
-  /** A CSS selector. Not a node: the SDK serialises its arguments, and a React-owned node is circular. */
-  mount(selector: string): void;
-  unmount?(): void;
-  on(event: "ready" | "click" | "loaderror" | "change", handler: (e?: unknown) => void): void;
-  isComplete?(): boolean;
-}
-
-export interface PayResult {
+interface CheckoutResult {
   error?: { message?: string };
   redirect?: boolean;
   paymentDetails?: { paymentMessage?: string };
 }
 
 interface CashfreeSdk {
-  checkout(opts: { paymentSessionId: string; redirectTarget: "_modal" | "_self" | "_blank" }): Promise<PayResult>;
-  create(type: "upiApp" | "upiQr" | "upiCollect", opts: { values?: Record<string, unknown>; style?: Record<string, unknown> }): CashfreeElement;
-  pay(opts: {
-    paymentMethod: CashfreeElement;
-    paymentSessionId: string;
-    returnUrl?: string;
-    redirect?: "if_required" | "always";
-    redirectTarget?: "_self" | "_blank" | "_modal";
-  }): Promise<PayResult>;
+  checkout(opts: { paymentSessionId: string; redirectTarget: "_modal" | "_self" | "_blank" }): Promise<CheckoutResult>;
 }
 
 declare global {
@@ -131,7 +114,7 @@ export async function openSession(orderId: string): Promise<SessionOutcome> {
 }
 
 /** Cashfree's SDK handle, loaded on demand. */
-export async function sdk(mode: GatewayMode): Promise<CashfreeSdk> {
+async function sdk(mode: GatewayMode): Promise<CashfreeSdk> {
   await loadSdk();
   return window.Cashfree!({ mode });
 }
@@ -154,133 +137,14 @@ export async function awaitPaid(orderId: string, tries = 8): Promise<OnlineOutco
   return { kind: "pending" };
 }
 
-/** What a pay() result means, in the same words the modal's did. */
-export function outcomeOf(result: PayResult): OnlineOutcome | null {
+/** What the checkout's result means. Closing the modal without paying comes back as an "error" too. */
+function outcomeOf(result: CheckoutResult): OnlineOutcome | null {
   if (result.error) {
     const message = result.error.message ?? "";
     if (/closed|cancel|dropped|back/i.test(message)) return { kind: "cancelled" };
     return { kind: "error", message: message || "The payment didn't go through." };
   }
   return null;
-}
-
-/** The UPI apps Cashfree can open directly, in the order students reach for them. */
-export const CASHFREE_APPS = [
-  { id: "gpay", label: "Google Pay" },
-  { id: "phonepe", label: "PhonePe" },
-  { id: "paytm", label: "Paytm" },
-] as const;
-
-/**
- * Pay through one of Cashfree's own elements — a UPI app button, a QR, a
- * collect request. Cashfree signs the intent, so the app opens with the
- * amount filled in and no hosted page in between; when the student comes
- * back, the server is asked whether it landed.
- */
-export async function payWithElement(cf: CashfreeSdk, element: CashfreeElement, session: OnlineSession, orderId: string): Promise<OnlineOutcome> {
-  // No returnUrl, on purpose: with one, a cancelled app switch lands the
-  // student on Cashfree's own result page. Without it the SDK resolves
-  // here, in the sheet, and the sheet asks the server what happened.
-  // The SDK draws its own "check your UPI app" sheet while it waits, and
-  // when the student backs out of the app it can sit there spinning —
-  // "Closing…" — for as long as its own poll takes. So the sheet watches
-  // the student come back and asks the server itself; whichever answers
-  // first wins, and if it was us, the SDK's sheet is taken down. The
-  // watcher is armed before pay() so the app switch can't slip past it.
-  const viaReturn = watchReturn(orderId);
-  const viaSdk: Promise<OnlineOutcome> = cf
-    .pay({ paymentMethod: element, paymentSessionId: session.paymentSessionId, redirect: "if_required" })
-    .then((result) => outcomeOf(result) ?? awaitPaid(orderId))
-    .catch((e: unknown) => ({ kind: "error", message: e instanceof Error ? e.message : "The payment didn't start." }) as OnlineOutcome);
-  const outcome = await Promise.race([viaSdk, viaReturn.promise]);
-  viaReturn.stop();
-  dismissSdkOverlays();
-  return outcome;
-}
-
-/**
- * Removes whatever full-screen iframe the SDK has appended for a payment
- * in progress. Idempotent; harmless when there's nothing there.
- */
-export function dismissSdkOverlays() {
-  if (typeof document === "undefined") return;
-  // Everything the SDK is known to append at body level while a payment
-  // runs (from its source): the modal iframe, the full-screen loader, the
-  // hosted-checkout container — and, as a net, any other direct child of
-  // body it pinned to the top of the stacking order.
-  const known = document.querySelectorAll(
-    'iframe[name^="framemodal-"], [id^="loaderfull-global"], #cashfree-modal-container, [id^="cfredirect_"], #css-cf-added-loader',
-  );
-  known.forEach((n) => n.remove());
-  for (const child of Array.from(document.body.children)) {
-    const style = getComputedStyle(child);
-    if (style.position === "fixed" && style.zIndex === "2147483647") child.remove();
-  }
-  document.body.style.removeProperty("overflow");
-  document.documentElement.style.removeProperty("overflow");
-}
-
-/**
- * Waits for the page to come back into view (the app switch returning)
- * and then asks the server, every second and a half, what the latest
- * attempt did. Paid, dropped or failed answers at once; nothing after a
- * dozen asks answers "pending". A page that never left (a collect
- * request approved in another app while this one stays open) is given
- * much longer before it gives up.
- */
-function watchReturn(orderId: string): { promise: Promise<OnlineOutcome>; stop: () => void } {
-  let stopped = false;
-  let onVisible: (() => void) | null = null;
-  const promise = new Promise<OnlineOutcome>((resolve) => {
-    const hidAt = { value: null as number | null };
-    const poll = async (tries: number, returned: boolean) => {
-      let untouched = 0;
-      for (let i = 0; i < tries && !stopped; i++) {
-        try {
-          const check = await fetch(`/api/payments/status?order=${encodeURIComponent(orderId)}`, { cache: "no-store" });
-          const status = (await check.json().catch(() => ({}))) as { paid?: boolean; attempt?: string };
-          if (status.paid) return resolve({ kind: "paid" });
-          if (status.attempt === "dropped") return resolve({ kind: "cancelled" });
-          if (status.attempt === "failed") return resolve({ kind: "error", message: "The bank didn't approve it. Nothing was charged — try again or another app." });
-          // Back from the app with no attempt on record at all, twice over:
-          // they backed out before anything started.
-          if (returned && status.attempt === "none" && ++untouched >= 2) return resolve({ kind: "cancelled" });
-        } catch {
-          /* a blip; ask again */
-        }
-        await new Promise((r) => setTimeout(r, 1500));
-      }
-      if (!stopped) resolve({ kind: "pending" });
-    };
-    onVisible = () => {
-      if (document.visibilityState === "hidden") {
-        hidAt.value = Date.now();
-        return;
-      }
-      if (hidAt.value !== null) {
-        // Back from the app: five asks over ~7 s (the server reads Cashfree
-        // directly, so a real payment shows within one), then it's on the
-        // webhook and the SDK's sheet comes down either way.
-        document.removeEventListener("visibilitychange", onVisible!);
-        void poll(5, true);
-      }
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    // Never hid — a collect request or a desktop QR: patient, but not forever.
-    setTimeout(() => {
-      if (!stopped && hidAt.value === null) {
-        document.removeEventListener("visibilitychange", onVisible!);
-        void poll(40, false);
-      }
-    }, 4000);
-  });
-  return {
-    promise,
-    stop: () => {
-      stopped = true;
-      if (onVisible) document.removeEventListener("visibilitychange", onVisible);
-    },
-  };
 }
 
 /**
@@ -314,7 +178,11 @@ export async function payOnline(orderId: string): Promise<OnlineOutcome> {
   return payHosted({ paymentSessionId: session.paymentSessionId, mode: session.mode ?? mode }, orderId);
 }
 
-/** Cashfree's hosted checkout in a modal — cards, netbanking, and the fallback when an element can't mount. */
+/**
+ * Cashfree's hosted checkout in a modal over the page: UPI (any app, the
+ * amount filled in), cards, netbanking. Resolves when the modal closes,
+ * then asks the server whether the money landed.
+ */
 export async function payHosted(session: OnlineSession, orderId: string): Promise<OnlineOutcome> {
   let cashfree: CashfreeSdk;
   try {

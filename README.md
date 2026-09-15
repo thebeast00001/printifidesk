@@ -803,10 +803,11 @@ the same link for laptops. The money never touches this app.
 That means nothing here can *know* a transfer succeeded. So the two facts are
 kept apart: `payment_claimed_at` is the student saying they paid, and
 `payment_taken_at` is the operator confirming they saw it. Only the second one
-moves the order. The student can add their UPI reference number, which turns the
-operator's check from a guess into a lookup in their own statement — and once
-the operator has confirmed, the guard trigger freezes that reference, since it's
-evidence by then.
+moves the order. The desk checks a direct payment by the amount and the note
+(the token) against its own app; the sheet asks for nothing else. The
+`payment_reference` column stays for payments through Printify, where it holds
+Cashfree's payment id — and once the operator has confirmed, the guard trigger
+freezes it, since it's evidence by then.
 
 `quote()` is pure, so a gateway can re-run it server-side later to authorise a
 real charge.
@@ -915,34 +916,18 @@ How the pieces sit:
   a short amount and is a no-op on a retry, so a webhook racing the poll
   is harmless. The guard pins every gateway column against students and
   staff alike.
-- **In the sheet, not on Cashfree's page.** `components/online-pay.tsx`
-  makes the session the moment the sheet opens, then mounts Cashfree's
-  own *elements*: on a phone, one `upiApp` button per app (Google Pay,
-  PhonePe, Paytm) — a tap calls `cashfree.pay()` and the app opens with
-  an intent Cashfree signed, amount filled in, no hosted page; *Pay by
-  UPI id* is the `upiCollect` element (a request pushed to the student's
-  app); on a laptop the `upiQr` element draws a signed QR any app reads.
-  When the student comes back, `/api/payments/status` is asked. *Card or
-  netbanking* is the hosted checkout in a modal, and so is the fallback
-  when an element reports `loaderror` (an in-app browser, a laptop for the
-  app buttons). Two things the SDK insists on, learned the hard way: mount
-  by **selector**, into a div **React never touched** — it serialises the
-  node, and a React-owned node carries a circular fiber. The app buttons
-  are ours (the element sits behind each, sized, invisible, untouchable,
-  because pay() needs it as the payment method) so the three match the
-  sheet rather than three vendors' widgets. `pay()` is called **without a
-  returnUrl**: with one, a cancelled app switch lands the student on
-  Cashfree's own result page; without it the promise resolves in the
-  sheet, and `/api/payments/status` reports the latest attempt as
-  `dropped` or `failed` so the sheet says *nothing was charged* at once
-  instead of waiting out the poll. The SDK also draws its own
-  "check your UPI app" sheet while `pay()` waits, and when a student backs
-  out of the app it can sit there spinning ("Closing…") for as long as
-  the SDK's own poll takes — so `payWithElement()` races the SDK against a
-  watcher of our own that waits for the page to come back into view, asks
-  the server, and, if it answers first, removes the SDK's full-screen
-  iframe (`iframe[name^="framemodal-"]`) itself. Back with no attempt on
-  record twice over counts as a cancel.
+- **One button, Cashfree's checkout.** `components/online-pay.tsx` makes
+  the session the moment the sheet opens — so *Pay ₹x · UPI, card* opens
+  Cashfree's hosted checkout at once, in a modal over the sheet — and
+  when the modal closes, asks `/api/payments/status`, which reports the
+  latest attempt as `dropped` or `failed` so the sheet can say *nothing
+  was charged* at once instead of waiting out the poll. Cashfree's own
+  page handles every UPI app, cards and netbanking, and every app accepts
+  its intent with the amount filled in. (An earlier version mounted
+  Cashfree's *elements* — app buttons, a QR, a collect field — inside
+  the sheet; it was taken out because a cancelled app switch left the
+  SDK's own "check your UPI app" sheet spinning over the page, and the
+  hosted modal simply doesn't have that problem.)
 - **The browser** (`lib/gateway.ts`) only ever sees a payment session
   id. It loads Cashfree's SDK from a script it creates (trusted under the
   strict-dynamic CSP), and the hosted checkout opens by **posting a form
