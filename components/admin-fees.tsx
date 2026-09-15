@@ -8,6 +8,8 @@ import {
   periodStart,
   platformSettings,
   recordSettlement,
+  adminFeeOrders,
+  type FeeOrderRow,
   setPlatformFee,
   type DeskFeeRow,
   type FeePeriod,
@@ -121,7 +123,13 @@ export function AdminFees() {
             ) : (
               <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
                 {rows.map((d) => (
-                  <DeskRow key={d.operator_id} desk={d} onRecorded={load} />
+                  <DeskRow
+                    key={d.operator_id}
+                    desk={d}
+                    from={from}
+                    periodLabel={PERIODS.find((p) => p.id === period)?.label ?? ""}
+                    onRecorded={load}
+                  />
                 ))}
               </ul>
             )}
@@ -134,12 +142,43 @@ export function AdminFees() {
   );
 }
 
-function DeskRow({ desk, onRecorded }: { desk: DeskFeeRow; onRecorded: () => Promise<void> }) {
+function DeskRow({
+  desk,
+  from,
+  periodLabel,
+  onRecorded,
+}: {
+  desk: DeskFeeRow;
+  from: Date;
+  periodLabel: string;
+  onRecorded: () => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The period's orders, one line each, loaded when the admin asks.
+  const [orders, setOrders] = useState<FeeOrderRow[] | null>(null);
+  const [showOrders, setShowOrders] = useState(false);
+
+  useEffect(() => {
+    setOrders(null);
+    setShowOrders(false);
+  }, [from, desk.operator_id]);
+
+  async function toggleOrders() {
+    if (showOrders) return setShowOrders(false);
+    setShowOrders(true);
+    if (orders === null) {
+      try {
+        setOrders(await adminFeeOrders(desk.operator_id, from));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Couldn't list the orders.");
+        setOrders([]);
+      }
+    }
+  }
 
   async function record() {
     const value = Number(amount);
@@ -177,6 +216,13 @@ function DeskRow({ desk, onRecorded }: { desk: DeskFeeRow; onRecorded: () => Pro
           </span>
         </span>
         <button
+          onClick={() => void toggleOrders()}
+          className="flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[12px] font-semibold text-ink-soft"
+        >
+          <Receipt size={13} strokeWidth={2.2} />
+          {showOrders ? "Hide orders" : `Orders ${periodLabel.toLowerCase()}`}
+        </button>
+        <button
           onClick={() => {
             setOpen((o) => !o);
             if (!open && desk.outstanding > 0) setAmount(desk.outstanding.toFixed(2));
@@ -187,6 +233,62 @@ function DeskRow({ desk, onRecorded }: { desk: DeskFeeRow; onRecorded: () => Pro
           {open ? "Cancel" : "Record payment"}
         </button>
       </div>
+
+      {showOrders && (
+        <div className="mt-2.5 border-t border-line pt-2.5">
+          {orders === null ? (
+            <p className="m-0 flex items-center gap-2 text-[12px] text-muted">
+              <Loader2 size={13} className="animate-spin" />
+              Reading the orders…
+            </p>
+          ) : orders.length === 0 ? (
+            <p className="m-0 text-[12px] text-muted">No collected orders {periodLabel.toLowerCase()}.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[12px]">
+                <thead>
+                  <tr className="text-left text-[10.5px] tracking-[0.08em] text-muted uppercase">
+                    <th className="py-1 pr-3 font-semibold">Token</th>
+                    <th className="py-1 pr-3 font-semibold">Collected</th>
+                    <th className="py-1 pr-3 font-semibold">Paid</th>
+                    <th className="py-1 pr-3 text-right font-semibold">Bill</th>
+                    <th className="py-1 text-right font-semibold">Fee</th>
+                  </tr>
+                </thead>
+                <tbody className="font-mono tabular-nums">
+                  {orders.map((o) => (
+                    <tr key={o.id} className="border-t border-line/60">
+                      <td className="py-1.5 pr-3 font-semibold">{o.token ?? "—"}</td>
+                      <td className="py-1.5 pr-3 text-muted">
+                        {new Date(o.collected_at).toLocaleString([], { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
+                      </td>
+                      <td className="py-1.5 pr-3 text-muted">
+                        {o.payment_method === "gateway" ? "online" : (o.payment_method ?? "—")}
+                        {o.refund_amount ? ` · refunded ${money(o.refund_amount)}` : ""}
+                      </td>
+                      <td className="py-1.5 pr-3 text-right">{money(o.total)}</td>
+                      <td className={cn("py-1.5 text-right font-semibold", o.fee_settled_at ? "text-muted" : "")}>
+                        {money(o.platform_fee)}
+                        {o.fee_settled_at ? <span className="ml-1 font-sans text-[10px] font-normal">at source</span> : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-line font-sans">
+                    <td colSpan={4} className="py-1.5 pr-3 text-[11.5px] text-muted">
+                      {orders.length} {orders.length === 1 ? "order" : "orders"} {periodLabel.toLowerCase()} — the desk owes the fee on those not marked at source
+                    </td>
+                    <td className="py-1.5 text-right font-mono text-[13px] font-extrabold tabular-nums">
+                      {money(orders.filter((o) => !o.fee_settled_at).reduce((n, o) => n + o.platform_fee, 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {open && (
         <form

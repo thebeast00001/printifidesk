@@ -1831,6 +1831,48 @@ await scenario("a gateway payment is the server's write: marks paid and queued o
   return `paid ${total} (fee ${fee}) → queued once, retry a no-op, short refused; fee retained, not owed; online_total counted; refund by the server only`;
 });
 
+/* ---------- 0033: the fee, order by order ---------- */
+
+await scenario("admin_fee_orders lists the period's collected orders with their fee, and nothing to anyone else", async () => {
+  await actingAs("student_ledger");
+  const ids = [];
+  for (const pages of [4, 6]) {
+    const { rows } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+      OPERATOR,
+      JSON.stringify([{ name: "l.pdf", pages, colour_pages: 0, config: { copies: 1, sides: "single" } }]),
+    ]);
+    ids.push(rows[0].id);
+  }
+  await actingAs("op_test");
+  for (const id of ids) {
+    for (const st of ["queued", "printing", "ready", "collected"]) {
+      await db.query(`update public.orders set status = $2 where id = $1;`, [id, st]);
+    }
+  }
+  // A refunded-in-full one must not appear; a partly refunded one must.
+  await db.query(`update public.orders set refunded_at = now(), refund_amount = total, refund_note = 'test' where id = $1;`, [ids[0]]);
+  await db.query(`update public.orders set refunded_at = now(), refund_amount = 1, refund_note = 'test' where id = $1;`, [ids[1]]);
+
+  await actingAs("admin_test");
+  const { rows } = await db.query(`select * from public.admin_fee_orders($1, now() - interval '1 hour');`, [OPERATOR]);
+  const mine = rows.filter((r) => ids.includes(r.id));
+  if (mine.length !== 1 || mine[0].id !== ids[1]) throw new Error(`expected the partly refunded order only, got ${mine.map((r) => r.id)}`);
+  const cols = Object.keys(rows[0] ?? mine[0]);
+  if (cols.some((c) => /user|name|file/i.test(c))) throw new Error(`the ledger leaks: ${cols}`);
+  const { rows: sum } = await db.query(`select fee from public.fee_window($1, now() - interval '1 hour');`, [OPERATOR]);
+  const listed = rows.filter((r) => !r.fee_settled_at).reduce((n, r) => n + Number(r.platform_fee), 0);
+  if (Math.round(listed * 100) !== Math.round(Number(sum[0].fee) * 100)) throw new Error(`orders sum ${listed} vs window fee ${sum[0].fee}`);
+
+  for (const who of ["student_ledger", "op_test"]) {
+    await actingAs(who);
+    const { rows: none } = await db.query(`select * from public.admin_fee_orders($1, now() - interval '1 hour');`, [OPERATOR]);
+    if (none.length !== 0) throw new Error(`${who} saw the admin's ledger`);
+  }
+  await actingAs(null);
+  await db.query(`delete from public.orders where user_id = 'student_ledger';`);
+  return `one listed (the fully refunded one left out), no names, sums to fee_window; a student and a staffer see nothing`;
+});
+
 await scenario("the upload ceiling holds", async () => {
   await actingAs("student_test");
   // 500 MB is the cap; one file over it must be refused.

@@ -164,6 +164,41 @@ export interface DeskFeeRow {
   gateway_status: "off" | "pending" | "active" | "blocked";
 }
 
+/** One collected order in the fee ledger, as the admin sees it: money, not people. */
+export interface FeeOrderRow {
+  id: string;
+  token: string | null;
+  collected_at: string;
+  total: number;
+  platform_fee: number;
+  payment_method: "upi" | "cash" | "gateway" | null;
+  refund_amount: number | null;
+  /** Set when the fee was taken at source (paid through Printify); null when the desk owes it. */
+  fee_settled_at: string | null;
+}
+
+/** Every collected, unrefunded order at a desk in the window, newest first. Admin only. */
+export async function adminFeeOrders(operatorId: string, from: Date, to: Date = new Date()): Promise<FeeOrderRow[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_fee_orders", {
+    p_operator: operatorId,
+    p_from: from.toISOString(),
+    p_to: to.toISOString(),
+  });
+  if (error) throw new Error(explain(error.message));
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    id: String(r.id),
+    token: r.token === null || r.token === undefined ? null : String(r.token),
+    collected_at: String(r.collected_at),
+    total: Number(r.total),
+    platform_fee: Number(r.platform_fee),
+    payment_method: (r.payment_method as FeeOrderRow["payment_method"]) ?? null,
+    refund_amount: r.refund_amount === null || r.refund_amount === undefined ? null : Number(r.refund_amount),
+    fee_settled_at: r.fee_settled_at === null || r.fee_settled_at === undefined ? null : String(r.fee_settled_at),
+  }));
+}
+
 /** Fee owed on orders collected in a window. Staff of the desk, or the admin. */
 export async function feeWindow(operatorId: string, from: Date, to: Date = new Date()): Promise<FeeWindow> {
   const supabase = getSupabase();

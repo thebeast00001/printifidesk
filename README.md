@@ -838,6 +838,16 @@ sent. `tr` is alphanumeric and padded (`PRINTIFYB66…`) because the strict
 apps refuse punctuation and very short references; `tn` is letters,
 digits and spaces.
 
+### The fee, order by order (`0033`)
+
+`/admin` shows each desk's fee for today / this week / this month as a
+total; *Orders this week* under a desk opens the list behind it —
+`admin_fee_orders()`: token, when collected, how it was paid, the bill,
+the fee, and *at source* on the ones paid through Printify. No names.
+The footer sums what the desk still owes for the period, which is what
+*Record payment* is for once the desk hands it over — daily, weekly or
+monthly, whatever you agree with the desk; the ledger doesn't care.
+
 ### Paying through Printify (Cashfree, `0032`)
 
 The direct-to-desk flows above cost nothing and hold nobody's money, and
@@ -1057,7 +1067,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0032** in the SQL editor, pasted from the files. Until
+2. **Run 0022 → 0033** in the SQL editor, pasted from the files. Until
    0025, the fee panel shows no due date; until 0024, the join page shows a
    migration message in the application panel; until 0026, *Shut this
    desk* on `/admin/desks` errors with a missing function; until 0027,
@@ -1067,7 +1077,8 @@ Things the code can't do on its own, in the order they bite:
    place in the queue; until 0030, the board says "reconnecting…", no
    slot is assigned, and saving the shelf fails; until 0031, a Paytm
    desk's standee QR isn't kept and the pay sheet draws Printify's copy;
-   until 0032, online payment is never offered.
+   until 0032, online payment is never offered; until 0033, *Orders* on
+   the admin's fee rows errors quietly.
 3. **Cashfree.** Create a Cashfree Payments account for Printify (business
    KYC: PAN, bank account; GST if you have it), enable **Easy Split** on
    it (a request in the dashboard), then: `CASHFREE_APP_ID`,
