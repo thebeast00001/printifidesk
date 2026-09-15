@@ -9,9 +9,8 @@ import { getOperator, type Operator, type OrderRow } from "@/lib/orders";
 import { getSupabase } from "@/lib/supabase/client";
 import { UPI_APPS, appLink, isQrOnlyMerchant, isValidVpa, upiLink, type UpiRequest } from "@/lib/upi";
 import { useInstall } from "@/lib/install";
-import { canPayOnline, payOnline, type OnlineOutcome } from "@/lib/gateway";
-import Link from "next/link";
-import { CreditCard } from "lucide-react";
+import { canPayOnline } from "@/lib/gateway";
+import { OnlinePay } from "./online-pay";
 import { money } from "@/lib/pricing";
 import { cn, spring } from "@/lib/utils";
 
@@ -51,14 +50,13 @@ export function PaySheet({
   // different number is a warning now instead of a surprise at the counter.
   const [sent, setSent] = useState("");
   const [error, setError] = useState<string | null>(null);
-  // Paying through Printify: Cashfree's checkout, then the server's word.
-  const [online, setOnline] = useState<"idle" | "busy" | OnlineOutcome>("idle");
+  // Paying through Printify lives in <OnlinePay>; this only remembers
+  // whether the student asked for the direct route instead.
   const [showDirect, setShowDirect] = useState(false);
 
   useEffect(() => {
     if (!open || !order) return;
     setError(null);
-    setOnline("idle");
     setShowDirect(false);
     setSent(Number(order.total).toFixed(2));
     void getOperator(order.operator_id).then(setOperator);
@@ -149,17 +147,6 @@ export function PaySheet({
   const claimed = Boolean(order?.payment_claimed_at);
   const gateway = canPayOnline(operator);
 
-  async function goOnline() {
-    if (!order) return;
-    setOnline("busy");
-    const outcome = await payOnline(order.id);
-    setOnline(outcome);
-    if (outcome.kind === "paid") {
-      onClaimed();
-      onOpenChange(false);
-    }
-  }
-
   return (
     <Drawer.Root open={open} onOpenChange={onOpenChange}>
       <Drawer.Portal>
@@ -179,47 +166,26 @@ export function PaySheet({
               {operator?.short_name || operator?.name || "your operator"}
             </Drawer.Description>
 
-            {operator && gateway && !claimed && (
-              <div className="mb-4">
-                {/* Cashfree's checkout: UPI in any app with the amount filled
-                    in, or a card. Confirmed by Cashfree, not by anyone here. */}
-                <button
-                  onClick={() => void goOnline()}
-                  disabled={online === "busy"}
-                  className="flex h-[54px] w-full items-center justify-center gap-2.5 rounded-2xl bg-ink text-[15px] font-semibold text-paper disabled:opacity-60"
-                >
-                  {online === "busy" ? <Loader2 size={17} className="animate-spin" /> : <CreditCard size={17} strokeWidth={2.2} />}
-                  {online === "busy" ? "Opening checkout…" : `Pay ${money(Number(order?.total ?? 0), operator.currency)} · UPI, card`}
-                </button>
-                <p className="m-0 mt-2 text-[11px] leading-relaxed text-muted">
-                  Through Printify&apos;s payment partner. Any UPI app, amount filled in, confirmed the moment it
-                  lands — the desk starts without checking anything.
-                </p>
-                {typeof online === "object" && online.kind === "needs-phone" && (
-                  <p className="m-0 mt-2 text-[12px] leading-relaxed text-clay-ink dark:text-clay">
-                    The payment partner needs a phone number on the order.{" "}
-                    <Link href="/settings" className="font-semibold underline underline-offset-2">Add yours in Settings</Link>, then
-                    come back.
-                  </p>
-                )}
-                {typeof online === "object" && online.kind === "pending" && (
-                  <p className="m-0 mt-2 text-[12px] leading-relaxed text-muted">
-                    The checkout closed; waiting for the payment partner to confirm. This order updates on its own
-                    when it does — if you didn&apos;t pay, nothing happens.
-                  </p>
-                )}
-                {typeof online === "object" && online.kind === "error" && (
-                  <p className="m-0 mt-2 text-[12px] leading-relaxed text-clay-ink dark:text-clay">{online.message}</p>
-                )}
+            {operator && gateway && !claimed && order && (
+              <>
+                <OnlinePay
+                  orderId={order.id}
+                  amount={Number(order.total)}
+                  currency={operator.currency ?? "₹"}
+                  onPaid={() => {
+                    onClaimed();
+                    onOpenChange(false);
+                  }}
+                />
                 {!showDirect && (
                   <button
                     onClick={() => setShowDirect(true)}
-                    className="mt-3 w-full text-center text-[12px] font-semibold text-muted underline-offset-2 hover:underline"
+                    className="mb-4 w-full text-center text-[12px] font-semibold text-muted underline-offset-2 hover:underline"
                   >
                     Pay the desk directly instead
                   </button>
                 )}
-              </div>
+              </>
             )}
 
             {!operator ? (

@@ -915,9 +915,22 @@ How the pieces sit:
   a short amount and is a no-op on a retry, so a webhook racing the poll
   is harmless. The guard pins every gateway column against students and
   staff alike.
+- **In the sheet, not on Cashfree's page.** `components/online-pay.tsx`
+  makes the session the moment the sheet opens, then mounts Cashfree's
+  own *elements*: on a phone, one `upiApp` button per app (Google Pay,
+  PhonePe, Paytm) — a tap calls `cashfree.pay()` and the app opens with
+  an intent Cashfree signed, amount filled in, no hosted page; *Pay by
+  UPI id* is the `upiCollect` element (a request pushed to the student's
+  app); on a laptop the `upiQr` element draws a signed QR any app reads.
+  When the student comes back, `/api/payments/status` is asked. *Card or
+  netbanking* is the hosted checkout in a modal, and so is the fallback
+  when an element reports `loaderror` (an in-app browser, a laptop for the
+  app buttons). Two things the SDK insists on, learned the hard way: mount
+  by **selector**, into a div **React never touched** — it serialises the
+  node, and a React-owned node carries a circular fiber.
 - **The browser** (`lib/gateway.ts`) only ever sees a payment session
   id. It loads Cashfree's SDK from a script it creates (trusted under the
-  strict-dynamic CSP), and the SDK opens its checkout by **posting a form
+  strict-dynamic CSP), and the hosted checkout opens by **posting a form
   into an iframe** on `*.cashfree.com` — so the CSP allows that host in
   `frame-src`, `connect-src` and **`form-action`**. Without the last, the
   post is blocked, the modal stays blank behind its blur and "Opening
