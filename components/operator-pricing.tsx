@@ -411,6 +411,11 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
             amount filled in; those arrive already confirmed, your share settles to your account daily, and
             the Printify fee on them is taken at source.
           </span>
+        ) : operator.gateway_status === "collect" ? (
+          <span className="mt-1 block text-sage-ink">
+            Online payments through Printify are on: students can also pay by card or any UPI app with the amount
+            filled in. Those land with Printify; your share is paid out to you and shown under Takings.
+          </span>
         ) : operator.gateway_status === "pending" ? (
           <span className="mt-1 block">Online payments through Printify: Cashfree is still verifying your settlement account.</span>
         ) : null}

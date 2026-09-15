@@ -161,7 +161,119 @@ export interface DeskFeeRow {
   outstanding: number;
   /** Fees taken at source on orders paid through Printify, in the window. Zero before 0032. */
   retained: number;
-  gateway_status: "off" | "pending" | "active" | "blocked";
+  gateway_status: "off" | "collect" | "pending" | "active" | "blocked";
+}
+
+/* ---------- payouts: what Printify owes a desk from online payments (0035) ---------- */
+
+export interface PayoutBalance {
+  owed: number;
+  paid_out: number;
+  balance: number;
+  orders: number;
+}
+
+export interface PayoutWindow {
+  orders: number;
+  gross: number;
+  fee: number;
+  share: number;
+}
+
+export interface DeskPayoutRow {
+  operator_id: string;
+  name: string;
+  campus: string;
+  orders: number;
+  gross: number;
+  fee: number;
+  share: number;
+  owed: number;
+  paid_out: number;
+  balance: number;
+  gateway_status: "off" | "collect" | "pending" | "active" | "blocked";
+}
+
+export interface Payout {
+  id: number;
+  amount: number;
+  note: string | null;
+  created_at: string;
+}
+
+const num = (v: unknown) => Number(v ?? 0);
+
+/** What a desk is owed from online payments Printify collected. Staff of the desk, or the admin. */
+export async function payoutBalance(operatorId: string): Promise<PayoutBalance> {
+  const supabase = getSupabase();
+  if (!supabase) return { owed: 0, paid_out: 0, balance: 0, orders: 0 };
+  const { data, error } = await supabase.rpc("payout_balance", { p_operator: operatorId });
+  if (error) throw new Error(explain(error.message));
+  const r = (data?.[0] ?? {}) as Record<string, unknown>;
+  return { owed: num(r.owed), paid_out: num(r.paid_out), balance: num(r.balance), orders: num(r.orders) };
+}
+
+export async function payoutWindow(operatorId: string, from: Date, to: Date = new Date()): Promise<PayoutWindow> {
+  const supabase = getSupabase();
+  if (!supabase) return { orders: 0, gross: 0, fee: 0, share: 0 };
+  const { data, error } = await supabase.rpc("payout_window", { p_operator: operatorId, p_from: from.toISOString(), p_to: to.toISOString() });
+  if (error) throw new Error(explain(error.message));
+  const r = (data?.[0] ?? {}) as Record<string, unknown>;
+  return { orders: num(r.orders), gross: num(r.gross), fee: num(r.fee), share: num(r.share) };
+}
+
+export async function listPayouts(operatorId: string): Promise<Payout[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("platform_payouts")
+    .select("id, amount, note, created_at")
+    .eq("operator_id", operatorId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) throw new Error(explain(error.message));
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    id: Number(r.id),
+    amount: num(r.amount),
+    note: (r.note as string | null) ?? null,
+    created_at: String(r.created_at),
+  }));
+}
+
+/** Admin only, enforced in SQL. "I sent the desk this much." */
+export async function recordPayout(operatorId: string, amount: number, note: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { error } = await supabase.rpc("record_payout", { p_operator: operatorId, p_amount: amount, p_note: note.trim() || null });
+  if (error) throw new Error(explain(error.message));
+}
+
+export async function adminPayoutDesks(from: Date, to: Date = new Date()): Promise<DeskPayoutRow[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_payout_desks", { p_from: from.toISOString(), p_to: to.toISOString() });
+  if (error) throw new Error(explain(error.message));
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    operator_id: String(r.operator_id),
+    name: String(r.name),
+    campus: String(r.campus),
+    orders: num(r.orders),
+    gross: num(r.gross),
+    fee: num(r.fee),
+    share: num(r.share),
+    owed: num(r.owed),
+    paid_out: num(r.paid_out),
+    balance: num(r.balance),
+    gateway_status: (["off", "collect", "pending", "active", "blocked"].includes(String(r.gateway_status)) ? r.gateway_status : "off") as DeskPayoutRow["gateway_status"],
+  }));
+}
+
+/** Admin only. Turns "Printify collects" on or off for a desk; a split desk stays split. */
+export async function setGatewayCollect(operatorId: string, on: boolean): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { error } = await supabase.rpc("set_gateway_collect", { p_operator: operatorId, p_on: on });
+  if (error) throw new Error(explain(error.message));
 }
 
 /** One collected order in the fee ledger, as the admin sees it: money, not people. */

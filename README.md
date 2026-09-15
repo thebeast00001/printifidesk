@@ -838,6 +838,36 @@ sent. `tr` is alphanumeric and padded (`PRINTIFYB66…`) because the strict
 apps refuse punctuation and very short references; `tn` is letters,
 digits and spaces.
 
+### Printify collects, and pays the desk out (`0035`)
+
+Cashfree declined Easy Split for the account, so the split-at-source
+path above has nowhere to go for now. `0035` is the other way a
+marketplace runs a gateway, and the way most do: the student pays
+Cashfree's checkout, the money settles to **Printify**, Printify keeps
+its fee and owes the desk the rest.
+
+- The admin turns it on per desk: `/admin/desks` → *Online payments* →
+  **Turn on — Printify collects** (`set_gateway_collect`, admin only;
+  `gateway_status = 'collect'`). *Split at source instead* stays there for
+  the day Easy Split is granted; a desk with an active vendor keeps
+  splitting.
+- `gateway_begin()` now records whether the Cashfree order carried a
+  split (`orders.gateway_split`). Unsplit orders are what the payout
+  ledger counts.
+- **`desk_share(order)`** — the bill less the fee, scaled by what wasn't
+  refunded; zero for split, cancelled or failed orders. `payout_balance`,
+  `payout_window` and `admin_payout_desks` sum it; `record_payout` (admin)
+  writes what was sent. `platform_payouts` is readable by the desk's
+  staff and the admin.
+- **`/admin` → Payouts to desks**: collected online / your fee / owed to
+  desks, one row per desk with *Record payout* pre-filled with the
+  balance. **Desk → Takings → Online payments**: the same numbers from the
+  same functions, plus the payouts received. The fee on these orders is
+  *retained at source* in the fee ledger, never owed by the desk.
+- The harness proves the arithmetic: a full share, half a share after a
+  half refund, nothing for a split or a cancelled order; the fee
+  retained; payouts by the admin only; the balance to zero after one.
+
 ### The fee, order by order (`0033`)
 
 `/admin` shows each desk's fee for today / this week / this month as a
@@ -1076,7 +1106,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0034** in the SQL editor, pasted from the files, **in
+2. **Run 0022 → 0035** in the SQL editor, pasted from the files, **in
    number order** — a later migration can name a column an earlier one
    adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
    student update on an order failed and the X on /orders did nothing).
@@ -1093,7 +1123,8 @@ Things the code can't do on its own, in the order they bite:
    desk's standee QR isn't kept and the pay sheet draws Printify's copy;
    until 0032, online payment is never offered; until 0033, *Orders* on
    the admin's fee rows errors quietly; until 0034, a too-late cancel is
-   refused by the policy alone (silently) rather than by the guard (in words).
+   refused by the policy alone (silently) rather than by the guard (in words);
+   until 0035, online payment can't be turned on for a desk.
 3. **Cashfree.** Create a Cashfree Payments account for Printify (business
    KYC: PAN, bank account; GST if you have it), enable **Easy Split** on
    it (a request in the dashboard), then: `CASHFREE_APP_ID`,

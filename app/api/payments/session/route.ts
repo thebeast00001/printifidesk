@@ -50,7 +50,10 @@ export async function POST(request: Request) {
     .eq("id", order.operator_id)
     .maybeSingle();
   if (!operator || operator.shut_at) return fail("This desk can't take payments right now.");
-  if (operator.gateway_status !== "active" || !operator.gateway_vendor_id) {
+  // 'active' is a split to the desk's vendor; 'collect' is Printify collecting
+  // and paying the desk out. Anything else: not offered.
+  const splitting = operator.gateway_status === "active" && Boolean(operator.gateway_vendor_id);
+  if (!splitting && operator.gateway_status !== "collect") {
     return fail("This desk doesn't take online payment through Printify yet.");
   }
 
@@ -69,7 +72,7 @@ export async function POST(request: Request) {
   const origin = await requestOrigin();
   const total = Number(order.total);
   const fee = Number(order.platform_fee ?? 0);
-  const split = { vendorId: operator.gateway_vendor_id, amount: vendorShare(total, fee) };
+  const split = splitting ? { vendorId: operator.gateway_vendor_id as string, amount: vendorShare(total, fee) } : null;
 
   try {
     // A Cashfree order already made for this one: reuse its session while
@@ -98,7 +101,7 @@ export async function POST(request: Request) {
       split,
       tags: { printify_order: order.id, token: order.token ?? "" },
     });
-    const { error } = await supabase.rpc("gateway_begin", { p_order: order.id, p_gateway_order_id: created.order_id });
+    const { error } = await supabase.rpc("gateway_begin", { p_order: order.id, p_gateway_order_id: created.order_id, p_split: splitting });
     if (error) return fail(error.message, 500);
     return Response.json({ ok: true, paymentSessionId: created.payment_session_id, mode: cashfreeEnv() });
   } catch (e) {

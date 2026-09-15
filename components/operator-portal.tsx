@@ -652,7 +652,7 @@ function OrderCard({
             {order.payment_method === "gateway" && order.gateway_paid_at && (
               <span
                 className="flex items-center gap-1 rounded-full bg-sage px-2.5 py-1 text-[10.5px] font-semibold text-sage-ink"
-                title="Paid through Printify's payment partner. Your share settles to your account; the fee was taken at source."
+                title={order.gateway_split ? "Paid through Printify's payment partner. Your share settles to your account; the fee was taken at source." : "Paid through Printify's payment partner. Your share (bill less fee) is owed to you and paid out — see Takings."}
               >
                 <CreditCard size={10} strokeWidth={2.4} />
                 paid online

@@ -155,8 +155,8 @@ export interface Desk {
   /** Shut by the admin, with the reason kept; null while it runs. */
   shut_at: string | null;
   shut_reason: string | null;
-  /** 0032: Cashfree Easy Split, as last reported. */
-  gateway_status?: "off" | "pending" | "active" | "blocked";
+  /** 0032/0035: "active" = split at source; "collect" = Printify collects and pays out. */
+  gateway_status?: "off" | "collect" | "pending" | "active" | "blocked";
   gateway_vendor_id?: string | null;
   gateway_checked_at?: string | null;
   /** Orders not yet collected or cancelled — what a shut desk is left holding. */

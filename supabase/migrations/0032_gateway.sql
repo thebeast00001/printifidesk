@@ -62,6 +62,8 @@ begin
 end;
 $$;
 
+-- 0035 widens this to three arguments; on a replay the wider one must go first.
+drop function if exists public.gateway_begin(uuid, text, boolean);
 create or replace function public.gateway_begin(p_order uuid, p_gateway_order_id text)
 returns void language plpgsql security definer set search_path = public as $$
 begin

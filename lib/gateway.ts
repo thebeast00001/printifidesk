@@ -23,9 +23,13 @@ export function gatewayMode(): GatewayMode | null {
   return m === "sandbox" || m === "production" ? m : null;
 }
 
-/** Whether this desk can be paid through Printify: the deployment has Cashfree, and Cashfree said the desk's vendor is active. */
+/**
+ * Whether this desk can be paid through Printify: the deployment has
+ * Cashfree, and the desk is either split at source ("active") or has the
+ * admin collecting for it ("collect").
+ */
 export function canPayOnline(operator: Operator | null | undefined): boolean {
-  return gatewayMode() !== null && operator?.gateway_status === "active";
+  return gatewayMode() !== null && (operator?.gateway_status === "active" || operator?.gateway_status === "collect");
 }
 
 interface CashfreeSdk {

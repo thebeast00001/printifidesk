@@ -47,6 +47,7 @@ export const MIGRATION_PROBES: MigrationProbe[] = [
   { id: "0031", without: "a Paytm desk's standee QR isn't kept", check: column("operators", "upi_qr") },
   { id: "0032", without: "online payment is never offered", check: column("orders", "gateway_paid_at") },
   { id: "0033", without: "Orders under a desk on /admin errors", check: fn("admin_fee_orders", { p_operator: "00000000-0000-0000-0000-000000000000", p_from: new Date(0).toISOString() }) },
+  { id: "0035", without: "online payment can't be turned on for a desk; no payouts ledger", check: column("orders", "gateway_split") },
 ];
 
 export interface MigrationReport {

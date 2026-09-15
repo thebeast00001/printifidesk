@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Check, CreditCard, Loader2, RefreshCw } from "lucide-react";
 import { checkDesk, connectDesk, disconnectDesk, gatewayMode } from "@/lib/gateway";
+import { setGatewayCollect } from "@/lib/platform";
 import type { Desk } from "@/lib/operator";
 import { cn, easeIos } from "@/lib/utils";
 
@@ -17,7 +18,7 @@ import { cn, easeIos } from "@/lib/utils";
 export function GatewayPanel({ desk, onChanged }: { desk: Desk; onChanged: () => Promise<void> | void }) {
   const mode = gatewayMode();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<"connect" | "check" | "disconnect" | null>(null);
+  const [busy, setBusy] = useState<"connect" | "check" | "disconnect" | "collect" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
@@ -57,6 +58,21 @@ export function GatewayPanel({ desk, onChanged }: { desk: Desk; onChanged: () =>
       await onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't connect the desk.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function collect(on: boolean) {
+    setBusy("collect");
+    setError(null);
+    setNote(null);
+    try {
+      await setGatewayCollect(desk.id, on);
+      setNote(on ? "On. Students at this desk can pay through Cashfree; the money settles to Printify and this desk's share shows under Payouts on the Fees page." : "Off. Students pay the desk directly again.");
+      await onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't change that.");
     } finally {
       setBusy(null);
     }
@@ -111,11 +127,31 @@ export function GatewayPanel({ desk, onChanged }: { desk: Desk; onChanged: () =>
                     : "bg-surface-sunk text-muted",
             )}
           >
-            {status === "active" ? "on" : status === "pending" ? "verifying" : status === "blocked" ? "refused" : "off"}
+            {status === "active" ? "split" : status === "collect" ? "on" : status === "pending" ? "verifying" : status === "blocked" ? "refused" : "off"}
           </span>
         </p>
         {!mode ? (
           <p className="m-0 text-[11.5px] text-muted">Cashfree isn&apos;t configured on this deployment.</p>
+        ) : !desk.gateway_vendor_id ? (
+          <span className="flex items-center gap-3">
+            <button
+              onClick={() => void collect(status !== "collect")}
+              disabled={busy !== null}
+              className={cn(
+                "flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11.5px] font-semibold disabled:opacity-50",
+                status === "collect" ? "border border-line text-ink-soft" : "bg-ink text-paper",
+              )}
+            >
+              {busy === "collect" ? <Loader2 size={12} className="animate-spin" /> : null}
+              {status === "collect" ? "Turn off" : "Turn on — Printify collects"}
+            </button>
+            <button
+              onClick={() => setOpen((v) => !v)}
+              className="text-[11.5px] font-semibold text-muted underline-offset-2 hover:underline"
+            >
+              {open ? "Not now" : "Split at source instead"}
+            </button>
+          </span>
         ) : desk.gateway_vendor_id ? (
           <span className="flex items-center gap-3">
             <button
@@ -148,6 +184,18 @@ export function GatewayPanel({ desk, onChanged }: { desk: Desk; onChanged: () =>
           Students pay through Cashfree; the fee is taken at source and the desk&apos;s share settles to its account daily.
         </p>
       )}
+      {status === "collect" && (
+        <p className="m-0 mt-1 text-[11.5px] text-muted">
+          Students pay through Cashfree; the money settles to Printify. The desk&apos;s share — bill less fee — is owed to
+          it and paid out by you; see <b className="font-semibold">Payouts</b> on the Fees page.
+        </p>
+      )}
+      {status === "off" && mode && !desk.gateway_vendor_id && (
+        <p className="m-0 mt-1 text-[11.5px] text-muted">
+          Off: students pay the desk directly. Turn on to offer Cashfree&apos;s checkout with Printify collecting; &quot;split
+          at source&quot; needs Easy Split on the Cashfree account.
+        </p>
+      )}
       {note && <p className="m-0 mt-1.5 text-[12px] text-sage-ink">{note}</p>}
       {error && <p className="m-0 mt-1.5 text-[12px] text-clay-ink dark:text-clay">{error}</p>}
 
@@ -167,8 +215,10 @@ export function GatewayPanel({ desk, onChanged }: { desk: Desk; onChanged: () =>
           >
             <div className="mt-2.5 rounded-[14px] bg-surface-sunk p-3.5">
               <p className="m-0 mb-2.5 text-[12px] leading-relaxed text-muted">
-                The account the desk&apos;s share settles to. Cashfree verifies it before anything is paid; the
-                holder&apos;s name must match the bank&apos;s record. {mode === "sandbox" ? "Sandbox mode — Cashfree's test account, no real money." : ""}
+                Split at source needs <b className="font-semibold">Easy Split</b> enabled on the Cashfree account; without it
+                this returns Cashfree&apos;s refusal. The account the desk&apos;s share settles to — Cashfree verifies it before
+                anything is paid; the holder&apos;s name must match the bank&apos;s record.{" "}
+                {mode === "sandbox" ? "Sandbox mode — Cashfree's test account, no real money." : ""}
               </p>
               <div className="grid gap-2 sm:grid-cols-2">
                 <Field label="Account holder's name" value={name} onChange={setName} placeholder="As the bank has it" />

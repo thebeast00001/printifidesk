@@ -1919,6 +1919,104 @@ await scenario("a student cancels their own placed or queued order with the exac
   return `placed and queued cancel, cancelled_by = student; printing stays printing${refused ? "" : " (RLS hides the row; the harness is superuser)"}`;
 });
 
+/* ---------- 0035: Printify collects, and owes the desk its share ---------- */
+
+await scenario("an online order without a split is owed to the desk: bill less fee, less refunds in proportion, less payouts", async () => {
+  await actingAs(null);
+  await db.exec(`update public.platform_settings set fee_percent = 3, fee_min = 0 where id;`);
+  const place = async () => {
+    await actingAs("student_payout");
+    const { rows } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+      OPERATOR,
+      JSON.stringify([{ name: "p.pdf", pages: 20, colour_pages: 0, config: { copies: 1, sides: "single" } }]),
+    ]);
+    return rows[0].id;
+  };
+  const pay = async (id, split) => {
+    await actingAs(null);
+    await db.query(`select public.gateway_begin($1, $2, $3);`, [id, `PF${id.replace(/-/g, "")}`, split]);
+    const { rows } = await db.query(`select total, platform_fee from public.orders where id = $1;`, [id]);
+    await db.query(`select public.gateway_paid($1, $2, $3, 'upi', now());`, [id, `cf_${id.slice(0, 8)}`, Number(rows[0].total)]);
+    return { total: Number(rows[0].total), fee: Number(rows[0].platform_fee) };
+  };
+
+  // Admin turns collection on for the desk (no vendor): 'collect'.
+  await actingAs("admin_test");
+  await db.query(`select public.set_gateway_collect($1, true);`, [OPERATOR]);
+  const { rows: st } = await db.query(`select gateway_status from public.operators where id = $1;`, [OPERATOR]);
+  if (st[0].gateway_status !== "collect") throw new Error(`status ${st[0].gateway_status}`);
+  await actingAs("op_test");
+  let notAdmin = false;
+  try {
+    await db.query(`select public.set_gateway_collect($1, false);`, [OPERATOR]);
+  } catch {
+    notAdmin = true;
+  }
+  if (!notAdmin) throw new Error("staff turned collection off");
+
+  const { rows: before } = await db.query(`select * from public.payout_balance($1);`, [OPERATOR]);
+  const owed0 = Number(before[0].owed);
+
+  // Three online orders: one plain, one half refunded, one that was split at source.
+  const a = await place();
+  const { total: ta, fee: fa } = await pay(a, false);
+  const b = await place();
+  const { total: tb, fee: fb } = await pay(b, false);
+  await actingAs(null);
+  await db.query(`select public.gateway_refunded($1, 'rf_b', $2, 'half wrong');`, [b, tb / 2]);
+  const c = await place();
+  await pay(c, true);
+  // And one cancelled by the desk after paying — refunded, not owed.
+  const d = await place();
+  await pay(d, false);
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'cancelled', cancelled_by = 'operator', note = 'out of paper' where id = $1;`, [d]);
+
+  await actingAs("op_test");
+  // a and b get printed and collected; the payout doesn't wait for that, the fee window does.
+  for (const id of [a, b]) {
+    for (const st of ["printing", "ready", "collected"]) {
+      await db.query(`update public.orders set status = $2 where id = $1;`, [id, st]);
+    }
+  }
+  const { rows: after } = await db.query(`select * from public.payout_balance($1);`, [OPERATOR]);
+  const expected = Math.round(((ta - fa) + (tb - fb) * 0.5) * 100) / 100;
+  const got = Math.round((Number(after[0].owed) - owed0) * 100) / 100;
+  if (got !== expected) throw new Error(`owed rose by ${got}, expected ${expected} (a ${ta - fa}, half of b ${(tb - fb) / 2}, split c and cancelled d nothing)`);
+
+  // The fee ledger owes nothing on them: fee retained at source.
+  const { rows: fb0 } = await db.query(`select * from public.fee_balance($1);`, [OPERATOR]);
+  const { rows: win } = await db.query(`select * from public.fee_window($1, now() - interval '1 hour');`, [OPERATOR]);
+  if (Number(win[0].retained) < fa + fb) throw new Error(`retained ${win[0].retained} < ${fa + fb}`);
+  void fb0;
+
+  // A payout: admin only, written down, balance falls.
+  let staffPaid = false;
+  try {
+    await db.query(`select public.record_payout($1, 5, 'try');`, [OPERATOR]);
+  } catch {
+    staffPaid = true;
+  }
+  if (!staffPaid) throw new Error("staff recorded a payout");
+  await actingAs("admin_test");
+  await db.query(`select public.record_payout($1, $2, 'UPI to the shop');`, [OPERATOR, expected]);
+  const { rows: settled } = await db.query(`select * from public.payout_balance($1);`, [OPERATOR]);
+  if (Math.round((Number(settled[0].balance) - Number(before[0].balance)) * 100) !== 0) throw new Error(`balance after payout ${settled[0].balance} vs before ${before[0].balance}`);
+  const { rows: desks } = await db.query(`select share, paid_out, gateway_status from public.admin_payout_desks(now() - interval '1 hour') where operator_id = $1;`, [OPERATOR]);
+  if (Math.round(Number(desks[0].share) * 100) < Math.round(expected * 100) || desks[0].gateway_status !== "collect") throw new Error(`admin row ${JSON.stringify(desks[0])}`);
+
+  // The desk reads its own payouts; a student can't.
+  await actingAs("op_test");
+  const { rows: mine } = await db.query(`select amount, note from public.platform_payouts where operator_id = $1 order by created_at desc limit 1;`, [OPERATOR]);
+  if (Number(mine[0].amount) !== expected) throw new Error("the desk can't see its payout");
+  await actingAs("admin_test");
+  await db.query(`select public.set_gateway_collect($1, false);`, [OPERATOR]);
+  await actingAs(null);
+  await db.query(`delete from public.platform_payouts where operator_id = $1;`, [OPERATOR]);
+  await db.query(`delete from public.orders where user_id = 'student_payout';`);
+  return `owed ${expected} = (a) full share + (b) half share; split (c) and cancelled (d) nothing; fee retained; payout by admin only, balance to zero; desk reads it`;
+});
+
 await scenario("the upload ceiling holds", async () => {
   await actingAs("student_test");
   // 500 MB is the cap; one file over it must be refused.

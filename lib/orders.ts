@@ -69,6 +69,8 @@ export interface OrderRow {
   gateway_paid_at?: string | null;
   fee_settled_at?: string | null;
   gateway_refund_id?: string | null;
+  /** 0035: the Cashfree order carried a split to the desk's vendor. False: Printify collected; the desk's share is a payout. */
+  gateway_split?: boolean;
   refunded_at: string | null;
   refund_amount: number | null;
   refund_note: string | null;
@@ -150,8 +152,8 @@ export interface Operator {
   shelf_cols?: number;
   /** 0031: the standee's QR text, exactly as printed, when read from a photo. */
   upi_qr?: string | null;
-  /** 0032: Cashfree Easy Split — "active" is the only state that takes a payment. */
-  gateway_status?: "off" | "pending" | "active" | "blocked";
+  /** 0032/0035: "active" = split at source; "collect" = Printify collects and pays the desk out. */
+  gateway_status?: "off" | "collect" | "pending" | "active" | "blocked";
   accepts_cash: boolean;
   paper_stock: number | null;
   low_paper_at: number;
