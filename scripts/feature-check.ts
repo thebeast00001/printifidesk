@@ -2,7 +2,7 @@ import { canInstall, platformFrom, type InstallState } from "../lib/install";
 import { normalisePhone } from "../lib/phone";
 import { summarisePages } from "../lib/pages";
 import { buildSlots } from "../components/pickup-picker";
-import { cleanReference, isValidVpa, normaliseVpa, parseUpiQr, upiLink, vpaProblem } from "../lib/upi";
+import { cleanReference, handleOf, isQrOnlyMerchant, isValidVpa, normaliseVpa, parseUpiQr, upiLink, vpaProblem } from "../lib/upi";
 import { shelfLabel, shelfSlots } from "../lib/orders";
 import { pickBadges } from "../components/operator-picker";
 import { paise, quoteOrder, rateCardOf, roundedTotal } from "../lib/pricing";
@@ -143,6 +143,13 @@ const bharat =
 check("Bharat QR → id", parseUpiQr(bharat)?.vpa, "shop@yesbank");
 check("Bharat QR → merchant by tag 52", parseUpiQr(bharat)?.kind, "merchant");
 check("Bharat QR → code", parseUpiQr(bharat)?.merchantCode, "5812");
+// Paytm merchant ids are paid only by their own QR; others take a link.
+check("handle read", handleOf(" paytm.s1oh2bk@pty "), "pty");
+check("Paytm merchant is QR-only", isQrOnlyMerchant("paytm.s1oh2bk@pty", "merchant"), true);
+check("@paytm merchant is QR-only", isQrOnlyMerchant("paytmqr2810050501011abcd@paytm", "merchant"), true);
+check("a personal @paytm id is not", isQrOnlyMerchant("ansh@paytm", "personal"), false);
+check("PhonePe Business is not QR-only", isQrOnlyMerchant("Q123456789@ybl", "merchant"), false);
+check("GPay Business is not QR-only", isQrOnlyMerchant("gpay-11234567890@okbizaxis", "merchant"), false);
 
 const link = upiLink({
   vpa: "ansh@okhdfcbank",

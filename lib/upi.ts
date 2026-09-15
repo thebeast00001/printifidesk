@@ -84,6 +84,24 @@ export function vpaProblem(input: string): string | null {
 
 export type UpiKind = "personal" | "merchant";
 
+/**
+ * Handles whose merchant ids take money only through the standee's own,
+ * signed QR — a link with the amount is refused, and so is the id typed
+ * into another app ("our banking partner is unable to process your
+ * request"). Paytm's merchant handles are the known ones. For these, the
+ * shop's QR is the way to pay, and the pay sheet says so.
+ */
+const QR_ONLY_HANDLES = /^(paytm|pty|ptys|ptyes|ptaxis|ptsbi|pthdfc)$/i;
+
+export function handleOf(vpa: string): string {
+  return normaliseVpa(vpa).split("@")[1] ?? "";
+}
+
+/** True when a merchant id on this handle is paid only by scanning its QR. */
+export function isQrOnlyMerchant(vpa: string, kind: UpiKind): boolean {
+  return kind === "merchant" && QR_ONLY_HANDLES.test(handleOf(vpa));
+}
+
 export interface UpiRequest {
   vpa: string;
   payeeName: string;

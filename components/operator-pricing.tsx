@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { Camera, Check, Loader2, RotateCcw } from "lucide-react";
 import { updateOperator, type Operator, type OperatorSettings } from "@/lib/orders";
-import { normaliseVpa, parseUpiQr, vpaProblem, type UpiKind } from "@/lib/upi";
+import { isQrOnlyMerchant, normaliseVpa, parseUpiQr, vpaProblem, type UpiKind } from "@/lib/upi";
 import { decodePixels } from "./operator/scan-sheet";
 import { money, quote, rateCardOf, DEFAULT_CONFIG } from "@/lib/pricing";
 import { cn, spring } from "@/lib/utils";
@@ -315,6 +315,9 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
   const [name, setName] = useState(operator.upi_name ?? "");
   const [kind, setKind] = useState<UpiKind>(operator.upi_kind ?? "personal");
   const [mc, setMc] = useState<string | null>(operator.upi_mc ?? null);
+  // The standee's QR text, verbatim, when the id came from a photo. Cleared
+  // if the id is then typed over — a QR for a different id would be a lie.
+  const [qrText, setQrText] = useState<string | null>(operator.upi_qr ?? null);
   const [read, setRead] = useState<string | null>(null);
   const [round, setRound] = useState(operator.round_to_rupee === true);
   const [saving, setSaving] = useState(false);
@@ -326,6 +329,7 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
     setName(operator.upi_name ?? "");
     setKind(operator.upi_kind ?? "personal");
     setMc(operator.upi_mc ?? null);
+    setQrText(operator.upi_qr ?? null);
     setRound(operator.round_to_rupee === true);
   }, [operator.upi_vpa, operator.upi_name, operator.upi_kind, operator.upi_mc, operator.round_to_rupee]);
 
@@ -339,7 +343,9 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
     name.trim() !== (operator.upi_name ?? "") ||
     kind !== (operator.upi_kind ?? "personal") ||
     (mc ?? null) !== (operator.upi_mc ?? null) ||
+    (qrText ?? null) !== (operator.upi_qr ?? null) ||
     round !== (operator.round_to_rupee === true);
+  const qrOnly = isQrOnlyMerchant(trimmed, kind);
 
   // A photo of the shop's own QR standee: the id, the name and — the part
   // that matters — whether it's a merchant id, read off the code itself.
@@ -364,6 +370,7 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
       if (found.name && !name.trim()) setName(found.name);
       setKind(found.kind);
       setMc(found.merchantCode);
+      setQrText(found.kind === "merchant" && text ? text.slice(0, 2000) : null);
       setRead(`${found.vpa} · ${found.kind === "merchant" ? `merchant, code ${found.merchantCode}` : "personal id"}`);
     } finally {
       URL.revokeObjectURL(url);
@@ -379,6 +386,8 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
         upi_name: name.trim() || null,
         upi_kind: kind,
         upi_mc: kind === "merchant" ? mc : null,
+        // The QR belongs to the id it was read with; a typed-over id drops it.
+        upi_qr: kind === "merchant" && qrText && qrText.includes(trimmed) ? qrText : null,
         round_to_rupee: round,
       } as OperatorSettings);
       onSaved();
@@ -439,7 +448,9 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
         {kind === "merchant" ? (
           <>
             The id behind your PhonePe Business, Paytm for Business or GPay Business QR — the one on
-            the standee. UPI apps let those take the amount in the link; the student taps once.
+            the standee. Students get a one-tap link with the amount filled in for Google Pay, Paytm and
+            most apps; PhonePe refuses links from any website, so there they copy the id and type the
+            amount, same as for a personal id.
             {mc && <> Your QR&apos;s merchant code is <span className="font-mono">{mc}</span>.</>}
           </>
         ) : (
@@ -450,6 +461,14 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
           </>
         )}
         {read && <span className="block text-sage-ink"> Read from the photo: {read}</span>}
+        {qrOnly && (
+          <span className="mt-1.5 block text-clay-ink dark:text-clay">
+            A Paytm merchant id takes money only through its own QR — other apps refuse a link with the
+            amount and refuse the id typed in. {qrText && qrText.includes(trimmed)
+              ? "Your standee's QR is saved with it, so students scan that; on their own phone they open the saved image from the app's gallery."
+              : "Read your standee from a photo so students can scan the real QR — or use your PhonePe Business / GPay Business id, or a personal id, which every app can pay by typing."}
+          </span>
+        )}
       </p>
 
       {/* Whole rupees: what a student types is "14", not "13.91". Any kind of

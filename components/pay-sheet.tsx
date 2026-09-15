@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 import { AlertCircle, Banknote, Check, Copy, Loader2, Smartphone } from "lucide-react";
 import { getOperator, type Operator, type OrderRow } from "@/lib/orders";
 import { getSupabase } from "@/lib/supabase/client";
-import { isValidVpa, upiLink, type UpiRequest } from "@/lib/upi";
+import { isQrOnlyMerchant, isValidVpa, upiLink, type UpiRequest } from "@/lib/upi";
 import { money } from "@/lib/pricing";
 import { cn, spring } from "@/lib/utils";
 
@@ -56,13 +56,22 @@ export function PaySheet({
   }, [open, order]);
 
   const merchant = operator?.upi_kind === "merchant";
+  // A Paytm merchant id: nothing but its own signed QR is accepted, so that
+  // is what's drawn, and the link is not offered as if it might work.
+  const qrOnly = Boolean(operator?.upi_vpa && isQrOnlyMerchant(operator.upi_vpa, operator.upi_kind ?? "personal"));
+  const shopQr = qrOnly && operator?.upi_qr ? operator.upi_qr : null;
   const request = useMemo<UpiRequest | null>(() => {
     if (!order || !operator?.upi_vpa || !isValidVpa(operator.upi_vpa)) return null;
     return {
       vpa: operator.upi_vpa,
       payeeName: operator.upi_name?.trim() || operator.short_name || operator.name,
       // A personal id can't take the amount in the link; the payer types it.
-      amount: operator.upi_kind === "merchant" ? Number(order.total) : undefined,
+      // A QR-only merchant id takes nothing but its standee, so Printify's
+      // copy carries no amount either — the closest thing to the standee.
+      amount:
+        operator.upi_kind === "merchant" && !isQrOnlyMerchant(operator.upi_vpa, "merchant")
+          ? Number(order.total)
+          : undefined,
       note: `Printify ${order.token ?? ""}`.trim(),
       // Token plus the order's first hex so two B66s on different days differ.
       reference: `${order.token ?? ""}${order.id.replace(/-/g, "").slice(0, 8)}`,
@@ -79,12 +88,14 @@ export function PaySheet({
   }
 
   useEffect(() => {
-    if (!link) return setQr(null);
-    // Rendered locally — the payment link never leaves the device.
-    void QRCode.toDataURL(link, { margin: 1, width: 480, errorCorrectionLevel: "M" })
+    const source = shopQr ?? link;
+    if (!source) return setQr(null);
+    // Rendered locally — the payment link never leaves the device. The shop's
+    // own QR is redrawn from its exact text, signature included.
+    void QRCode.toDataURL(source, { margin: 1, width: 480, errorCorrectionLevel: "M" })
       .then(setQr)
       .catch(() => setQr(null));
-  }, [link]);
+  }, [link, shopQr]);
 
   const claim = useCallback(
     async (method: "upi" | "cash") => {
@@ -153,47 +164,68 @@ export function PaySheet({
                 <AlertCircle size={15} strokeWidth={2.2} />
                 This operator hasn&apos;t added a UPI id yet — pay cash at the desk.
               </Panel>
-            ) : merchant ? (
-              <>
-                {/* Phones open the app; laptops scan the code. Both are shown
-                    rather than guessed at, since a wrong guess is a dead end. */}
-                <a
-                  href={link ?? "#"}
-                  className="flex h-[54px] w-full items-center justify-center gap-2.5 rounded-2xl bg-ink text-[15px] font-semibold text-paper"
-                >
-                  <Smartphone size={17} strokeWidth={2.2} />
-                  Open UPI app
-                </a>
-                {qr && (
-                  <div className="mt-4 flex flex-col items-center gap-2.5">
-                    <p className="m-0 text-[12px] text-muted">or scan from your phone</p>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={qr}
-                      alt={`UPI QR code for ${money(Number(order?.total ?? 0), operator.currency)}`}
-                      className="size-[220px] rounded-2xl border border-line bg-white p-2"
-                    />
-                  </div>
-                )}
-
-                <button
-                  onClick={() => copy("id", operator.upi_vpa ?? "")}
-                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-surface px-4 py-2.5 font-mono text-[12.5px] text-ink-soft"
-                >
-                  <Copy size={13} strokeWidth={2.2} />
-                  {copiedWhat === "id" ? "Copied" : operator.upi_vpa}
-                </button>
-              </>
             ) : (
               <>
-                {/* A personal id: the apps refuse a link with the amount in it,
-                    so this is the route that works in every one of them. */}
+                {/* The route that works in every app, for every kind of id:
+                    the id and the amount a tap away, then the app's own
+                    "pay to UPI id". A merchant id gets the one-tap link on
+                    top — it fills the amount in the apps that accept links
+                    from websites, and PhonePe is not one of them. */}
+                {qrOnly ? (
+                  <div className="mb-3 rounded-[16px] border border-line bg-surface p-3.5">
+                    <p className="m-0 text-[13px] font-semibold">This desk is paid by scanning its QR</p>
+                    <p className="m-0 mt-1 text-[12px] leading-relaxed text-muted">
+                      A Paytm merchant id accepts nothing else — not a link, not the id typed in. Scan the
+                      code below from another phone, or{" "}
+                      <b className="font-semibold text-ink">screenshot it and open it from your UPI app&apos;s
+                      scanner (&quot;Upload from gallery&quot;)</b>, then type{" "}
+                      <b className="font-semibold text-ink tabular-nums">{money(Number(order?.total ?? 0), operator.currency)}</b>.
+                    </p>
+                    {!shopQr && (
+                      <p className="m-0 mt-1.5 text-[12px] leading-relaxed text-clay-ink dark:text-clay">
+                        The desk hasn&apos;t saved its standee&apos;s QR yet; the code below is Printify&apos;s
+                        copy and may be refused. Cash at the desk works.
+                      </p>
+                    )}
+                  </div>
+                ) : merchant ? (
+                  <>
+                    <a
+                      href={link ?? "#"}
+                      className="flex h-[54px] w-full items-center justify-center gap-2.5 rounded-2xl bg-ink text-[15px] font-semibold text-paper"
+                    >
+                      <Smartphone size={17} strokeWidth={2.2} />
+                      Open UPI app — amount filled in
+                    </a>
+                    <p className="m-0 mt-2 mb-3 text-[11px] leading-relaxed text-muted">
+                      Works in Google Pay, Paytm and most apps. <b className="font-semibold">PhonePe refuses
+                      payment links from websites</b> (&quot;banking partner is unable to process&quot;) — there,
+                      use the two steps below; it takes ten seconds.
+                    </p>
+                  </>
+                ) : null}
+
+                {qrOnly ? (
+                  <button
+                    onClick={() => copy("amount", amountText)}
+                    className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl border border-line bg-surface px-3 py-2 text-ink"
+                  >
+                    <Copy size={13} strokeWidth={2.4} />
+                    <span className="text-[12px] font-semibold text-muted">{copiedWhat === "amount" ? "Copied" : "Copy amount"}</span>
+                    <span className="font-figure text-[17px] font-extrabold tabular-nums">
+                      {money(Number(order?.total ?? 0), operator.currency)}
+                    </span>
+                  </button>
+                ) : (
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => copy("id", operator.upi_vpa ?? "")}
-                    className="flex min-h-[54px] flex-col items-center justify-center gap-0.5 rounded-2xl bg-ink px-3 py-2 text-paper"
+                    className={cn(
+                      "flex min-h-[54px] flex-col items-center justify-center gap-0.5 rounded-2xl px-3 py-2",
+                      merchant ? "border border-line bg-surface text-ink" : "bg-ink text-paper",
+                    )}
                   >
-                    <span className="flex items-center gap-1.5 text-[11px] font-semibold opacity-80">
+                    <span className={cn("flex items-center gap-1.5 text-[11px] font-semibold", merchant ? "text-muted" : "opacity-80")}>
                       <Copy size={12} strokeWidth={2.4} />
                       {copiedWhat === "id" ? "Copied" : "Copy UPI id"}
                     </span>
@@ -212,6 +244,8 @@ export function PaySheet({
                     </span>
                   </button>
                 </div>
+                )}
+                {!qrOnly && (
                 <ol className="m-0 mt-3 flex list-none flex-col gap-1.5 p-0 text-[12.5px] leading-relaxed text-ink-soft">
                   <Step n={1}>
                     Open your UPI app and choose <b className="font-semibold">Pay to UPI id</b> (or
@@ -229,28 +263,41 @@ export function PaySheet({
                     )}
                   </Step>
                 </ol>
+                )}
                 {qr && (
                   <div className="mt-4 flex flex-col items-center gap-2">
-                    <p className="m-0 text-[12px] text-muted">On a laptop? Scan this and type the amount</p>
+                    <p className="m-0 text-[12px] text-muted">
+                      {shopQr
+                        ? "The desk's own QR — scan it and type the amount"
+                        : qrOnly
+                          ? "Scan this and type the amount"
+                          : merchant
+                            ? "On a laptop? Scan this — the amount is in it"
+                            : "On a laptop? Scan this and type the amount"}
+                    </p>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={qr}
                       alt={`UPI QR code for ${operator.upi_vpa}`}
-                      className="size-[180px] rounded-2xl border border-line bg-white p-2"
+                      className={cn("rounded-2xl border border-line bg-white p-2", qrOnly ? "size-[240px]" : "size-[180px]")}
                     />
                   </div>
                 )}
-                <a
-                  href={link ?? "#"}
-                  className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-line bg-surface text-[12.5px] font-semibold text-ink-soft"
-                >
-                  <Smartphone size={14} strokeWidth={2.2} />
-                  Try opening your app anyway
-                </a>
-                <p className="m-0 mt-2 text-[11px] leading-relaxed text-muted">
-                  This desk uses a personal UPI id. UPI apps refuse a link with the amount already filled in
-                  for those, so the amount is typed by hand.
-                </p>
+                {!merchant && (
+                  <>
+                    <a
+                      href={link ?? "#"}
+                      className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-line bg-surface text-[12.5px] font-semibold text-ink-soft"
+                    >
+                      <Smartphone size={14} strokeWidth={2.2} />
+                      Try opening your app anyway
+                    </a>
+                    <p className="m-0 mt-2 text-[11px] leading-relaxed text-muted">
+                      This desk uses a personal UPI id. UPI apps refuse a link with the amount already filled in
+                      for those, so the amount is typed by hand.
+                    </p>
+                  </>
+                )}
               </>
             )}
 

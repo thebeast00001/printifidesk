@@ -141,6 +141,8 @@ export interface Operator {
   /** 0030: the shelf — rows A.. × slots per row. 0 rows means no shelf. */
   shelf_rows?: number;
   shelf_cols?: number;
+  /** 0031: the standee's QR text, exactly as printed, when read from a photo. */
+  upi_qr?: string | null;
   accepts_cash: boolean;
   paper_stock: number | null;
   low_paper_at: number;
@@ -190,6 +192,7 @@ export type OperatorSettings = Partial<
     | "round_to_rupee"
     | "shelf_rows"
     | "shelf_cols"
+    | "upi_qr"
   >
 >;
 
@@ -203,6 +206,7 @@ const OPERATOR_SELECT_LEGACY =
 // 42703 ("column does not exist") steps down one list at a time, so a
 // project on 0028 still gets 0027's columns rather than none of them.
 const OPERATOR_SELECTS = [
+  OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr", // 0031
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols", // 0030
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee", // 0028
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc", // 0027

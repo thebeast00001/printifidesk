@@ -838,6 +838,21 @@ sent. `tr` is alphanumeric and padded (`PRINTIFYB66…`) because the strict
 apps refuse punctuation and very short references; `tn` is letters,
 digits and spaces.
 
+**One id is paid only by its own QR.** A Paytm merchant id (`@pty`,
+`@paytm`, `@ptys`, `@ptaxis`…) accepts nothing but a scan of the standee
+Paytm signed — not a link with the amount, not the id typed into another
+app; every app answers "our banking partner is unable to process your
+request". `isQrOnlyMerchant()` knows those handles. For such a desk the
+pay sheet leads with *This desk is paid by scanning its QR*, draws the
+standee's exact QR text if the desk read it in from a photo
+(`operators.upi_qr`, `0031`, kept verbatim, signature included), and
+tells the student the one route that works on their own phone:
+screenshot, then *Upload from gallery* in the app's scanner, then type
+the amount. The typed route is not shown, because it's refused. A desk
+on such an id sees the same in its settings, with the way out: a PhonePe
+Business or GPay Business id, or a personal id, which every app can pay
+by typing.
+
 The id field takes what people actually paste. `normaliseVpa()` strips
 whitespace and the invisible characters a copy from WhatsApp or a business
 app drags along (zero-width spaces, a BOM, soft hyphens), and a whole
@@ -988,7 +1003,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0030** in the SQL editor, pasted from the files. Until
+2. **Run 0022 → 0031** in the SQL editor, pasted from the files. Until
    0025, the fee panel shows no due date; until 0024, the join page shows a
    migration message in the application panel; until 0026, *Shut this
    desk* on `/admin/desks` errors with a missing function; until 0027,
@@ -996,7 +1011,8 @@ Things the code can't do on its own, in the order they bite:
    until 0028, no bill rounds and the confirm row's amount is not kept;
    until 0029, the capsule's queue position errors quietly and shows no
    place in the queue; until 0030, the board says "reconnecting…", no
-   slot is assigned, and saving the shelf fails.
+   slot is assigned, and saving the shelf fails; until 0031, a Paytm
+   desk's standee QR isn't kept and the pay sheet draws Printify's copy.
 3. **Move the database nearer.** The Supabase project resolves to Tokyo
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
