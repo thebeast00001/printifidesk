@@ -1,4 +1,4 @@
--- Printify — 0039: what a shop asks for in its first week.
+-- Printifi — 0039: what a shop asks for in its first week.
 --
 -- Run after 0038 — on its own, after 0038 has been run: this file names the
 -- status 0038 adds, and Postgres refuses a new enum value in the same
@@ -227,7 +227,7 @@ begin
    limit 1;
 
   if target is null then
-    raise exception 'No Printify account with that email. They need to sign in once first.';
+    raise exception 'No Printifi account with that email. They need to sign in once first.';
   end if;
 
   insert into public.staff (user_id, operator_id, role)
@@ -1059,7 +1059,7 @@ begin
   select * into op from public.operators where id = o.operator_id;
   perform public.notify_student(o.user_id, p_order,
     coalesce(op.short_name, op.name, 'The desk') || ' corrected order ' || coalesce(o.token, '') || ' to '
-    || coalesce(op.currency, '₹') || trim(to_char(r.total, 'FM999999990.00')) || ' (' || why || '). Open Printify to accept it.');
+    || coalesce(op.currency, '₹') || trim(to_char(r.total, 'FM999999990.00')) || ' (' || why || '). Open Printifi to accept it.');
 
   return r.total;
 end;
@@ -1209,7 +1209,7 @@ begin
     new.payment_claimed_at     := old.payment_claimed_at;
   end if;
   if new.payment_method = 'gateway' and old.payment_method is distinct from 'gateway' then
-    raise exception 'A payment through Printify is recorded by Printify';
+    raise exception 'A payment through Printifi is recorded by Printifi';
   end if;
   -- A corrected bill waits for a yes before any money is claimed against it.
   if old.requote_status = 'proposed' and new.payment_claimed_at is not null and old.payment_claimed_at is null then
@@ -1351,17 +1351,17 @@ begin
               else trim(to_char(ord.total, 'FM999999990.00')) end;
 
   msg := case new.status
-    when 'queued'    then case when new.note like 'Paid online through Printify%'
+    when 'queued'    then case when new.note like 'Paid online through Printifi%'
                             then 'Paid ' || amt || ' online — order ' || coalesce(ord.token, '') || ' is in the queue at ' ||
-                                 coalesce(op.short_name, op.name, 'Printify') || '.'
+                                 coalesce(op.short_name, op.name, 'Printifi') || '.'
                             else 'Order ' || coalesce(ord.token, '') || ' is in the queue at ' ||
-                                 coalesce(op.short_name, op.name, 'Printify') || '.'
+                                 coalesce(op.short_name, op.name, 'Printifi') || '.'
                           end
     when 'ready'     then 'Ready to collect. Show token ' || coalesce(ord.token, '') || ' at ' ||
-                          coalesce(op.short_name, op.name, 'Printify') || '.'
+                          coalesce(op.short_name, op.name, 'Printifi') || '.'
     when 'collected' then 'Collected. Thanks!'
     when 'unclaimed' then 'Order ' || coalesce(ord.token, '') || ' wasn''t collected and has been cleared from the shelf at ' ||
-                          coalesce(op.short_name, op.name, 'Printify') || '. Ask at the counter if you still need it.'
+                          coalesce(op.short_name, op.name, 'Printifi') || '. Ask at the counter if you still need it.'
     when 'cancelled' then 'Order ' || coalesce(ord.token, '') || ' was cancelled' || coalesce(': ' || new.note, '') || '.'
     else 'We could not print your order' || coalesce(': ' || ord.note, '') || '.'
   end;

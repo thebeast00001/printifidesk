@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
  * Cashfree's word that money moved.
  *
  * The signature is checked over the raw bytes with the client secret
- * before anything is read. A success marks the Printify order paid
+ * before anything is read. A success marks the Printifi order paid
  * (idempotently — Cashfree retries); a failure or a drop is acknowledged
  * and nothing changes, because the student may simply try again. Always
  * 200 once verified, so Cashfree stops retrying; a bad signature is 401

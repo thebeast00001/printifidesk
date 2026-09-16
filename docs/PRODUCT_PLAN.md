@@ -16,7 +16,7 @@ Flag anything wrong here, because several decisions below hang off it:
 | A4 | Peak load is exam week + assignment deadlines, not steady traffic | Queue + slot capacity + surge handling matter more than raw scale |
 | A5 | Price point ₹1–2/page B/W. Margin is thin, volume is the game | Every rupee of payment-gateway and storage cost matters |
 
-**Naming warning:** `Printify` is an established print-on-demand company (printify.com) with an active trademark. Fine as a working repo name, but pick something else before you put it on a poster. Ideas: *PrintPoint, Xeroxly, Campus Press, PrintDesk, Sheetly, QuickPrint, PrintKaro*.
+**Naming warning:** `Printifi` is an established print-on-demand company (printify.com) with an active trademark. Fine as a working repo name, but pick something else before you put it on a poster. Ideas: *PrintPoint, Xeroxly, Campus Press, PrintDesk, Sheetly, QuickPrint, PrintKaro*.
 
 ---
 
@@ -323,7 +323,7 @@ Ship the thinnest thing that actually replaces a walk to the shop.
 | Copyright — textbook scans in the notes library | Upload policy, moderation queue, takedown process, uploader accountability |
 | Privacy incident with student documents | Short TTL, purge job, audit log, least-privilege operator access |
 | Campus politics — existing shop, admin permission | Partner with the incumbent shop rather than compete; get written permission |
-| Trademark on "Printify" | Rename before any public branding |
+| Trademark on "Printifi" | Rename before any public branding |
 | Corrupt/exotic files reaching the printer | Normalise everything to PDF server-side; reject at upload with a clear reason |
 
 ---

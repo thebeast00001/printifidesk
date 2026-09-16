@@ -36,7 +36,7 @@ export function useConnectionVerdict(): {
     if (session.status !== "ready") {
       return setVerdict({
         kind: "blocked",
-        title: "Printify can't reach its database",
+        title: "Printifi can't reach its database",
         detail: "message" in session ? session.message : "No connection.",
         steps: ["Check NEXT_PUBLIC_SUPABASE_URL and the publishable key in .env.local."],
       });

@@ -62,7 +62,7 @@ begin
   select * into prof from public.profiles  where id = ord.user_id;
   select * into op   from public.operators where id = ord.operator_id;
 
-  msg := coalesce(op.short_name, op.name, 'Printify') || ' about order '
+  msg := coalesce(op.short_name, op.name, 'Printifi') || ' about order '
       || coalesce(ord.token, '') || ': ' || new.body;
 
   insert into public.notifications (user_id, order_id, channel, to_phone, body, status, detail)
@@ -280,7 +280,7 @@ $$;
 
 /**
  * Adds a colleague by the email they signed in with. They must have opened
- * Printify once — that's what creates the profile row the lookup needs — and
+ * Printifi once — that's what creates the profile row the lookup needs — and
  * the error says so rather than "not found".
  */
 create or replace function public.add_staff(p_operator uuid, p_email text)
@@ -298,7 +298,7 @@ begin
    limit 1;
 
   if target is null then
-    raise exception 'No Printify account with that email. They need to sign in once first.';
+    raise exception 'No Printifi account with that email. They need to sign in once first.';
   end if;
 
   insert into public.staff (user_id, operator_id)

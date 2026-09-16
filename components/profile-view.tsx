@@ -166,7 +166,7 @@ export function ProfileView() {
           <NavRow
             href="/operator"
             icon={Printer}
-            label="Printify Operator"
+            label="Printifi Operator"
             hint="Your queue, prices and hours"
           />
         )}

@@ -30,13 +30,13 @@ const PERIODS: { id: FeePeriod; label: string }[] = [
 ];
 
 /**
- * What the desk owes Printify.
+ * What the desk owes Printifi.
  *
  * Every collected order carried a platform fee — a line the student saw and
  * paid with the order, into the desk's own UPI or cash drawer. This is where
  * that adds up: by period, all time, minus what's been settled. The numbers
  * are the database's, to the paisa; nothing here is estimated. The QR pays
- * the outstanding balance to Printify's VPA, and the admin records it on
+ * the outstanding balance to Printifi's VPA, and the admin records it on
  * the other side.
  */
 export function FeePanel({ operator }: { operator: Operator }) {
@@ -79,15 +79,15 @@ export function FeePanel({ operator }: { operator: Operator }) {
   const currency = operator.currency ?? "₹";
   const outstanding = balance?.outstanding ?? 0;
   const payable = settings?.payee_vpa && isValidVpa(settings.payee_vpa) && outstanding > 0;
-  // Printify's own id follows the same rule as a desk's: a personal id
+  // Printifi's own id follows the same rule as a desk's: a personal id
   // can't take the amount in the link, so the desk types it.
   const payeeMerchant = settings?.payee_kind === "merchant";
   const link = payable
     ? upiLink({
         vpa: settings!.payee_vpa!,
-        payeeName: settings!.payee_name || "Printify",
+        payeeName: settings!.payee_name || "Printifi",
         amount: payeeMerchant ? outstanding : undefined,
-        note: `Printify fee · ${operator.short_name || operator.name}`.slice(0, 50),
+        note: `Printifi fee · ${operator.short_name || operator.name}`.slice(0, 50),
         reference: `PRINTIFYFEE${operator.id.replace(/-/g, "").slice(0, 8)}`,
       })
     : null;
@@ -111,14 +111,14 @@ export function FeePanel({ operator }: { operator: Operator }) {
         <div>
           <h2 className="font-heading m-0 flex items-center gap-2 text-[18px] font-bold">
             <Receipt size={16} strokeWidth={2.2} />
-            Printify fee
+            Printifi fee
           </h2>
           <p className="m-0 mt-1 max-w-[60ch] text-[12.5px] leading-relaxed text-muted">
             {pct === null
               ? "Loading…"
               : Number(pct) === 0
                 ? "No platform fee is set right now."
-                : `${pct}% of every collected order, shown on the student's bill and paid to you with it. It's Printify's; settle it from here.`}
+                : `${pct}% of every collected order, shown on the student's bill and paid to you with it. It's Printifi's; settle it from here.`}
           </p>
         </div>
         <div className="flex gap-0.5 rounded-full border border-line bg-surface-sunk p-1">
@@ -176,7 +176,7 @@ export function FeePanel({ operator }: { operator: Operator }) {
                 <>
                   <b className="font-semibold">Overdue:</b> {money(status.due, currency)} for{" "}
                   {monthName(status.due_month)} and earlier. The desk can&apos;t be opened until this is
-                  settled — pay it below and Printify records it.
+                  settled — pay it below and Printifi records it.
                 </>
               ) : (
                 <>
@@ -193,7 +193,7 @@ export function FeePanel({ operator }: { operator: Operator }) {
             <div className="mt-3.5 rounded-[16px] border border-line bg-surface-sunk p-4">
               {!settings.payee_vpa ? (
                 <p className="m-0 text-[12.5px] text-muted">
-                  Printify hasn&apos;t set where to send settlements yet. Nothing to pay from here until it does.
+                  Printifi hasn&apos;t set where to send settlements yet. Nothing to pay from here until it does.
                 </p>
               ) : outstanding <= 0 ? (
                 <p className="m-0 text-[12.5px] font-semibold text-sage-ink">Settled up. Nothing outstanding.</p>
@@ -204,7 +204,7 @@ export function FeePanel({ operator }: { operator: Operator }) {
                     <img src={qr} alt="" width={120} height={120} className="size-[120px] shrink-0 rounded-lg bg-white" />
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="label-caps m-0">Settle with Printify</p>
+                    <p className="label-caps m-0">Settle with Printifi</p>
                     <p className="font-figure m-0 mt-0.5 text-[24px] font-extrabold tabular-nums">
                       {money(outstanding, currency)}
                     </p>
@@ -214,7 +214,7 @@ export function FeePanel({ operator }: { operator: Operator }) {
                       {payeeMerchant
                         ? "Scan from any UPI app, or tap on a phone."
                         : `Scan from any UPI app and type ${money(outstanding, currency)} — a personal id can't carry the amount.`}{" "}
-                      Once Printify records it, it shows below.
+                      Once Printifi records it, it shows below.
                     </p>
                     {link && (
                       <a

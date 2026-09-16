@@ -28,7 +28,7 @@ const PERIODS: { id: FeePeriod; label: string }[] = [
 ];
 
 /**
- * What Printify owes this desk from online payments — and (0040) the
+ * What Printifi owes this desk from online payments — and (0040) the
  * proof: every online-paid order with its bill, the fee, the share and
  * Cashfree's reference; the day the balance is paid; and, for every payout
  * received, the exact orders it covered, downloadable as a CSV. Every
@@ -89,7 +89,7 @@ export function PayoutPanel({ operator }: { operator: Operator }) {
             Online payments
           </h2>
           <p className="m-0 mt-0.5 text-[12.5px] text-muted">
-            Paid through Printify by card or any UPI app. The money lands with Printify; your share is paid out to you
+            Paid through Printifi by card or any UPI app. The money lands with Printifi; your share is paid out to you
             {dayName ? ` every ${dayName}` : ""}.
           </p>
         </div>
@@ -138,12 +138,12 @@ export function PayoutPanel({ operator }: { operator: Operator }) {
             />
           </dl>
           <p className="m-0 mt-2.5 font-mono text-[11px] text-muted">
-            your share = bill − Printify fee · a refund comes off in proportion · a cancelled order counts for nothing
+            your share = bill − Printifi fee · a refund comes off in proportion · a cancelled order counts for nothing
           </p>
           {next && (
             <p className="m-0 mt-2 flex items-center gap-1.5 text-[12px] text-ink-soft">
               <CalendarClock size={13} strokeWidth={2.2} />
-              Printify pays what&apos;s owed every {dayName}. Each payout appears below with the orders it covered.
+              Printifi pays what&apos;s owed every {dayName}. Each payout appears below with the orders it covered.
             </p>
           )}
 

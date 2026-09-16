@@ -30,7 +30,7 @@ export function StudentDoor({ next }: { next: string }) {
         </p>
       ) : (
         <>
-          <p className="label-caps m-0">Printify</p>
+          <p className="label-caps m-0">Printifi</p>
           <h2 className="font-heading m-0 mt-1 text-[24px] font-bold">Sign in</h2>
           <p className="mx-auto m-0 mt-1.5 max-w-[36ch] text-[12.5px] leading-relaxed text-muted">
             Your orders, files and tokens are tied to your Google account. One tap, no password.

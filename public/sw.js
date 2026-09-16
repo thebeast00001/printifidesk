@@ -13,11 +13,11 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data.json();
   } catch {
-    payload = { title: "Printify", body: event.data.text() };
+    payload = { title: "Printifi", body: event.data.text() };
   }
 
   event.waitUntil(
-    self.registration.showNotification(payload.title || "Printify", {
+    self.registration.showNotification(payload.title || "Printifi", {
       body: payload.body || "",
       // The desk's pushes carry the desk's mark; anything else is the app's.
       icon: sameOriginPath(payload.icon, "/icon-192.png"),

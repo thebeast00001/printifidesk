@@ -82,7 +82,7 @@ export function useNewOrderAlert(pendingCount: number | null, paid?: PaidSignal)
     notify(pendingCount);
   }, [pendingCount, enabled, chime, notify]);
 
-  // A payment through Printify: the order skips New and lands in the queue
+  // A payment through Printifi: the order skips New and lands in the queue
   // already paid, so the count above never rises for it. Its own three
   // notes, and a notification that names the token.
   useEffect(() => {
@@ -121,7 +121,7 @@ export function useNewOrderAlert(pendingCount: number | null, paid?: PaidSignal)
   return { enabled, toggle };
 }
 
-/** How many payments through Printify this screen has seen land, and the newest one's token and amount. */
+/** How many payments through Printifi this screen has seen land, and the newest one's token and amount. */
 export interface PaidSignal {
   count: number;
   latest: string | null;

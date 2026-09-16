@@ -123,7 +123,7 @@ export function OperatorPortal({ operator, owner = true }: { operator: Operator;
   const [heroInView, setHeroInView] = useState(true);
   const heroRef = useRef<HTMLDivElement | null>(null);
   const heroObserver = useRef<IntersectionObserver | null>(null);
-  // Payments through Printify that landed while this screen was open. The
+  // Payments through Printifi that landed while this screen was open. The
   // order moves itself from New to the queue, so nothing else on the page
   // rises to say so; this does — a chime, a notification, and a strip under
   // the tabs that jumps to the card. Seeded from the first load so what was
@@ -321,7 +321,7 @@ export function OperatorPortal({ operator, owner = true }: { operator: Operator;
   }, [orders, tab, query, reported, reports]);
 
   // Rings when the number waiting to be accepted goes up, and when a
-  // payment through Printify lands.
+  // payment through Printifi lands.
   const alert = useNewOrderAlert(stats ? stats.pending : null, paidSignal);
 
   const nextUp =
@@ -510,7 +510,7 @@ export function OperatorPortal({ operator, owner = true }: { operator: Operator;
                   onNote={(note) => run(order.id, () => setOperatorNote(order.id, note))}
                   onRefund={(amount, reason) =>
                     run(order.id, () =>
-                      // Paid through Printify: the refund moves money, via Cashfree.
+                      // Paid through Printifi: the refund moves money, via Cashfree.
                       // Paid to the desk: the desk moves it, and this writes it down.
                       order.gateway_payment_id ? refundOnline(order.id, amount, reason) : refundOrder(order.id, amount, reason),
                     )
@@ -733,7 +733,7 @@ function OrderCard({
             {order.payment_method === "gateway" && order.gateway_paid_at && (
               <span
                 className="flex items-center gap-1 rounded-full bg-sage px-2.5 py-1 text-[10.5px] font-semibold text-sage-ink"
-                title={order.gateway_split ? "Paid through Printify's payment partner. Your share settles to your account; the fee was taken at source." : "Paid through Printify's payment partner. Your share (bill less fee) is owed to you and paid out — see Takings."}
+                title={order.gateway_split ? "Paid through Printifi's payment partner. Your share settles to your account; the fee was taken at source." : "Paid through Printifi's payment partner. Your share (bill less fee) is owed to you and paid out — see Takings."}
               >
                 <CreditCard size={10} strokeWidth={2.4} />
                 paid online
@@ -835,8 +835,8 @@ function OrderCard({
             · {money(Number(order.total), currency)}
             {Number(order.platform_fee) > 0 && (
               // The student paid this into the desk's UPI or drawer; it's
-              // Printify's, and Takings adds it up.
-              <span className="text-muted"> (incl. {money(Number(order.platform_fee), currency)} Printify fee)</span>
+              // Printifi's, and Takings adds it up.
+              <span className="text-muted"> (incl. {money(Number(order.platform_fee), currency)} Printifi fee)</span>
             )}
           </p>
           <p className="m-0 mt-0.5 font-mono text-[11.5px] text-muted">
@@ -1358,7 +1358,7 @@ function LowStock({ operator }: { operator: Operator }) {
   return (
     <p className="m-0 flex items-start gap-2 rounded-[14px] bg-clay px-4 py-3 text-[12.5px] leading-relaxed text-clay-ink">
       <AlertCircle size={15} strokeWidth={2.2} className="mt-px shrink-0" />
-      Running low: {parts.join(" and ")} left. Printify closes itself at zero.
+      Running low: {parts.join(" and ")} left. Printifi closes itself at zero.
     </p>
   );
 }
@@ -1583,7 +1583,7 @@ function RefundRow({
         <div className="rounded-[14px] bg-clay/40 p-3.5">
           {order.gateway_payment_id ? (
             <p className="m-0 mb-2.5 text-[12px] leading-relaxed">
-              <strong className="font-semibold">This one was paid through Printify</strong> — confirming here
+              <strong className="font-semibold">This one was paid through Printifi</strong> — confirming here
               sends the money back through the payment partner, onto whatever they paid with (a few days
               for cards). Your share of it comes out of your next settlement.
             </p>

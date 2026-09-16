@@ -63,7 +63,7 @@ export function Board() {
       setError(null);
       setUpdatedAt(Date.now());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't reach Printify.");
+      setError(e instanceof Error ? e.message : "Couldn't reach Printifi.");
     } finally {
       inflight.current = false;
     }
@@ -94,12 +94,12 @@ export function Board() {
 
   if (operator === undefined) {
     // Deciding which desk: the frame alone, no flash of "which desk?".
-    return <Frame title="Printify">{null}</Frame>;
+    return <Frame title="Printifi">{null}</Frame>;
   }
 
   if (!operator) {
     return (
-      <Frame title="Printify">
+      <Frame title="Printifi">
         <div className="mx-auto max-w-[520px] px-6 py-16 text-center">
           <p className="font-heading m-0 text-[28px] font-extrabold">Which desk?</p>
           <p className="m-0 mt-2 text-[15px] text-muted">
@@ -186,7 +186,7 @@ function Frame({
         <div className="flex items-center gap-3 font-mono text-[15px] text-muted lg:text-[18px]">
           {stale && <span className="text-clay-ink dark:text-clay">reconnecting…</span>}
           {clock && <span className="tabular-nums">{clock}</span>}
-          <span className="text-[12px] tracking-[0.12em] uppercase opacity-60">Printify</span>
+          <span className="text-[12px] tracking-[0.12em] uppercase opacity-60">Printifi</span>
         </div>
       </header>
       {children}

@@ -50,7 +50,7 @@ export function PaySheet({
   // different number is a warning now instead of a surprise at the counter.
   const [sent, setSent] = useState("");
   const [error, setError] = useState<string | null>(null);
-  // Paying through Printify lives in <OnlinePay>; this only remembers
+  // Paying through Printifi lives in <OnlinePay>; this only remembers
   // whether the student asked for the direct route instead.
   const [showDirect, setShowDirect] = useState(false);
 
@@ -83,13 +83,13 @@ export function PaySheet({
       vpa: operator.upi_vpa,
       payeeName: operator.upi_name?.trim() || operator.short_name || operator.name,
       // A personal id can't take the amount in the link; the payer types it.
-      // A QR-only merchant id takes nothing but its standee, so Printify's
+      // A QR-only merchant id takes nothing but its standee, so Printifi's
       // copy carries no amount either — the closest thing to the standee.
       amount:
         operator.upi_kind === "merchant" && !isQrOnlyMerchant(operator.upi_vpa, "merchant")
           ? Number(order.total)
           : undefined,
-      note: `Printify ${order.token ?? ""}`.trim(),
+      note: `Printifi ${order.token ?? ""}`.trim(),
       // Token plus the order's first hex so two B66s on different days differ.
       reference: `${order.token ?? ""}${order.id.replace(/-/g, "").slice(0, 8)}`,
     };
@@ -235,7 +235,7 @@ export function PaySheet({
                     </p>
                     {!shopQr && (
                       <p className="m-0 mt-1.5 text-[12px] leading-relaxed text-clay-ink dark:text-clay">
-                        The desk hasn&apos;t saved its standee&apos;s QR yet; the code below is Printify&apos;s
+                        The desk hasn&apos;t saved its standee&apos;s QR yet; the code below is Printifi&apos;s
                         copy and may be refused. Cash at the desk works.
                       </p>
                     )}
@@ -433,7 +433,7 @@ export function PaySheet({
               )}
 
               <p className="m-0 mt-3 text-[11px] leading-relaxed text-muted">
-                Printify never holds your money — it goes straight to the operator. We can&apos;t see
+                Printifi never holds your money — it goes straight to the operator. We can&apos;t see
                 whether a transfer succeeded, so they confirm it themselves before printing.
               </p>
             </div>

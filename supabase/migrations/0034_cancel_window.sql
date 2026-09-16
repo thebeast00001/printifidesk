@@ -11,7 +11,7 @@
 create or replace function public.guard_order_update()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  -- Printify's own server, inside gateway_begin / gateway_paid /
+  -- Printifi's own server, inside gateway_begin / gateway_paid /
   -- gateway_refunded. The flag is transaction-local and set nowhere else.
   if current_setting('printify.gateway', true) = '1' then
     return new;

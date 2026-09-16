@@ -63,5 +63,5 @@ export function fail(message: string, status = 400): Response {
  * route, where it can't be undone by a cookie setting elsewhere.
  */
 export async function refuseCrossOrigin(request: Request): Promise<Response | null> {
-  return (await sameOriginRequest(request)) ? null : fail("This request didn't come from Printify.", 403);
+  return (await sameOriginRequest(request)) ? null : fail("This request didn't come from Printifi.", 403);
 }

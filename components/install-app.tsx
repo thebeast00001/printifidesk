@@ -102,7 +102,7 @@ export function InstallDrawer() {
               <img src="/icon-192.png" alt="" className="size-14 rounded-[16px] border border-line" />
               <div className="min-w-0">
                 <Drawer.Title className="font-figure m-0 text-[22px] leading-tight font-extrabold">
-                  Printify on your home screen
+                  Printifi on your home screen
                 </Drawer.Title>
                 <Drawer.Description className="m-0 mt-0.5 text-[12.5px] text-muted">
                   It&apos;s this site, installed — nothing from an app store.
@@ -114,7 +114,7 @@ export function InstallDrawer() {
               <div className="mt-5 flex gap-3 rounded-[16px] bg-sage px-4 py-3.5 text-[13px] leading-relaxed text-sage-ink">
                 <Check size={16} strokeWidth={2.4} className="mt-px shrink-0" />
                 <span>
-                  <b className="font-bold">You&apos;re set.</b> Open Printify from your home screen like
+                  <b className="font-bold">You&apos;re set.</b> Open Printifi from your home screen like
                   any other app.
                 </span>
               </div>
@@ -154,7 +154,7 @@ export function InstallDrawer() {
                         <PlusSquare size={13} strokeWidth={2.2} className="inline -mt-0.5" />.
                       </>,
                       <>
-                        Tap <b className="font-semibold">Add</b>. Printify lands next to your other
+                        Tap <b className="font-semibold">Add</b>. Printifi lands next to your other
                         apps.
                       </>,
                     ]}

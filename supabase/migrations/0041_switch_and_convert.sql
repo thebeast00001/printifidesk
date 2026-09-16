@@ -1,4 +1,4 @@
--- Printify — 0041: the switch wins until the schedule's next change; any
+-- Printifi — 0041: the switch wins until the schedule's next change; any
 -- file converts to a PDF.
 --
 -- Run after 0040.

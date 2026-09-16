@@ -145,7 +145,7 @@ export function upiLink({ vpa, payeeName, amount, note, reference }: UpiRequest)
 
 /**
  * A reference the strictest app accepts: alphanumeric, at most 35, and
- * padded with the Printify mark when the token alone is only a few
+ * padded with the Printifi mark when the token alone is only a few
  * characters. `B66` becomes `PRINTIFYB66`; a raw id keeps its hex.
  */
 export function cleanReference(reference: string): string {

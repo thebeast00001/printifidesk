@@ -5,11 +5,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * A refund of a payment made through Printify — the one refund that
+ * A refund of a payment made through Printifi — the one refund that
  * actually moves money from here. The desk's owner (or the admin) asks;
  * Cashfree pays the student back onto whatever they paid with, and the
  * split is unwound in the same proportion as it was made, so the desk
- * bears its share and Printify its fee's share. Recorded on the order by
+ * bears its share and Printifi its fee's share. Recorded on the order by
  * the server, like the payment was.
  */
 export async function POST(request: Request) {
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (!order) return fail("No such order", 404);
   if (!(await isOwnerOf(supabase, userId, order.operator_id)) && !(await isAdminUser(supabase, userId))) return fail("Only the desk's owner refunds", 403);
-  if (!order.gateway_payment_id || !order.gateway_order_id) return fail("This order wasn't paid through Printify — record the refund on the card instead.");
+  if (!order.gateway_payment_id || !order.gateway_order_id) return fail("This order wasn't paid through Printifi — record the refund on the card instead.");
   if (order.refunded_at) return fail("Already refunded.");
   const total = Number(order.total);
   if (amount > total) return fail(`At most the ${total.toFixed(2)} they paid.`);

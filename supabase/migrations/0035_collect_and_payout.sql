@@ -1,26 +1,26 @@
--- Print Counter — Printify collects, and pays the desk out.
+-- Print Counter — Printifi collects, and pays the desk out.
 --
 -- Run after 0034.
 --
 -- Cashfree declined Easy Split for the account, so the split-at-source
 -- path (0032) has nowhere to go for now. This is the other way a
 -- marketplace runs a gateway, and the way most do: the student pays
--- Cashfree, the money settles to Printify, Printify keeps its fee and
+-- Cashfree, the money settles to Printifi, Printifi keeps its fee and
 -- owes the desk the rest — paid out on a rhythm and written down here,
 -- the mirror image of the fee ledger.
 --
 --   operators.gateway_status   gains 'collect': the admin turned online
---                              payment on for this desk with Printify
+--                              payment on for this desk with Printifi
 --                              collecting. 'active' still means a split.
 --   orders.gateway_split       whether the Cashfree order carried a split
 --                              (set when the order is begun). False means
---                              the desk's share is Printify's to pay out.
---   platform_payouts           what Printify has paid a desk, when, why.
+--                              the desk's share is Printifi's to pay out.
+--   platform_payouts           what Printifi has paid a desk, when, why.
 --   payout_balance()           what a desk is owed: its share of every
 --                              online, unsplit, not-cancelled order, less
 --                              the refunded part in proportion, less payouts.
 --
--- The desk's share of an order is the bill less Printify's fee — rounding
+-- The desk's share of an order is the bill less Printifi's fee — rounding
 -- included — exactly what a split would have sent.
 
 alter table public.operators drop constraint if exists operators_gateway_status_check;

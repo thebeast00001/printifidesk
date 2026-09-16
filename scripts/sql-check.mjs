@@ -231,7 +231,7 @@ const OPERATOR = "11111111-1111-1111-1111-111111111111";
  * the trigger and function logic, not the policies.
  */
 async function actingAs(userId) {
-  // null is Printify's own server: Supabase's service key carries role =
+  // null is Printifi's own server: Supabase's service key carries role =
   // service_role and no sub, which is what assert_server() (0032) looks for.
   const claims = userId === null ? JSON.stringify({ role: "service_role" }) : JSON.stringify({ sub: userId });
   await db.query(`select set_config('request.jwt.claims', $1, false);`, [claims]);
@@ -1197,7 +1197,7 @@ await scenario("a minimum fee floors small orders; changing the rate touches onl
   }
   if (!refused) throw new Error("a student changed the platform fee");
   await actingAs("admin_test");
-  await db.query(`select public.set_platform_fee(5, 0, 'printify@upi', 'Printify');`);
+  await db.query(`select public.set_platform_fee(5, 0, 'printify@upi', 'Printifi');`);
   const { rows: same } = await db.query(`select platform_fee from public.orders where id = $1;`, [rows[0].id]);
   if (Number(same[0].platform_fee) !== 1) throw new Error("an existing order's fee moved with the setting");
   await actingAs("student_fee");
@@ -1310,7 +1310,7 @@ await scenario("an overdue fee locks the desk closed until it's settled", async 
 
   // With no grace at all, it's overdue the moment the month turns.
   await actingAs("admin_test");
-  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printify', 0);`);
+  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printifi', 0);`);
   await actingAs("op_test");
   const { rows: st } = await db.query(`select * from public.fee_status($1);`, [OPERATOR]);
   if (!st[0]?.overdue || Number(st[0].due) <= 0) {
@@ -1328,7 +1328,7 @@ await scenario("an overdue fee locks the desk closed until it's settled", async 
 
   // Inside the grace period it's due but not overdue, and the desk opens.
   await actingAs("admin_test");
-  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printify', 90);`);
+  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printifi', 90);`);
   await actingAs("op_test");
   const { rows: st2 } = await db.query(`select * from public.fee_status($1);`, [OPERATOR]);
   if (st2[0].overdue || Number(st2[0].due) !== Number(st[0].due)) throw new Error(`within grace: ${JSON.stringify(st2[0])}`);
@@ -1337,7 +1337,7 @@ await scenario("an overdue fee locks the desk closed until it's settled", async 
 
   // Settling what's due unlocks it even with no grace.
   await actingAs("admin_test");
-  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printify', 0);`);
+  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printifi', 0);`);
   await db.query(`select public.record_settlement($1, $2, 'August, in full');`, [OPERATOR, Number(st[0].due)]);
   await actingAs("op_test");
   const { rows: st3 } = await db.query(`select * from public.fee_status($1);`, [OPERATOR]);
@@ -1458,11 +1458,11 @@ await scenario("the admin shuts a desk; its staff finish the queue and nothing e
   // no new staff — each refused by a trigger, so a direct update is no way round.
   await actingAs("shut_owner");
   const attempts = [
-    ["open", `update public.operators set is_open = true where id = $1;`, /closed by Printify: Charged/],
+    ["open", `update public.operators set is_open = true where id = $1;`, /closed by Printifi: Charged/],
     ["relist", `update public.operators set is_listed = true where id = $1;`, /cannot be listed/],
     ["unmark", `update public.operators set shut_at = null where id = $1;`, /Only the admin shuts/],
-    ["code", `select public.create_invite($1, 'Sneaky');`, /closed by Printify/],
-    ["staff", `insert into public.staff (user_id, operator_id) values ('shut_friend', $1);`, /closed by Printify/],
+    ["code", `select public.create_invite($1, 'Sneaky');`, /closed by Printifi/],
+    ["staff", `insert into public.staff (user_id, operator_id) values ('shut_friend', $1);`, /closed by Printifi/],
   ];
   for (const [what, sql, expect] of attempts) {
     let refused = "";
@@ -1535,16 +1535,16 @@ await scenario("a desk's UPI id is personal until it says merchant; the fee id t
   await db.query(`update public.operators set upi_kind = 'personal', upi_mc = null where id = $1;`, [OPERATOR]);
 
   await actingAs("admin_test");
-  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printify', 15, 'merchant');`);
+  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printifi', 15, 'merchant');`);
   const { rows: ps } = await db.query(`select payee_kind from public.platform_settings where id;`);
   if (ps[0].payee_kind !== "merchant") throw new Error(`payee_kind ${ps[0].payee_kind}`);
   // The five-argument call from before 0027 still works, and leaves the kind alone.
-  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printify', 15);`);
+  await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printifi', 15);`);
   const { rows: ps2 } = await db.query(`select payee_kind from public.platform_settings where id;`);
   if (ps2[0].payee_kind !== "merchant") throw new Error(`five-arg call changed the kind to ${ps2[0].payee_kind}`);
   let bad = false;
   try {
-    await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printify', 15, 'crypto');`);
+    await db.query(`select public.set_platform_fee(3, 0, 'printify@upi', 'Printifi', 15, 'crypto');`);
   } catch {
     bad = true;
   }
@@ -1789,7 +1789,7 @@ await scenario("ready jobs take the lowest free shelf slot; the slot frees on co
   return `A1, A2, none; student can't move; freed A1 reassigned by hand, A2 reused on the next ready; Z99 refused; no shelf → no slot; board leads with ready, no names, dark when shut`;
 });
 
-/* ---------- 0032: paid through Printify ---------- */
+/* ---------- 0032: paid through Printifi ---------- */
 
 await scenario("a gateway payment is the server's write: marks paid and queued once, retains the fee, and nobody else can touch it", async () => {
   await actingAs(null);
@@ -1982,7 +1982,7 @@ await scenario("a student cancels their own placed or queued order with the exac
   return `placed and queued cancel, cancelled_by = student; printing stays printing${refused ? "" : " (RLS hides the row; the harness is superuser)"}`;
 });
 
-/* ---------- 0035: Printify collects, and owes the desk its share ---------- */
+/* ---------- 0035: Printifi collects, and owes the desk its share ---------- */
 
 await scenario("an online order without a split is owed to the desk: bill less fee, less refunds in proportion, less payouts", async () => {
   await actingAs(null);
@@ -2394,7 +2394,7 @@ await scenario("the Open switch wins until the hours next change, then the hours
 
 /* ---------- 0040: trust, made visible ---------- */
 
-await scenario("the owner can pause payments through Printify; payouts say what they covered; the payout day is the admin's", async () => {
+await scenario("the owner can pause payments through Printifi; payouts say what they covered; the payout day is the admin's", async () => {
   await actingAs(null);
   await db.exec(`insert into public.staff (user_id, operator_id, role) values ('hand_pause', '${OPERATOR}', 'staff') on conflict do nothing;`);
   await db.query(`update public.operators set gateway_paused = false where id = $1;`, [OPERATOR]);
@@ -2404,7 +2404,7 @@ await scenario("the owner can pause payments through Printify; payouts say what 
   const byOwner = await refused("authenticated", "op_test", `update public.operators set gateway_paused = true where id = $1;`, [OPERATOR]);
   if (byOwner) throw new Error(`owner refused: ${byOwner}`);
   const ownerOn = await refused("authenticated", "op_test", `update public.operators set gateway_status = 'collect' where id = $1;`, [OPERATOR]);
-  if (!/Only Printify switches/.test(ownerOn ?? "")) throw new Error(`owner switched the gateway on: ${ownerOn ?? "allowed"}`);
+  if (!/Only Printifi switches/.test(ownerOn ?? "")) throw new Error(`owner switched the gateway on: ${ownerOn ?? "allowed"}`);
   await actingAs(null);
   const { rows: paused } = await db.query(`select gateway_paused from public.operators where id = $1;`, [OPERATOR]);
   if (!paused[0].gateway_paused) throw new Error("the pause didn't land");
@@ -2463,7 +2463,7 @@ await scenario("the owner can pause payments through Printify; payouts say what 
   return "staff can't pause, the owner can, switching on stays the admin's; a payout records its window and its statement names the orders with Cashfree's refs; staff get no statement; the payout day is admin-only, 1–7";
 });
 
-/* ---------- 0037: a payment through Printify is heard on both sides ---------- */
+/* ---------- 0037: a payment through Printifi is heard on both sides ---------- */
 
 await scenario("a gateway payment pushes 'paid online' to the desk and 'paid ₹x' to the student, once", async () => {
   await actingAs(null);
@@ -2679,7 +2679,7 @@ await scenario("the notification queue answers only the server, in grant and in 
   } catch (error) {
     inBody = String(error?.message ?? error).split("\n")[0];
   }
-  if (!/Only Printify's server/.test(inBody ?? "")) throw new Error(`body with a sub: ${inBody ?? "allowed"}`);
+  if (!/Only Printifi's server/.test(inBody ?? "")) throw new Error(`body with a sub: ${inBody ?? "allowed"}`);
   await actingAs(null);
   await db.query(`select * from public.claim_notifications(1);`);
   return "anon and a student: permission denied; a Clerk token inside the body: refused; the server: fine";
@@ -2715,9 +2715,9 @@ await scenario("online payment is switched on by the admin or the server, never 
   await db.query(`update public.operators set gateway_status = 'off', gateway_vendor_id = null where id = $1;`, [OPERATOR]);
   // Staff, through the policy that lets them edit their own desk.
   const byStaff = await refused("authenticated", "op_test", `update public.operators set gateway_status = 'collect' where id = $1;`, [OPERATOR]);
-  if (!/Only Printify switches/.test(byStaff ?? "")) throw new Error(`staff: ${byStaff ?? "allowed"}`);
+  if (!/Only Printifi switches/.test(byStaff ?? "")) throw new Error(`staff: ${byStaff ?? "allowed"}`);
   const vendor = await refused("authenticated", "op_test", `update public.operators set gateway_vendor_id = 'desk_x' where id = $1;`, [OPERATOR]);
-  if (!/Only Printify switches/.test(vendor ?? "")) throw new Error(`staff vendor: ${vendor ?? "allowed"}`);
+  if (!/Only Printifi switches/.test(vendor ?? "")) throw new Error(`staff vendor: ${vendor ?? "allowed"}`);
   // Staff can still run their desk.
   const open = await refused("authenticated", "op_test", `update public.operators set status_note = 'back at 3' where id = $1;`, [OPERATOR]);
   if (open) throw new Error(`staff's own note refused: ${open}`);
@@ -2751,7 +2751,7 @@ await scenario("a student can't back-date an order or mark it paid online; staff
   if (after.user_id !== LOCK_STUDENT) throw new Error("user_id moved");
   const online = await refused("authenticated", LOCK_STUDENT,
     `update public.orders set payment_method = 'gateway', payment_claimed_at = now() where id = $1;`, [id]);
-  if (!/recorded by Printify/.test(online ?? "")) throw new Error(`gateway claim: ${online ?? "allowed"}`);
+  if (!/recorded by Printifi/.test(online ?? "")) throw new Error(`gateway claim: ${online ?? "allowed"}`);
   // Staff: the bill, the owner and the student's claim are pinned; the desk's own fields aren't.
   const reprice = await refused("authenticated", "op_test",
     `update public.orders set total = 999, user_id = 'op_test', payment_claimed_amount = 0 where id = $1;`, [id]);

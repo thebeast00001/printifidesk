@@ -154,7 +154,7 @@ check("a personal @paytm id is not", isQrOnlyMerchant("ansh@paytm", "personal"),
 check("PhonePe Business is not QR-only", isQrOnlyMerchant("Q123456789@ybl", "merchant"), false);
 check("GPay Business is not QR-only", isQrOnlyMerchant("gpay-11234567890@okbizaxis", "merchant"), false);
 
-console.log("\n— paying through Printify (Cashfree) —");
+console.log("\n— paying through Printifi (Cashfree) —");
 const secret = "cf_test_secret";
 const raw = '{"data":{"order":{"order_id":"PFabc","order_amount":14.00},"payment":{"cf_payment_id":1,"payment_status":"SUCCESS","payment_amount":14.00}},"type":"PAYMENT_SUCCESS_WEBHOOK"}';
 const ts = "1617695238078";
@@ -177,9 +177,9 @@ check("unknown → pending", vendorStatus(undefined), "pending");
 
 const link = upiLink({
   vpa: "ansh@okhdfcbank",
-  payeeName: "Printify Block C",
+  payeeName: "Printifi Block C",
   amount: 55,
-  note: "Printify A47",
+  note: "Printifi A47",
   reference: "A47",
 });
 check("scheme", link.startsWith("upi://pay?"), true);
@@ -188,7 +188,7 @@ check("currency set", /[?&]cu=INR(&|$)/.test(link), true);
 check("reference carried, padded to a real length", /[?&]tr=PRINTIFYA47(&|$)/.test(link), true);
 // "+" for a space is shown literally by some UPI apps.
 check("no plus-encoded spaces", link.includes("+"), false);
-check("space is %20", link.includes("Printify%20Block%20C"), true);
+check("space is %20", link.includes("Printifi%20Block%20C"), true);
 
 const rounded = upiLink({
   vpa: "a@b", payeeName: "x", amount: 12.5, note: "n", reference: "r",
@@ -197,23 +197,23 @@ check("half rupee formats", /[?&]am=12\.50(&|$)/.test(rounded), true);
 
 // A personal payee: the apps refuse a third-party link with the amount in
 // it, so the link carries none and the payer types it.
-const personal = upiLink({ vpa: "ansh@ybl", payeeName: "Ansh", note: "Printify B12", reference: "B12" });
+const personal = upiLink({ vpa: "ansh@ybl", payeeName: "Ansh", note: "Printifi B12", reference: "B12" });
 check("no amount → no am=", /[?&]am=/.test(personal), false);
 check("no amount still carries the reference", /[?&]tr=PRINTIFYB12(&|$)/.test(personal), true);
 // Nothing that marks the link as a merchant-generated intent: the apps then
 // demand the merchant PSP's signature, and PhonePe refuses without it.
-const toMerchant = upiLink({ vpa: "Q123456789@ybl", payeeName: "Shop", amount: 10, note: "Printify B66", reference: "B66abcd1234" });
+const toMerchant = upiLink({ vpa: "Q123456789@ybl", payeeName: "Shop", amount: 10, note: "Printifi B66", reference: "B66abcd1234" });
 check("no mc in the link", /[?&](mc|mode|orgid|sign)=/.test(toMerchant), false);
 check("reference is alphanumeric", /[?&]tr=([A-Za-z0-9]+)(&|$)/.test(toMerchant), true);
 check("a short token is padded", cleanReference("B66"), "PRINTIFYB66");
 check("a long reference keeps itself", cleanReference("B66abcd1234"), "B66abcd1234");
 check("punctuation dropped from the reference", cleanReference("PF-1234-ABCD"), "PF1234ABCD");
 check("reference capped at 35", cleanReference("A".repeat(50)).length, 35);
-check("note keeps letters, digits, spaces", /[?&]tn=Printify%20B66(&|$)/.test(toMerchant), true);
-const oddNote = upiLink({ vpa: "a@b", payeeName: "x", note: "Printify #B66 — colour!", reference: "r" });
-check("note punctuation becomes spaces", /[?&]tn=Printify%20B66%20colour(&|$)/.test(oddNote), true);
+check("note keeps letters, digits, spaces", /[?&]tn=Printifi%20B66(&|$)/.test(toMerchant), true);
+const oddNote = upiLink({ vpa: "a@b", payeeName: "x", note: "Printifi #B66 — colour!", reference: "r" });
+check("note punctuation becomes spaces", /[?&]tn=Printifi%20B66%20colour(&|$)/.test(oddNote), true);
 // Picking an app by name: the same query behind each app's own scheme.
-const req = { vpa: "Q533273833@ybl", payeeName: "Shop", amount: 6, note: "Printify A03", reference: "A03abcd1234" };
+const req = { vpa: "Q533273833@ybl", payeeName: "Shop", amount: 6, note: "Printifi A03", reference: "A03abcd1234" };
 const gpay = UPI_APPS.find((a) => a.id === "gpay")!;
 const phonepe = UPI_APPS.find((a) => a.id === "phonepe")!;
 const paytm = UPI_APPS.find((a) => a.id === "paytm")!;
@@ -318,7 +318,7 @@ check("staff can't rewrite the claim", /new\.payment_claimed_amount\s*:=\s*old\.
 for (const column of ["id", "created_at", "user_id", "operator_id", "total", "pages", "config"]) {
   check(`pinned for everyone: ${column}`, new RegExp(`new\\.${column}\\s*:=\\s*old\\.${column}`).test(body.slice(0, body.indexOf("is_staff(old.operator_id)"))), true);
 }
-check("a student can't claim 'gateway'", body.includes("recorded by Printify"), true);
+check("a student can't claim 'gateway'", body.includes("recorded by Printifi"), true);
 
 console.log("\n— migration hygiene —");
 const numbers = migrations.map((f) => f.slice(0, 4));

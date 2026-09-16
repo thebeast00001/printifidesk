@@ -30,7 +30,7 @@ const COLUMNS: { title: string; links: FooterLink[] }[] = [
   {
     title: "Print desks",
     links: [
-      { href: "/join", label: "Run a desk on Printify" },
+      { href: "/join", label: "Run a desk on Printifi" },
       { href: "/desk-terms", label: "Terms for print desks" },
       { href: `${DESK_URL}/sign-in`, label: "Desk sign-in", external: true },
     ],

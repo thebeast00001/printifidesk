@@ -3,13 +3,13 @@ import type { MetadataRoute } from "next";
 /**
  * The desk app, installable on its own. Starts at the queue, allows
  * landscape (a tablet propped at a counter), and carries its own mark so
- * two Printify icons on one phone are never confused.
+ * two Printifi icons on one phone are never confused.
  */
 export function GET() {
   const manifest: MetadataRoute.Manifest = {
-    name: "Printify Desk",
+    name: "Printifi Desk",
     short_name: "Desk",
-    description: "The counter's side of Printify: the queue, the prices, the hours, the handover.",
+    description: "The counter's side of Printifi: the queue, the prices, the hours, the handover.",
     start_url: "/operator",
     scope: "/",
     display: "standalone",

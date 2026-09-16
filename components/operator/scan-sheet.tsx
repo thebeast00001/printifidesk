@@ -157,7 +157,7 @@ export function ScanSheet({
     (raw: string) => {
       const parsed = parseScan(raw);
       if (!parsed) {
-        setMiss("That doesn't look like a Printify token.");
+        setMiss("That doesn't look like a Printifi token.");
         return;
       }
       const { token, code, desk } = parsed;
@@ -313,7 +313,7 @@ export function ScanSheet({
         const scratch = (scratchRef.current ??= document.createElement("canvas"));
         const text = decodePixels(img, scratch);
         if (text && tokenFromScan(text)) resolve(text);
-        else setMiss("No Printify code in that photo. Get the whole square in frame and try again.");
+        else setMiss("No Printifi code in that photo. Get the whole square in frame and try again.");
       } finally {
         URL.revokeObjectURL(url);
       }

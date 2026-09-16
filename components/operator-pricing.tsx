@@ -76,7 +76,7 @@ const GROUPS: { title: string; note?: string; fields: Field[] }[] = [
   },
   {
     title: "Stock",
-    note: "Leave blank to not track it. At zero, Printify closes itself rather than taking orders you can't fulfil.",
+    note: "Leave blank to not track it. At zero, Printifi closes itself rather than taking orders you can't fulfil.",
     fields: [
       { key: "paper_stock", label: "Sheets left", hint: "counted down as jobs are collected", suffix: "pages", step: 100, min: 0 },
       { key: "low_paper_at", label: "Warn at", hint: "sheets remaining", suffix: "pages", step: 50, min: 0 },
@@ -313,7 +313,7 @@ function PreviewCard({
 /**
  * Where the money goes.
  *
- * Students pay this id directly — Printify never touches the funds, which is
+ * Students pay this id directly — Printifi never touches the funds, which is
  * both simpler and keeps us out of holding anyone's money. A malformed id
  * fails silently inside the payer's UPI app, so it's validated before saving.
  */
@@ -414,17 +414,17 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
         Students pay this id directly. Leave it blank to take cash only.
         {operator.gateway_status === "active" ? (
           <span className="mt-1 block text-sage-ink">
-            Online payments through Printify are on: students can also pay by any UPI app or card with the
+            Online payments through Printifi are on: students can also pay by any UPI app or card with the
             amount filled in; those arrive already confirmed, your share settles to your account daily, and
-            the Printify fee on them is taken at source.
+            the Printifi fee on them is taken at source.
           </span>
         ) : operator.gateway_status === "collect" ? (
           <span className="mt-1 block text-sage-ink">
-            Online payments through Printify are on: students can also pay by card or any UPI app with the amount
-            filled in. Those land with Printify; your share is paid out to you and shown under Takings.
+            Online payments through Printifi are on: students can also pay by card or any UPI app with the amount
+            filled in. Those land with Printifi; your share is paid out to you and shown under Takings.
           </span>
         ) : operator.gateway_status === "pending" ? (
-          <span className="mt-1 block">Online payments through Printify: Cashfree is still verifying your settlement account.</span>
+          <span className="mt-1 block">Online payments through Printifi: Cashfree is still verifying your settlement account.</span>
         ) : null}
       </p>
 

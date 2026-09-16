@@ -54,7 +54,7 @@ export interface OrderRow {
   status: OrderStatus;
   total: number;
   full_colour_total: number;
-  /** Printify's share, inside `total`. Zero before 0022. */
+  /** Printifi's share, inside `total`. Zero before 0022. */
   platform_fee: number;
   /** What lifting to the next rupee added, inside `total`. Zero unless the desk rounds (0028). */
   rounding?: number | string | null;
@@ -73,7 +73,7 @@ export interface OrderRow {
   /* 0039: a bill the desk corrected before accepting; the student says yes or cancels. */
   requote?: Requote | null;
   requote_status?: "proposed" | "accepted" | "withdrawn" | null;
-  /** "gateway" is a payment through Printify (Cashfree), marked by the server. */
+  /** "gateway" is a payment through Printifi (Cashfree), marked by the server. */
   payment_method: "upi" | "cash" | "gateway" | null;
   payment_claimed_at: string | null;
   payment_taken_at: string | null;
@@ -91,7 +91,7 @@ export interface OrderRow {
   gateway_paid_at?: string | null;
   fee_settled_at?: string | null;
   gateway_refund_id?: string | null;
-  /** 0035: the Cashfree order carried a split to the desk's vendor. False: Printify collected; the desk's share is a payout. */
+  /** 0035: the Cashfree order carried a split to the desk's vendor. False: Printifi collected; the desk's share is a payout. */
   gateway_split?: boolean;
   refunded_at: string | null;
   refund_amount: number | null;
@@ -174,7 +174,7 @@ export interface Operator {
   shelf_cols?: number;
   /** 0031: the standee's QR text, exactly as printed, when read from a photo. */
   upi_qr?: string | null;
-  /** 0032/0035: "active" = split at source; "collect" = Printify collects and pays the desk out. */
+  /** 0032/0035: "active" = split at source; "collect" = Printifi collects and pays the desk out. */
   gateway_status?: "off" | "collect" | "pending" | "active" | "blocked";
   /* 0039: hours by weekday (null = use opens_at/closes_at every day), days
      closed, the desk's timezone; named extras; the two housekeeping windows. */
@@ -184,7 +184,7 @@ export interface Operator {
   extras?: Extra[];
   unpaid_expiry_minutes?: number;
   unclaimed_after_hours?: number;
-  /** 0040: the owner's switch — payments through Printify paused; students pay the desk directly meanwhile. */
+  /** 0040: the owner's switch — payments through Printifi paused; students pay the desk directly meanwhile. */
   gateway_paused?: boolean;
   /** 0041: when the Open switch was last flipped — a flip since the schedule's last change wins over it. */
   open_set_at?: string | null;
@@ -201,7 +201,7 @@ export interface Operator {
   shut_at: string | null;
   shut_reason: string | null;
 
-  /* Printify's share, from platform_settings — merged onto every fetched
+  /* Printifi's share, from platform_settings — merged onto every fetched
      row so rateCardOf() prices with it. Not the desk's to edit. */
   platform_fee_percent?: number;
   platform_fee_min?: number;
@@ -498,7 +498,7 @@ export async function updateOperator(
   forgetOperator(operatorId);
 }
 
-/** Open or close Printify. Staff only — RLS enforces it. */
+/** Open or close Printifi. Staff only — RLS enforces it. */
 export async function setOperatorOpen(
   operatorId: string,
   isOpen: boolean,

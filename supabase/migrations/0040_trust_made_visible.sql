@@ -1,12 +1,12 @@
--- Printify — 0040: trust, made visible.
+-- Printifi — 0040: trust, made visible.
 --
 -- Run after 0039.
 --
--- "Printify collects and pays me later" asks a desk to extend credit to a
+-- "Printifi collects and pays me later" asks a desk to extend credit to a
 -- stranger. Three things that make the promise checkable and revocable:
 --
 -- 1. The owner's switch. `operators.gateway_paused` — the desk's owner can
---    pause payments through Printify at any moment (students then pay the
+--    pause payments through Printifi at any moment (students then pay the
 --    desk directly, as ever) and resume them. Switching on in the first
 --    place is still the admin's (`set_gateway_collect`); pausing is the
 --    owner's, and staff can't touch it.
@@ -104,7 +104,7 @@ alter table public.platform_payouts
   add column if not exists covers_to   timestamptz;
 
 /**
- * Every order paid through Printify for this desk in the window, with what
+ * Every order paid through Printifi for this desk in the window, with what
  * the desk is owed on each — the same desk_share() the balance sums. The
  * owner's (and the admin's, and the server's), like the balance.
  */

@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 import type { Operator } from "./orders";
 
 /**
- * Paying through Printify, from the browser's side.
+ * Paying through Printifi, from the browser's side.
  *
  * The server holds the Cashfree secret and makes the order; the browser
  * only ever sees a payment session id, opens Cashfree's own checkout with
@@ -25,7 +25,7 @@ export function gatewayMode(): GatewayMode | null {
 }
 
 /**
- * Whether this desk can be paid through Printify: the deployment has
+ * Whether this desk can be paid through Printifi: the deployment has
  * Cashfree, and the desk is either split at source ("active") or has the
  * admin collecting for it ("collect").
  */
@@ -94,7 +94,7 @@ export interface OnlineSession {
 export type SessionOutcome = { kind: "session"; session: OnlineSession } | OnlineOutcome;
 
 /**
- * The Cashfree order for this Printify order, from the server. Reused
+ * The Cashfree order for this Printifi order, from the server. Reused
  * while it's live, so opening the sheet twice makes one order, not two.
  */
 export async function openSession(orderId: string): Promise<SessionOutcome> {
@@ -273,7 +273,7 @@ export function clearFlight(): void {
   setFlight(null);
 }
 
-/** A refund of a payment made through Printify, asked for by the desk. */
+/** A refund of a payment made through Printifi, asked for by the desk. */
 export async function refundOnline(orderId: string, amount: number, note: string): Promise<void> {
   const res = await fetch("/api/payments/refund", {
     method: "POST",

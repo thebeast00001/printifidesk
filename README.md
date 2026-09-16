@@ -54,7 +54,7 @@ browser all read, and `check:features` exercises every row of it.
 | Pages | `/`, `/orders`, `/profile`, `/settings` | `/` (queue), `/takings`, `/settings`, `/join` — and the admin's `/admin` (fees), `/admin/desks`, `/diagnostics`, with a dock of their own |
 | Sign-in | one **Google** button, nothing else | **email + password**; create account; forgot password by emailed code — or a PIN on a paired device |
 | Chrome | status island, rotating headline, student dock | desk header, desk dock, no student anything |
-| Installs as | "Printify", portrait, `/icon-*.png` | "Printify Desk", any orientation, `/desk-icon-*.png` |
+| Installs as | "Printifi", portrait, `/icon-*.png` | "Printifi Desk", any orientation, `/desk-icon-*.png` |
 | Push | "your job is ready" | "new order A03 — 12 pages, ₹28", to devices subscribed *from the desk* |
 | Stray page | `/operator…`, `/join`, `/admin` → desk host | `/orders`, `/profile` → student host |
 
@@ -83,7 +83,7 @@ with a second Clerk application's keys. Nothing is copied, so nothing
 drifts. `staff`, `admins`, RLS and the PIN route only ever see a `sub`, and
 a desk user's `sub` comes from the desk application.
 
-1. **Clerk:** create a second application, *Printify Desk*. Turn on email +
+1. **Clerk:** create a second application, *Printifi Desk*. Turn on email +
    password (and email verification codes); leave Google off. Sessions →
    lifetime ~30 days. Configure → Integrations → **Supabase**, same as the
    student one, so its tokens carry `"role": "authenticated"`.
@@ -575,13 +575,13 @@ before changing a policy.
 - **Next up**, **age badges** (amber past what the rate card promised), the
   **Scheduled** tab grouped by hour with *due in 20 min*.
 
-### The platform fee — how Printify earns
+### The platform fee — how Printifi earns
 
 Every order carries a **platform fee**: a percentage of the order after the
 desk's minimum (3% by default, set in `/admin`, with an optional floor per
 order), shown as its own line on the student's bill and paid in the same
-UPI tap or cash as the rest. Money never passes through Printify — the desk
-collects the fee with the order and **settles it to Printify's VPA**, which
+UPI tap or cash as the rest. Money never passes through Printifi — the desk
+collects the fee with the order and **settles it to Printifi's VPA**, which
 the desk's Takings page shows with a QR for the outstanding amount. The
 admin records each payment received; owed minus settled is the balance.
 
@@ -599,8 +599,8 @@ like every other priced column. Fees are **owed on collected orders that
 weren't fully refunded**; a cancelled or fully refunded order carries none.
 
 Where it shows: the student's bill (print sheet, orders page, island); the
-desk's order card (*incl. ₹0.32 Printify fee*); **Takings** (*Printify fee
-(to settle)* and *Yours after the fee*, plus a *Printify fee* panel with
+desk's order card (*incl. ₹0.32 Printifi fee*); **Takings** (*Printifi fee
+(to settle)* and *Yours after the fee*, plus a *Printifi fee* panel with
 today / this week / this month, the all-time balance, the QR and payments
 recorded); and **`/admin`** (the rate and payee VPA, orders and fee earned
 today / this week / this month across every desk, each desk's outstanding
@@ -756,10 +756,10 @@ so a paid instance (~₹600/month) is the difference between "converting…"
 and "why is it stuck". Then on Vercel: `CONVERT_URL=https://<that
 service>`, the same user/password, `NEXT_PUBLIC_CONVERTS_OFFICE=1`.
 
-**Trust, made visible (`0040`).** "Printify collects and pays me later"
+**Trust, made visible (`0040`).** "Printifi collects and pays me later"
 asks a desk to extend credit. Three things make that promise checkable
 and revocable: the **owner's switch** (`operators.gateway_paused` — pause
-payments through Printify at any moment, students pay the desk directly
+payments through Printifi at any moment, students pay the desk directly
 meanwhile; switching *on* stays the admin's, staff can't touch either),
 **the money per order** (`payout_orders()` — every online-paid order with
 the bill, the fee, the share and Cashfree's reference, on the desk's
@@ -936,7 +936,7 @@ kept apart: `payment_claimed_at` is the student saying they paid, and
 `payment_taken_at` is the operator confirming they saw it. Only the second one
 moves the order. The desk checks a direct payment by the amount and the note
 (the token) against its own app; the sheet asks for nothing else. The
-`payment_reference` column stays for payments through Printify, where it holds
+`payment_reference` column stays for payments through Printifi, where it holds
 Cashfree's payment id — and once the operator has confirmed, the guard trigger
 freezes it, since it's evidence by then.
 
@@ -955,7 +955,7 @@ gets *Copy UPI id · Copy amount* and two steps, with the link kept as
 "try anyway". The desk can **read its own QR from a photo** under
 Getting paid — `parseUpiQr()` takes the id, the name and the merchant
 code off it, and `mc` present and not `0000` is what decides the kind.
-Printify's own settle-up id follows the same rule (`payee_kind`, set on
+Printifi's own settle-up id follows the same rule (`payee_kind`, set on
 the Fees page).
 
 The link to a merchant id carries `pa`, `pn`, `am`, `cu`, `tn`, `tr` and
@@ -970,16 +970,16 @@ sent. `tr` is alphanumeric and padded (`PRINTIFYB66…`) because the strict
 apps refuse punctuation and very short references; `tn` is letters,
 digits and spaces.
 
-### Printify collects, and pays the desk out (`0035`)
+### Printifi collects, and pays the desk out (`0035`)
 
 Cashfree declined Easy Split for the account, so the split-at-source
 path above has nowhere to go for now. `0035` is the other way a
 marketplace runs a gateway, and the way most do: the student pays
-Cashfree's checkout, the money settles to **Printify**, Printify keeps
+Cashfree's checkout, the money settles to **Printifi**, Printifi keeps
 its fee and owes the desk the rest.
 
 - The admin turns it on per desk: `/admin/desks` → *Online payments* →
-  **Turn on — Printify collects** (`set_gateway_collect`, admin only;
+  **Turn on — Printifi collects** (`set_gateway_collect`, admin only;
   `gateway_status = 'collect'`). *Split at source instead* stays there for
   the day Easy Split is granted; a desk with an active vendor keeps
   splitting.
@@ -1005,21 +1005,21 @@ its fee and owes the desk the rest.
 `/admin` shows each desk's fee for today / this week / this month as a
 total; *Orders this week* under a desk opens the list behind it —
 `admin_fee_orders()`: token, when collected, how it was paid, the bill,
-the fee, and *at source* on the ones paid through Printify. No names.
+the fee, and *at source* on the ones paid through Printifi. No names.
 The footer sums what the desk still owes for the period, which is what
 *Record payment* is for once the desk hands it over — daily, weekly or
 monthly, whatever you agree with the desk; the ledger doesn't care.
 
-### Paying through Printify (Cashfree, `0032`)
+### Paying through Printifi (Cashfree, `0032`)
 
 The direct-to-desk flows above cost nothing and hold nobody's money, and
-they stay. Beside them, a desk that Printify has **connected to Cashfree
+they stay. Beside them, a desk that Printifi has **connected to Cashfree
 Easy Split** can be paid online: the student taps *Pay ₹14 · UPI, card*,
 Cashfree's own checkout opens (UPI intent signed by Cashfree's PSP —
 every app takes it, PhonePe included, amount filled in — or a card), and
 **Cashfree's webhook marks the order paid**. The split happens at source:
 the desk's share (bill less fee, rounding included) to the desk's vendor
-account, Printify's fee to Printify. No desk confirmation — the order
+account, Printifi's fee to Printifi. No desk confirmation — the order
 lands as *queued* with *paid online* on the card — and no monthly
 settle-up for those orders: their fee shows as *retained* on the admin's
 Fees page and never as owed.
@@ -1232,7 +1232,7 @@ components/
   order-list.tsx        your orders, with cancel while still cancellable
   print-sheet.tsx       upload step → options step → place order
   upload-step.tsx       dropzone, per-file progress
-  pay-sheet.tsx         UPI, cash, or Printify's hosted checkout
+  pay-sheet.tsx         UPI, cash, or Printifi's hosted checkout
   feed.tsx              your stored documents
   widgets-row.tsx       real totals from my_totals()
   search-dialog.tsx     ⌘K over your documents and orders
@@ -1246,11 +1246,11 @@ lib/
   analysis.ts           page count + per-page colour; which files are taken
   pricing.ts            pure quote engine — same code client and server
   hours.ts              the desk's week, the Open switch, and which one decides
-  gateway.ts, server/cashfree.ts   paying through Printify
+  gateway.ts, server/cashfree.ts   paying through Printifi
   seo.ts                the site's name, address and public pages, once
   surface.ts            the two-site routing table
   supabase/client.ts    browser client, tokens bridged from Clerk
-supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0041)
+supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0042)
 scripts/                the checks: pricing parity, features, the SQL harness, RLS
 ```
 
@@ -1312,7 +1312,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0041** in the SQL editor, pasted from the files, **in
+2. **Run 0022 → 0042** in the SQL editor, pasted from the files, **in
    number order** — a later migration can name a column an earlier one
    adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
    student update on an order failed and the X on /orders did nothing).
@@ -1326,11 +1326,16 @@ Things the code can't do on its own, in the order they bite:
    until 0029, the capsule's queue position errors quietly and shows no
    place in the queue; until 0030, the board says "reconnecting…", no
    slot is assigned, and saving the shelf fails; until 0031, a Paytm
-   desk's standee QR isn't kept and the pay sheet draws Printify's copy;
+   desk's standee QR isn't kept and the pay sheet draws Printifi's copy;
    until 0032, online payment is never offered; until 0033, *Orders* on
    the admin's fee rows errors quietly; until 0034, a too-late cancel is
    refused by the policy alone (silently) rather than by the guard (in words);
    until 0035, online payment can't be turned on for a desk.
+   **Then 0042** — the name. The product is Printifi (the domain's
+   spelling); 0042 re-makes the twelve database functions whose messages
+   — pushes, refusals, the "closed by" note — said Printify, with the one
+   word changed and nothing else. Until it runs, the site says Printifi and
+   the database's own messages still say Printify.
    **Then 0041** — the Open switch wins until the hours next change, and
    office files convert to PDF. The conversion needs a converter you host
    (see *Any file, printed as a PDF* below): deploy Gotenberg, then set
@@ -1355,11 +1360,11 @@ Things the code can't do on its own, in the order they bite:
    until it runs, every function in the database is callable by anyone
    with the anon key, and two of them hand out the notification queue —
    students' phone numbers — to whoever asks. **Then 0037** — until it
-   runs, a payment through Printify reaches the desk portal live but
+   runs, a payment through Printifi reaches the desk portal live but
    without a push, and the student's push doesn't mention the money.
    (No probe on `/diagnostics` for it: it's two triggers, and a trigger
    can't be asked for from a browser.)
-3. **Cashfree.** Create a Cashfree Payments account for Printify (business
+3. **Cashfree.** Create a Cashfree Payments account for Printifi (business
    KYC: PAN, bank account; GST if you have it), enable **Easy Split** on
    it (a request in the dashboard), then: `CASHFREE_APP_ID`,
    `CASHFREE_SECRET_KEY`, `CASHFREE_ENV=sandbox` first and
@@ -1375,7 +1380,7 @@ Things the code can't do on its own, in the order they bite:
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
    project, so: create a new project in **Mumbai (`ap-south-1`)**, run
-   `0001 → 0041` in its SQL editor, create the private `documents` bucket,
+   `0001 → 0042` in its SQL editor, create the private `documents` bucket,
    add both Clerk domains under Authentication → Third-Party Auth, then
    swap `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    and `SUPABASE_SERVICE_ROLE_KEY` on both Vercel projects and in

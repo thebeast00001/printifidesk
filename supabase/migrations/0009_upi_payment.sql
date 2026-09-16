@@ -2,7 +2,7 @@
 --
 -- Money goes straight from the student to the operator's own UPI id. There is
 -- no merchant account, no percentage, and nothing sits in the middle — which
--- also means Printify never holds anyone's money.
+-- also means Printifi never holds anyone's money.
 --
 -- The honest limit: without a gateway webhook nothing here can *verify* a
 -- payment. The student can record that they've paid; only the operator, looking

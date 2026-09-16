@@ -65,7 +65,7 @@ export function Bill({
             hint={
               card.platformFeeMin > 0 && quote.platformFee === paise(card.platformFeeMin)
                 ? `the minimum is ${money(card.platformFeeMin, cur)}`
-                : "Printify's share, paid with the order"
+                : "Printifi's share, paid with the order"
             }
             value={`+${money(quote.platformFee, cur)}`}
             muted={muted}

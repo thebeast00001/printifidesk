@@ -24,7 +24,7 @@ export function LegalPage({
 }) {
   return (
     <StaggerIn>
-      <PageHeader eyebrow="Printify" title={title} sub={sub} />
+      <PageHeader eyebrow="Printifi" title={title} sub={sub} />
       <Container className="pt-3 pb-24">
         <article className="max-w-[68ch] text-[14px] leading-[1.7] text-ink-soft [&_p]:my-3">
           <p className="font-mono text-[11.5px] text-muted">Last updated {LEGAL_UPDATED}</p>
@@ -66,7 +66,7 @@ export function Contact() {
       Questions, corrections or requests about your data:{" "}
       {wa && (
         <>
-          message Printify on{" "}
+          message Printifi on{" "}
           <a href={wa} target="_blank" rel="noopener noreferrer" className="font-semibold text-ink underline-offset-2 hover:underline">
             WhatsApp
           </a>
@@ -86,7 +86,7 @@ export function Contact() {
   ) : (
     <p>
       Questions, corrections or requests about your data: ask at the desk you ordered from, who can reach
-      Printify.
+      Printifi.
     </p>
   );
 }

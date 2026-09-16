@@ -160,7 +160,7 @@ export function ReportSheet({
 
                 <p className="m-0 mt-3 text-[11px] leading-relaxed text-muted">
                   What happens next is theirs to decide — a reprint, a refund, or an explanation.
-                  Printify doesn&apos;t hold your money, so it can&apos;t return it for them.
+                  Printifi doesn&apos;t hold your money, so it can&apos;t return it for them.
                 </p>
               </>
             )}

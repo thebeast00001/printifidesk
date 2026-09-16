@@ -16,7 +16,7 @@ import {
 import { money } from "@/lib/pricing";
 
 /**
- * Paying through Printify: Cashfree's hosted checkout, in a modal over the
+ * Paying through Printifi: Cashfree's hosted checkout, in a modal over the
  * page. Two things happen the moment this opens so the tap is instant:
  * the server makes the session, and the SDK is loaded and constructed —
  * its checkout() waits on a ping the constructor starts, so constructed
@@ -136,7 +136,7 @@ export function OnlinePay({
               : `Pay ${money(amount, currency)} · UPI, card`}
       </button>
       <p className="m-0 mt-2 text-[11px] leading-relaxed text-muted">
-        Through Printify&apos;s payment partner. Any UPI app, card or netbanking, amount filled in — confirmed the moment it
+        Through Printifi&apos;s payment partner. Any UPI app, card or netbanking, amount filled in — confirmed the moment it
         lands, and the desk starts without checking anything.
       </p>
       {outcome?.kind === "pending" && (

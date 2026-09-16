@@ -711,7 +711,7 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
           )}
         >
           {closed ? (
-            "Printify is closed"
+            "Printifi is closed"
           ) : placing ? (
             <>
               <Loader2 size={16} className="animate-spin" />
@@ -728,7 +728,7 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
         <p className="m-0 mt-2.5 text-center text-[11px] leading-snug text-muted">
           {closed
             ? (operator?.status_note?.trim() ??
-              "Your files stay here — send them as soon as Printify opens.")
+              "Your files stay here — send them as soon as Printifi opens.")
             : pickupAt
               ? `Ready by ${new Date(pickupAt).toLocaleString([], {
                   weekday: "short",

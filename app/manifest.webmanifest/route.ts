@@ -7,8 +7,8 @@ import type { MetadataRoute } from "next";
  */
 export function GET() {
   const manifest: MetadataRoute.Manifest = {
-    name: "Printify",
-    short_name: "Printify",
+    name: "Printifi",
+    short_name: "Printifi",
     description: "Upload from your phone, pay with UPI, collect a printed set.",
     start_url: "/",
     display: "standalone",

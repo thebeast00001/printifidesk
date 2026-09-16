@@ -119,7 +119,7 @@ begin
     select f.due, f.due_month, f.overdue into st
       from public.fee_status(new.id) f;
     if st.overdue then
-      raise exception 'Printify fee for % is overdue (₹%). Settle it from Takings to open again.',
+      raise exception 'Printifi fee for % is overdue (₹%). Settle it from Takings to open again.',
         to_char(st.due_month, 'Month YYYY'), trim(to_char(st.due, 'FM999999990.00'))
         using errcode = 'check_violation';
     end if;

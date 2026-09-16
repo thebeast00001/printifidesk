@@ -250,7 +250,7 @@ export function AdminDesks() {
                     )}
                   >
                     {desk.shut_at
-                      ? "shut by Printify"
+                      ? "shut by Printifi"
                       : desk.staff_count === 0
                         ? "waiting for owner"
                         : desk.is_open
@@ -379,7 +379,7 @@ export function AdminDesks() {
               )}
             </AnimatePresence>
 
-            {/* Paying through Printify: the admin connects the desk's settlement
+            {/* Paying through Printifi: the admin connects the desk's settlement
                 account to Cashfree; the desk sees only the result. */}
             {!desk.shut_at && <GatewayPanel desk={desk} onChanged={load} />}
 

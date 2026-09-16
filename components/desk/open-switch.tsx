@@ -60,7 +60,7 @@ export function OpenSwitch({
         whileTap={{ scale: 0.96 }}
         transition={spring}
         disabled={busy || shut}
-        title={shut ? `Closed by Printify: ${operator.shut_reason ?? ""}` : undefined}
+        title={shut ? `Closed by Printifi: ${operator.shut_reason ?? ""}` : undefined}
         onClick={() => apply(!open, null)}
         className={cn(
           "flex h-11 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold disabled:opacity-50",
@@ -89,7 +89,7 @@ export function OpenSwitch({
                 open ? "bg-sage" : "bg-clay",
               )}
             />
-            {open ? "Printify is open" : "Printify is closed"}
+            {open ? "Printifi is open" : "Printifi is closed"}
           </p>
           <p className="m-0 mt-1 text-[12.5px] leading-relaxed text-muted">
             {open
@@ -97,9 +97,9 @@ export function OpenSwitch({
                 ? `You opened it${next ? ` · closes by your hours ${next.replace(/^till /, "at ")}` : ""}. Students can place orders and see your live wait.`
                 : `Open by your hours${next ? ` ${next}` : ""}. Students can place orders and see your live wait.`
               : state.by === "shut"
-                ? "Closed by Printify."
+                ? "Closed by Printifi."
                 : state.by === "switch"
-                  ? `You closed it${next ? ` · ${next} by your hours` : ""}. Students see Printify as closed.`
+                  ? `You closed it${next ? ` · ${next} by your hours` : ""}. Students see Printifi as closed.`
                   : `Closed by your hours${next ? ` · ${next}` : ""}. Tap Open to open early — your hours close it again as usual.`}
           </p>
         </div>
@@ -115,7 +115,7 @@ export function OpenSwitch({
           )}
         >
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Power size={14} strokeWidth={2.2} />}
-          {open ? "Close Printify" : "Open Printify"}
+          {open ? "Close Printifi" : "Open Printifi"}
         </motion.button>
       </div>
 

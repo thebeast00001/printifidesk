@@ -138,7 +138,7 @@ export async function drain(): Promise<Response> {
                     // The desk's alert: its own mark, the queue as the target,
                     // and it stays on screen until someone looks at it — a
                     // counter shouldn't miss an order because a phone dimmed.
-                    title: "Printify Desk",
+                    title: "Printifi Desk",
                     body: row.body,
                     tag: row.order_id ? `desk-order-${row.order_id}` : "printify-desk",
                     url: "/operator",
@@ -146,7 +146,7 @@ export async function drain(): Promise<Response> {
                     requireInteraction: true,
                   }
                 : {
-                    title: "Printify",
+                    title: "Printifi",
                     body: row.body,
                     tag: row.order_id ? `order-${row.order_id}` : "printify",
                     url: "/orders",

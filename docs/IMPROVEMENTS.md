@@ -1,4 +1,4 @@
-# Printify — what to improve next
+# Printifi — what to improve next
 
 A walk through the whole journey, ordering → handing over, on both sides.
 Ordered by what it costs you to *not* fix, not by effort.
@@ -15,7 +15,7 @@ Built and passing `npm run check` + `npm run build`:
 | 1.1 | Web push — `lib/push.ts`, `public/sw.js`, dispatch sends push before WhatsApp |
 | 1.2 | QR handover token in the status island |
 | 1.3 | Per-file print settings — `order_items.config`, `0013` |
-| 1.5 | UTR field — built, then removed: students didn't have it to hand, and online payment through Printify (0032) settles the question by itself |
+| 1.5 | UTR field — built, then removed: students didn't have it to hand, and online payment through Printifi (0032) settles the question by itself |
 | 1.9 | Report a bad print — `order_reports`, `0013` |
 | 1.6 | Live countdown from `ready_at` / queue position |
 | 2.1 | Audible alert — synthesised chime + browser notification |
@@ -102,7 +102,7 @@ resumable (TUS) uploads; the progress UI is already built for it.
 ### 1.5 Paste the UPI reference (UTR) — built, then taken out
 Payment by the desk's own UPI id is honour-system: the student says they paid,
 the operator checks their app. The UTR field asked the student for a number
-most don't know where to find, so it was removed; a payment through Printify's
+most don't know where to find, so it was removed; a payment through Printifi's
 own checkout (0032) is confirmed by the gateway and needs no reference. The
 desk still sees a reference on an order when the gateway recorded one.
 
@@ -153,7 +153,7 @@ application form and review queue are retired.
 
 ### 2.5 Consumables, with auto-close — done
 Paper and toner counters that decrement as pages print, warn at low, and flip
-Printify closed at zero. Prevents the worst outcome: taking orders you cannot
+Printifi closed at zero. Prevents the worst outcome: taking orders you cannot
 fulfil.
 
 ### 2.6 Student contact on the order card — done
@@ -182,7 +182,7 @@ The admin's dock shows how many are waiting.
 ### 2.12 The platform fee — done (0022)
 Three percent of every order, like Blinkit's handling charge: a line on the
 student's bill, paid with the order into the desk's UPI or drawer, owed by
-the desk to Printify and settled by QR from Takings. Admin sets the rate and
+the desk to Printifi and settled by QR from Takings. Admin sets the rate and
 the payee VPA; sees orders and fee earned today / this week / this month
 across every desk and each desk's balance; records payments received. The
 desk sees the same for itself. Priced in `place_order()`, snapshotted,

@@ -57,7 +57,7 @@ export function InviteCard({
 
   async function share() {
     try {
-      await navigator.share({ title: "Join the desk on Printify", text: `Join code ${formatJoinCode(code)}`, url: link });
+      await navigator.share({ title: "Join the desk on Printifi", text: `Join code ${formatJoinCode(code)}`, url: link });
     } catch {
       // Cancelled, or not allowed here. Nothing to say.
     }

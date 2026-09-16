@@ -13,7 +13,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <StaggerIn>
       <PageHeader
-        eyebrow="Printify"
+        eyebrow="Printifi"
         title="Admin"
         sub="The platform fee, and every desk: what each owes, what it settled, and a code for a new one's owner."
       />

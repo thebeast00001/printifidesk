@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "Terms for print desks",
-  description: "What running a desk on Printify commits you to: prices, printing, files, the platform fee, payouts, refunds and unclaimed jobs.",
+  description: "What running a desk on Printifi commits you to: prices, printing, files, the platform fee, payouts, refunds and unclaimed jobs.",
   alternates: { canonical: canonical("/desk-terms") },
 };
 
@@ -21,10 +21,10 @@ export default async function DeskTermsPage() {
   return (
     <LegalPage
       title="Terms for print desks"
-      sub="What running a desk on Printify commits you to: prices, printing, files, the platform fee, payouts, refunds and unclaimed jobs."
+      sub="What running a desk on Printifi commits you to: prices, printing, files, the platform fee, payouts, refunds and unclaimed jobs."
     >
       <p>
-        Printify sends students&apos; print jobs to your desk and tells them when to collect. You set the
+        Printifi sends students&apos; print jobs to your desk and tells them when to collect. You set the
         prices, you print, you hand over. These are the terms you agree to when your desk is created and
         each time a member of your staff signs in. They sit alongside the general terms of service, which
         also apply to you.
@@ -57,26 +57,26 @@ export default async function DeskTermsPage() {
       <H2>Students&apos; files</H2>
       <p>
         Files are opened only to print them. Each opening is logged with who opened it. Files are deleted
-        from Printify six hours after a job is collected or cleared as unclaimed. Don&apos;t copy, keep or
+        from Printifi six hours after a job is collected or cleared as unclaimed. Don&apos;t copy, keep or
         share a student&apos;s file.
       </p>
 
       <H2>The platform fee</H2>
       <p>
-        Printify&apos;s fee is a percentage of each order (with a small minimum), set by Printify, shown to
+        Printifi&apos;s fee is a percentage of each order (with a small minimum), set by Printifi, shown to
         the student as its own line on every bill and included in what they pay. For orders the student paid
-        to you directly, the fee accrues on jobs collected (or cleared as unclaimed) and is settled to Printify
+        to you directly, the fee accrues on jobs collected (or cleared as unclaimed) and is settled to Printifi
         monthly; the ledger in
         Takings shows what&apos;s due, and a desk whose fee is overdue past the grace period cannot open until
-        it settles. For orders paid through Printify, the fee is kept at source and nothing is owed.
+        it settles. For orders paid through Printifi, the fee is kept at source and nothing is owed.
       </p>
 
-      <H2>Payments through Printify</H2>
+      <H2>Payments through Printifi</H2>
       <p>
-        Where Printify has switched it on for your desk, students can pay through Printify&apos;s payment
+        Where Printifi has switched it on for your desk, students can pay through Printifi&apos;s payment
         partner, Cashfree Payments. Such an order is marked paid and queued the moment the money lands; you
         print without checking anything. Your share — the bill less the platform fee, less any refund in
-        proportion — is owed to you and paid out by Printify to the account you gave,{" "}
+        proportion — is owed to you and paid out by Printifi to the account you gave,{" "}
         {payoutDay ? (
           <>
             <b>every {payoutDay}</b>, for everything paid up to then.
@@ -86,14 +86,14 @@ export default async function DeskTermsPage() {
         )}{" "}
         Takings lists every online-paid order with the bill, the fee, your share and Cashfree&apos;s payment
         reference, the running balance, and every payout with the exact orders it covered — downloadable for your
-        accounts. The desk&apos;s owner can <b>pause payments through Printify at any time</b>; students then pay
+        accounts. The desk&apos;s owner can <b>pause payments through Printifi at any time</b>; students then pay
         your UPI id directly, as always, and what is already owed is still paid out.
       </p>
 
       <H2>Refunds</H2>
       <p>
         You decide refunds for your jobs. A payment made directly to you is refunded by you, the way it was
-        paid, and recorded on the order by an owner. A payment made through Printify is refunded by an owner
+        paid, and recorded on the order by an owner. A payment made through Printifi is refunded by an owner
         from the portal and sent back by Cashfree to what the student paid with; the refund comes out of your
         share. The student-facing refund policy says the same from their side.
       </p>
@@ -109,7 +109,7 @@ export default async function DeskTermsPage() {
       <H2>Conduct</H2>
       <p>
         Honest prices and hours; no printing of material you may not lawfully print; courtesy to students
-        who report a problem. Printify can shut a desk that doesn&apos;t keep to this; its staff can finish
+        who report a problem. Printifi can shut a desk that doesn&apos;t keep to this; its staff can finish
         the jobs already in hand and nothing more.
       </p>
 

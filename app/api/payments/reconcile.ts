@@ -4,7 +4,7 @@ import { getPayments } from "@/lib/server/cashfree";
 import { drain } from "../notifications/dispatch/route";
 
 /**
- * Marks a Printify order paid from a Cashfree payment — the one place that
+ * Marks a Printifi order paid from a Cashfree payment — the one place that
  * does, used by the webhook and the status poll alike. `gateway_paid`
  * refuses a short amount and is a no-op the second time, so a webhook
  * retry racing a poll is harmless. Returns whether this call was the one

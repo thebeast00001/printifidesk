@@ -57,7 +57,7 @@ begin
          shut_by     = public.clerk_id(),
          is_listed   = false,
          is_open     = false,
-         status_note = 'Closed by Printify'
+         status_note = 'Closed by Printifi'
    where id = p_operator;
 
   update public.staff_invites i
@@ -118,11 +118,11 @@ begin
   end if;
   if new.shut_at is not null and not public.is_admin() then
     if new.is_open and not old.is_open then
-      raise exception 'This desk was closed by Printify: %', old.shut_reason
+      raise exception 'This desk was closed by Printifi: %', old.shut_reason
         using errcode = 'check_violation';
     end if;
     if new.is_listed and not old.is_listed then
-      raise exception 'This desk was closed by Printify and cannot be listed'
+      raise exception 'This desk was closed by Printifi and cannot be listed'
         using errcode = 'check_violation';
     end if;
   end if;
@@ -140,7 +140,7 @@ create or replace function public.guard_shut_desk_membership()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
   if exists (select 1 from public.operators o where o.id = new.operator_id and o.shut_at is not null) then
-    raise exception 'This desk was closed by Printify' using errcode = 'check_violation';
+    raise exception 'This desk was closed by Printifi' using errcode = 'check_violation';
   end if;
   return new;
 end;

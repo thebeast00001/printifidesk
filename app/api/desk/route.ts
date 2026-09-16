@@ -29,7 +29,7 @@ interface Body {
 export async function POST(request: Request) {
   // A device token plus a PIN is a credential; only a page of ours presents it.
   if (!(await sameOriginRequest(request))) {
-    return Response.json({ ok: false, message: "This request didn't come from Printify." }, { status: 403 });
+    return Response.json({ ok: false, message: "This request didn't come from Printifi." }, { status: 403 });
   }
   let body: Body;
   try {

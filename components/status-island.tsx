@@ -63,7 +63,7 @@ export function StatusIsland() {
       <IslandShell>
         <IslandRow
           icon={<AlertCircle size={16} strokeWidth={2.2} className="text-clay" />}
-          title="Can't reach Printify"
+          title="Can't reach Printifi"
           sub="Check your connection and try again"
         />
       </IslandShell>

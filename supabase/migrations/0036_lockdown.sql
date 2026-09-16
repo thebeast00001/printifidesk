@@ -1,4 +1,4 @@
--- Printify — 0036: the grants say what the guards already say.
+-- Printifi — 0036: the grants say what the guards already say.
 --
 -- Run after 0035.
 --
@@ -24,7 +24,7 @@
 --    readable and writable by anyone. RLS with no policies — only the token
 --    trigger (security definer) touches it.
 -- 3. operators.gateway_* were the desk's to write: its staff could switch
---    on "pay through Printify" for their own desk. Pinned to the admin and
+--    on "pay through Printifi" for their own desk. Pinned to the admin and
 --    the server, the way shut_* already were.
 -- 4. The order guard pins more. A student could back-date an order — the
 --    queue is in created_at order — and staff could rewrite the bill, the
@@ -90,7 +90,7 @@ alter table public.token_sequence enable row level security;
 revoke all on table public.token_sequence from public, anon, authenticated;
 
 -- ============================================================
--- 3. Online payment is switched on by Printify, not by the desk
+-- 3. Online payment is switched on by Printifi, not by the desk
 -- ============================================================
 create or replace function public.guard_operator_shut()
 returns trigger language plpgsql security definer set search_path = public as $$
@@ -109,15 +109,15 @@ begin
    or new.gateway_status     is distinct from old.gateway_status
    or new.gateway_checked_at is distinct from old.gateway_checked_at)
      and not (public.is_admin() or public.is_server()) then
-    raise exception 'Only Printify switches online payment for a desk' using errcode = 'check_violation';
+    raise exception 'Only Printifi switches online payment for a desk' using errcode = 'check_violation';
   end if;
   if new.shut_at is not null and not public.is_admin() then
     if new.is_open and not old.is_open then
-      raise exception 'This desk was closed by Printify: %', old.shut_reason
+      raise exception 'This desk was closed by Printifi: %', old.shut_reason
         using errcode = 'check_violation';
     end if;
     if new.is_listed and not old.is_listed then
-      raise exception 'This desk was closed by Printify and cannot be listed'
+      raise exception 'This desk was closed by Printifi and cannot be listed'
         using errcode = 'check_violation';
     end if;
   end if;
@@ -207,7 +207,7 @@ begin
   end if;
   -- "Paid online" is the server's word, never a claim.
   if new.payment_method = 'gateway' and old.payment_method is distinct from 'gateway' then
-    raise exception 'A payment through Printify is recorded by Printify';
+    raise exception 'A payment through Printifi is recorded by Printifi';
   end if;
   if new.payment_claimed_amount is not null
      and (new.payment_claimed_amount < 0 or new.payment_claimed_amount > 100000) then

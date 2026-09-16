@@ -15,7 +15,7 @@
 --                               (the amount is pre-filled).
 --   operators.upi_mc            the merchant category code read off the
 --                               shop's own QR, carried into the link.
---   platform_settings.payee_kind the same choice for Printify's fee id.
+--   platform_settings.payee_kind the same choice for Printifi's fee id.
 --
 -- Staff already own their operators row (0004's policy); nothing new to
 -- grant. set_platform_fee grows a sixth argument; left out (the call from

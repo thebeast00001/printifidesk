@@ -4,7 +4,7 @@ import { getSupabase } from "./supabase/client";
 import type { UpiKind } from "./upi";
 
 /**
- * The platform fee — Printify's share of every order — and the ledger of
+ * The platform fee — Printifi's share of every order — and the ledger of
  * what each desk owes and has settled. All of it lives in Postgres
  * (migration 0022); this file is the thin client over it.
  */
@@ -18,7 +18,7 @@ export interface PlatformSettings {
   payee_kind: UpiKind;
   /** Days past month-end before an unsettled fee locks the desk closed. */
   grace_days: number;
-  /** 0040: the day Printify pays desks their online share — 1 Monday … 7 Sunday. */
+  /** 0040: the day Printifi pays desks their online share — 1 Monday … 7 Sunday. */
   payout_weekday: number;
   updated_at: string;
 }
@@ -103,7 +103,7 @@ export async function setPlatformFee(input: {
 /* ---------- the ledger ---------- */
 
 export interface FeeWindow {
-  /** Fees on orders paid through Printify: retained at source, not owed. Zero before 0032. */
+  /** Fees on orders paid through Printifi: retained at source, not owed. Zero before 0032. */
   retained?: number;
   orders: number;
   fee: number;
@@ -163,12 +163,12 @@ export interface DeskFeeRow {
   accrued: number;
   settled: number;
   outstanding: number;
-  /** Fees taken at source on orders paid through Printify, in the window. Zero before 0032. */
+  /** Fees taken at source on orders paid through Printifi, in the window. Zero before 0032. */
   retained: number;
   gateway_status: "off" | "collect" | "pending" | "active" | "blocked";
 }
 
-/* ---------- payouts: what Printify owes a desk from online payments (0035) ---------- */
+/* ---------- payouts: what Printifi owes a desk from online payments (0035) ---------- */
 
 export interface PayoutBalance {
   owed: number;
@@ -218,7 +218,7 @@ export interface PayoutOrderRow {
   platform_fee: number;
   refund_amount: number | null;
   share: number;
-  /** Cashfree's payment id — the line the desk can check against Printify's word. */
+  /** Cashfree's payment id — the line the desk can check against Printifi's word. */
   payment_id: string | null;
 }
 
@@ -242,7 +242,7 @@ export function nextPayoutDate(weekday: number, tz = "Asia/Kolkata", from: Date 
 
 const num = (v: unknown) => Number(v ?? 0);
 
-/** What a desk is owed from online payments Printify collected. Staff of the desk, or the admin. */
+/** What a desk is owed from online payments Printifi collected. Staff of the desk, or the admin. */
 export async function payoutBalance(operatorId: string): Promise<PayoutBalance> {
   const supabase = getSupabase();
   if (!supabase) return { owed: 0, paid_out: 0, balance: 0, orders: 0 };
@@ -344,7 +344,7 @@ export async function adminPayoutDesks(from: Date, to: Date = new Date()): Promi
   }));
 }
 
-/** Admin only. Turns "Printify collects" on or off for a desk; a split desk stays split. */
+/** Admin only. Turns "Printifi collects" on or off for a desk; a split desk stays split. */
 export async function setGatewayCollect(operatorId: string, on: boolean): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) throw new Error("No database connection.");
@@ -361,7 +361,7 @@ export interface FeeOrderRow {
   platform_fee: number;
   payment_method: "upi" | "cash" | "gateway" | null;
   refund_amount: number | null;
-  /** Set when the fee was taken at source (paid through Printify); null when the desk owes it. */
+  /** Set when the fee was taken at source (paid through Printifi); null when the desk owes it. */
   fee_settled_at: string | null;
 }
 

@@ -29,11 +29,11 @@ export default async function SignInPage({
   return (
     <StaggerIn>
       <PageHeader
-        eyebrow="Printify"
-        title={desk ? "Printify Desk" : "Sign in"}
+        eyebrow="Printifi"
+        title={desk ? "Printifi Desk" : "Sign in"}
         sub={
           desk
-            ? "The counter's side of Printify. Your desk account, or a fresh one — then a join code puts you on a desk."
+            ? "The counter's side of Printifi. Your desk account, or a fresh one — then a join code puts you on a desk."
             : "Campus printing without the queue."
         }
       />

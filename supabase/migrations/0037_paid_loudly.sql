@@ -1,4 +1,4 @@
--- Printify — 0037: a payment through Printify is heard on both sides.
+-- Printifi — 0037: a payment through Printifi is heard on both sides.
 --
 -- Run after 0036.
 --
@@ -92,14 +92,14 @@ begin
               else trim(to_char(ord.total, 'FM999999990.00')) end;
 
   msg := case new.status
-    when 'queued'    then case when new.note like 'Paid online through Printify%'
+    when 'queued'    then case when new.note like 'Paid online through Printifi%'
                             then 'Paid ' || amt || ' online — order ' || coalesce(ord.token, '') || ' is in the queue at ' ||
-                                 coalesce(op.short_name, op.name, 'Printify') || '.'
+                                 coalesce(op.short_name, op.name, 'Printifi') || '.'
                             else 'Order ' || coalesce(ord.token, '') || ' is in the queue at ' ||
-                                 coalesce(op.short_name, op.name, 'Printify') || '.'
+                                 coalesce(op.short_name, op.name, 'Printifi') || '.'
                           end
     when 'ready'     then 'Ready to collect. Show token ' || coalesce(ord.token, '') || ' at ' ||
-                          coalesce(op.short_name, op.name, 'Printify') || '.'
+                          coalesce(op.short_name, op.name, 'Printifi') || '.'
     when 'collected' then 'Collected. Thanks!'
     else 'We could not print your order' || coalesce(': ' || ord.note, '') || '.'
   end;

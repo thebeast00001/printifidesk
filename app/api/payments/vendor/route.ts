@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Connecting a desk to Cashfree Easy Split — the admin's job, since it
- * commits Printify's account. POST creates the vendor with the desk's
+ * commits Printifi's account. POST creates the vendor with the desk's
  * bank account or UPI id and remembers its id; GET asks Cashfree how the
  * verification is going and updates the desk's status. A desk shows
  * "pay online" only once Cashfree says ACTIVE.

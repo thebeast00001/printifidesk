@@ -65,7 +65,7 @@ export function ReceiptView({ orderId }: { orderId: string }) {
   const paid = Boolean(order.payment_taken_at);
   const method =
     order.payment_method === "gateway"
-      ? "online, through Printify (Cashfree)"
+      ? "online, through Printifi (Cashfree)"
       : order.payment_method === "cash"
         ? "cash at the desk"
         : order.payment_method === "upi"
@@ -93,7 +93,7 @@ export function ReceiptView({ orderId }: { orderId: string }) {
       <article className="rounded-[20px] border border-line bg-surface p-5 text-[13px] leading-relaxed print:rounded-none print:border-0 print:p-0">
         <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-4">
           <div>
-            <p className="label-caps m-0">Printify · receipt</p>
+            <p className="label-caps m-0">Printifi · receipt</p>
             <h1 className="font-heading m-0 mt-1 text-[20px] font-bold">{operator?.short_name || operator?.name || "Print desk"}</h1>
             {operator?.campus && <p className="m-0 text-[12.5px] text-muted">{operator.campus}</p>}
           </div>
@@ -145,8 +145,8 @@ export function ReceiptView({ orderId }: { orderId: string }) {
         )}
 
         <footer className="mt-5 border-t border-line pt-3 text-[11px] leading-relaxed text-muted">
-          The desk&apos;s price and Printify&apos;s platform fee are shown as separate lines; the platform fee is
-          Printify&apos;s. Printed from printifi.store on {when(new Date().toISOString())}.
+          The desk&apos;s price and Printifi&apos;s platform fee are shown as separate lines; the platform fee is
+          Printifi&apos;s. Printed from printifi.store on {when(new Date().toISOString())}.
         </footer>
       </article>
 

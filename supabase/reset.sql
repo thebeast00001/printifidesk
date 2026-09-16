@@ -1,4 +1,4 @@
--- Empties every Printify table. Not a migration: nothing about the schema,
+-- Empties every Printifi table. Not a migration: nothing about the schema,
 -- the policies or the functions changes, and it is never applied by anything
 -- automatic. Paste it into Supabase → SQL Editor when you want a clean slate.
 --

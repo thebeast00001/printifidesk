@@ -3,7 +3,7 @@ import { canonical } from "@/lib/seo";
 
 export const metadata = {
   title: "Refund policy",
-  description: "When a Printify order is refunded, by whom, how the money comes back, and what happens to an order that goes nowhere.",
+  description: "When a Printifi order is refunded, by whom, how the money comes back, and what happens to an order that goes nowhere.",
   alternates: { canonical: canonical("/refunds") },
 };
 
@@ -19,9 +19,9 @@ export default function RefundsPage() {
       sub="When an order is refunded, by whom, how the money comes back, and what happens to an order that goes nowhere."
     >
       <p>
-        Printify connects you to a print desk. The desk prints the job and, for most orders, is the one you
-        pay — so the desk is the one that refunds. Where you paid <i>through Printify</i> (the &ldquo;Pay ·
-        UPI, card&rdquo; button), Printify holds the money and moves the refund itself. This page says who
+        Printifi connects you to a print desk. The desk prints the job and, for most orders, is the one you
+        pay — so the desk is the one that refunds. Where you paid <i>through Printifi</i> (the &ldquo;Pay ·
+        UPI, card&rdquo; button), Printifi holds the money and moves the refund itself. This page says who
         does what, in which case.
       </p>
 
@@ -43,18 +43,18 @@ export default function RefundsPage() {
 
       <H2>If you paid the desk directly (UPI to the desk&apos;s id, or cash)</H2>
       <p>
-        The money went straight to the desk; Printify never held it and cannot move it. A refund, whole or
+        The money went straight to the desk; Printifi never held it and cannot move it. A refund, whole or
         part, is the desk&apos;s decision and is paid by the desk, the way you paid — back to your UPI
         app, or in cash at the counter. When the desk records a refund, it appears on your order with the
-        amount and the reason. Printify&apos;s platform fee, which is inside the bill, follows the refund:
+        amount and the reason. Printifi&apos;s platform fee, which is inside the bill, follows the refund:
         a fully refunded order carries no fee.
       </p>
 
-      <H2>If you paid through Printify (&ldquo;Pay · UPI, card&rdquo;)</H2>
+      <H2>If you paid through Printifi (&ldquo;Pay · UPI, card&rdquo;)</H2>
       <p>
-        Your payment was taken by Printify&apos;s payment partner, Cashfree Payments, and the order was
+        Your payment was taken by Printifi&apos;s payment partner, Cashfree Payments, and the order was
         marked paid the moment it landed. A refund of such an order is made by the desk&apos;s owner from
-        their portal, or by Printify, and is sent by Cashfree to the instrument you paid with — the same UPI
+        their portal, or by Printifi, and is sent by Cashfree to the instrument you paid with — the same UPI
         account or card. Banks and UPI apps usually show it within a few working days; Cashfree&apos;s
         reference is on the order. The amount refunded can be the whole bill or a part of it, and is
         recorded on the order either way.
@@ -63,7 +63,7 @@ export default function RefundsPage() {
       <H2>A print that&apos;s wrong</H2>
       <p>
         Report it from the order in the app — once it&apos;s ready, collected, or marked as failed. The desk
-        sees the report and decides whether to reprint or refund. Printify records what was decided; the
+        sees the report and decides whether to reprint or refund. Printifi records what was decided; the
         rules above say who moves the money.
       </p>
 
@@ -71,13 +71,13 @@ export default function RefundsPage() {
       <p>
         A job marked <b>ready</b> waits on the desk&apos;s shelf. After the desk&apos;s own window — usually
         two days — it is cleared: the order shows as <b>not collected</b>, the files are deleted from
-        Printify, and you are told. Because the job was printed, what was paid for it is not refunded by
-        Printify; whether the desk keeps the pages or reprints is between you and the desk.
+        Printifi, and you are told. Because the job was printed, what was paid for it is not refunded by
+        Printifi; whether the desk keeps the pages or reprints is between you and the desk.
       </p>
 
       <H2>Fees and rounding</H2>
       <p>
-        Every bill shows the desk&apos;s price and Printify&apos;s platform fee as separate lines, and — at
+        Every bill shows the desk&apos;s price and Printifi&apos;s platform fee as separate lines, and — at
         a desk that rounds — what lifting to the next rupee added. A refund of the whole bill returns the
         whole bill, fee and rounding included.
       </p>

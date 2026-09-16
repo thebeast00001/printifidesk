@@ -15,11 +15,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * "I want to pay this order through Printify."
+ * "I want to pay this order through Printifi."
  *
- * The student's own order, still waiting for payment, at a desk Printify
+ * The student's own order, still waiting for payment, at a desk Printifi
  * has connected. Creates (or reuses) the Cashfree order with the split —
- * the desk's share to its vendor account, the fee to Printify — and hands
+ * the desk's share to its vendor account, the fee to Printifi — and hands
  * back the payment session the browser opens Cashfree's checkout with.
  * Nothing is marked paid here; the webhook and the status poll do that
  * from Cashfree's word, never from the browser's.
@@ -54,14 +54,14 @@ export async function POST(request: Request) {
     .eq("id", order.operator_id)
     .maybeSingle();
   if (!operator || operator.shut_at) return fail("This desk can't take payments right now.");
-  // 'active' is a split to the desk's vendor; 'collect' is Printify collecting
+  // 'active' is a split to the desk's vendor; 'collect' is Printifi collecting
   // and paying the desk out. Anything else: not offered.
   const splitting = operator.gateway_status === "active" && Boolean(operator.gateway_vendor_id);
   if (!splitting && operator.gateway_status !== "collect") {
-    return fail("This desk doesn't take online payment through Printify yet.");
+    return fail("This desk doesn't take online payment through Printifi yet.");
   }
   // 0040: the owner paused it. Students pay the desk directly meanwhile.
-  if (operator.gateway_paused) return fail("This desk has paused payments through Printify for now — pay the desk directly.");
+  if (operator.gateway_paused) return fail("This desk has paused payments through Printifi for now — pay the desk directly.");
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
       orderId: cfOrderId,
       amount: total,
       customer: { id: userId.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 50), phone, email: profile?.email, name: profile?.name },
-      note: `Printify ${order.token ?? ""} at ${operator.short_name || operator.name}`.slice(0, 200),
+      note: `Printifi ${order.token ?? ""} at ${operator.short_name || operator.name}`.slice(0, 200),
       returnUrl: `${origin}/orders?paid=${order.id}`,
       notifyUrl: `${origin}/api/payments/webhook`,
       split,

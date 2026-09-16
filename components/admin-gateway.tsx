@@ -10,7 +10,7 @@ import { cn, easeIos } from "@/lib/utils";
 
 /**
  * Connecting a desk to Cashfree Easy Split — the admin's lever, because it
- * commits Printify's Cashfree account. The desk's settlement account goes
+ * commits Printifi's Cashfree account. The desk's settlement account goes
  * in (bank or UPI), Cashfree verifies it, and the desk shows "pay online"
  * only once Cashfree says ACTIVE. Nothing about a desk's direct UPI id
  * changes; online payment sits beside it.
@@ -69,7 +69,7 @@ export function GatewayPanel({ desk, onChanged }: { desk: Desk; onChanged: () =>
     setNote(null);
     try {
       await setGatewayCollect(desk.id, on);
-      setNote(on ? "On. Students at this desk can pay through Cashfree; the money settles to Printify and this desk's share shows under Payouts on the Fees page." : "Off. Students pay the desk directly again.");
+      setNote(on ? "On. Students at this desk can pay through Cashfree; the money settles to Printifi and this desk's share shows under Payouts on the Fees page." : "Off. Students pay the desk directly again.");
       await onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't change that.");
@@ -143,7 +143,7 @@ export function GatewayPanel({ desk, onChanged }: { desk: Desk; onChanged: () =>
               )}
             >
               {busy === "collect" ? <Loader2 size={12} className="animate-spin" /> : null}
-              {status === "collect" ? "Turn off" : "Turn on — Printify collects"}
+              {status === "collect" ? "Turn off" : "Turn on — Printifi collects"}
             </button>
             <button
               onClick={() => setOpen((v) => !v)}
@@ -186,13 +186,13 @@ export function GatewayPanel({ desk, onChanged }: { desk: Desk; onChanged: () =>
       )}
       {status === "collect" && (
         <p className="m-0 mt-1 text-[11.5px] text-muted">
-          Students pay through Cashfree; the money settles to Printify. The desk&apos;s share — bill less fee — is owed to
+          Students pay through Cashfree; the money settles to Printifi. The desk&apos;s share — bill less fee — is owed to
           it and paid out by you; see <b className="font-semibold">Payouts</b> on the Fees page.
         </p>
       )}
       {status === "off" && mode && !desk.gateway_vendor_id && (
         <p className="m-0 mt-1 text-[11.5px] text-muted">
-          Off: students pay the desk directly. Turn on to offer Cashfree&apos;s checkout with Printify collecting; &quot;split
+          Off: students pay the desk directly. Turn on to offer Cashfree&apos;s checkout with Printifi collecting; &quot;split
           at source&quot; needs Easy Split on the Cashfree account.
         </p>
       )}

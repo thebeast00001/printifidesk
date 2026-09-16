@@ -81,7 +81,7 @@ export interface CreateOrderInput {
   note?: string;
   returnUrl: string;
   notifyUrl: string;
-  /** Easy Split: the desk's share to its vendor; the rest stays with Printify. */
+  /** Easy Split: the desk's share to its vendor; the rest stays with Printifi. */
   split?: { vendorId: string; amount: number } | null;
   tags?: Record<string, string>;
 }
@@ -264,7 +264,7 @@ export interface PaymentWebhook {
 /**
  * Cashfree wants 3–45 of [A-Za-z0-9_-], unique for the account. The order's
  * uuid without dashes is 32; a prefix says what it is, and an attempt
- * suffix lets a new Cashfree order be made for the same Printify order
+ * suffix lets a new Cashfree order be made for the same Printifi order
  * when the previous one expired.
  */
 export function gatewayOrderId(orderId: string, attempt = 1): string {
@@ -272,7 +272,7 @@ export function gatewayOrderId(orderId: string, attempt = 1): string {
   return attempt <= 1 ? `PF${hex}` : `PF${hex}-${attempt}`;
 }
 
-/** What goes to the desk's vendor: the bill less Printify's fee. Rounding stays with the desk. */
+/** What goes to the desk's vendor: the bill less Printifi's fee. Rounding stays with the desk. */
 export function vendorShare(total: number, platformFee: number): number {
   return Math.max(0, Math.round((total - platformFee) * 100) / 100);
 }

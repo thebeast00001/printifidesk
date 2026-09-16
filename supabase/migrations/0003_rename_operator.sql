@@ -59,7 +59,7 @@ alter index if exists orders_counter_active rename to orders_operator_active;
 
 -- The seeded row, named for what it now is.
 update public.operators
-   set name = 'Printify Operator, Block C'
+   set name = 'Printifi Operator, Block C'
  where name = 'Xerox counter, Block C';
 
 -- ============================================================
@@ -203,7 +203,7 @@ create policy "order events read" on public.order_events for select
   ));
 
 -- Restored here too, so re-running 0003 after 0004 doesn't leave the operator
--- unable to open or close Printify. 0004 re-creates it harmlessly.
+-- unable to open or close Printifi. 0004 re-creates it harmlessly.
 create policy "staff update operator" on public.operators for update
   using (public.is_staff(id))
   with check (public.is_staff(id));

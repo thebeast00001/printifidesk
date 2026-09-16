@@ -120,7 +120,7 @@ function Headline({
 }
 
 /**
- * "Open now · till 8 PM" rather than "Printify open" — what a sign on the
+ * "Open now · till 8 PM" rather than "Printifi open" — what a sign on the
  * door says. Hours are the operator's advertised ones; the switch still
  * decides whether the desk is open, and this only ever reports the switch.
  */

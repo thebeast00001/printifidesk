@@ -1,4 +1,4 @@
--- Print Counter — the operator decides when Printify is open.
+-- Print Counter — the operator decides when Printifi is open.
 --
 -- Opening hours were a guess about when someone would be standing at the
 -- printer. Whether a job can actually be printed depends on whether a person

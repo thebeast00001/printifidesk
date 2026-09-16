@@ -59,7 +59,7 @@ export function OperatorRates() {
             open ? "bg-sage text-sage-ink" : "border border-line bg-surface-sunk text-muted",
           )}
         >
-          {open ? "Printify open" : "Printify closed"}
+          {open ? "Printifi open" : "Printifi closed"}
         </span>
         {open && wait && wait.wait_minutes > 0 && (
           <span className="font-mono text-[11px] text-muted">about {wait.wait_minutes} min wait</span>

@@ -1,4 +1,4 @@
--- Printify — 0038: one new order status, on its own.
+-- Printifi — 0038: one new order status, on its own.
 --
 -- Run after 0037, and run 0039 separately afterwards. A new enum value
 -- can't be used in the transaction that adds it, and 0039's functions

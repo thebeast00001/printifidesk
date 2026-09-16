@@ -44,8 +44,8 @@ export async function generateMetadata(): Promise<Metadata> {
   if (surface === "desk") {
     return {
       metadataBase: new URL(DESK_URL),
-      title: { default: "Printify Desk", template: "%s · Printify Desk" },
-      description: "The counter's side of Printify: the queue, the prices, the hours, the handover.",
+      title: { default: "Printifi Desk", template: "%s · Printifi Desk" },
+      description: "The counter's side of Printifi: the queue, the prices, the hours, the handover.",
       manifest: "/desk.webmanifest",
       icons: {
         icon: [
@@ -54,7 +54,7 @@ export async function generateMetadata(): Promise<Metadata> {
         ],
         apple: "/desk-icon-192.png",
       },
-      appleWebApp: { capable: true, statusBarStyle: "default", title: "Printify Desk" },
+      appleWebApp: { capable: true, statusBarStyle: "default", title: "Printifi Desk" },
       // A tool for people who already have it: out of every index. Its
       // copies of the legal pages point their canonical at the student site.
       robots: NOINDEX,

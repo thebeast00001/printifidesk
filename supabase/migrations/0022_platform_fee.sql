@@ -2,7 +2,7 @@
 --
 -- Run after 0021.
 --
--- Printify takes a percentage of every order, the way Blinkit's handling
+-- Printifi takes a percentage of every order, the way Blinkit's handling
 -- charge works: a line on the student's bill, paid in the same UPI tap to
 -- the desk, and owed by the desk to the platform. Money never passes
 -- through the platform — the desk collects it and settles up — so what this

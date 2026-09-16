@@ -327,9 +327,9 @@ begin
 
   msg := case new.status
     when 'queued'    then 'Order ' || coalesce(ord.token, '') || ' is in the queue at ' ||
-                          coalesce(op.short_name, op.name, 'Printify') || '.'
+                          coalesce(op.short_name, op.name, 'Printifi') || '.'
     when 'ready'     then 'Ready to collect. Show token ' || coalesce(ord.token, '') || ' at ' ||
-                          coalesce(op.short_name, op.name, 'Printify') || '.'
+                          coalesce(op.short_name, op.name, 'Printifi') || '.'
     when 'collected' then 'Collected. Thanks!'
     else 'We could not print your order' || coalesce(': ' || ord.note, '') || '.'
   end;

@@ -1,12 +1,13 @@
 /**
  * What search engines are told about the site, in one place.
  *
- * The product is called Printify and lives at printifi.store — two
- * spellings, and the second is the one people type into a search box after
- * seeing the address on a standee. So the site carries both: the name on
- * every page, the domain spelling as the alternate name in the structured
- * data and in the footer. Every value here is a fact about the deployment,
- * read from the same variables the middleware routes by.
+ * The product is Printifi — spelled the way the address is, printifi.store,
+ * because that is what a student types after reading a standee. It was
+ * "Printify" for a while, which is also a registered trademark of an
+ * unrelated print-on-demand company; that spelling stays only as the
+ * alternate name in the structured data, so anyone who remembers it still
+ * finds the site. Every value here is a fact about the deployment, read
+ * from the same variables the middleware routes by.
  */
 
 const clean = (value: string | undefined) => (value ?? "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
@@ -22,9 +23,9 @@ export const SITE_HOST = host;
 export const SITE_URL = `https://${host}`;
 export const DESK_URL = `https://${deskHost}`;
 
-export const BRAND = "Printify";
-/** The domain's spelling — what a student types after reading a standee. */
-export const BRAND_ALT = "Printifi";
+export const BRAND = "Printifi";
+/** The earlier spelling, kept as an alternate name so a search for it still lands here. */
+export const BRAND_ALT = "Printify";
 export const TAGLINE = "Upload from your phone, pay with UPI, collect a printed set. Campus printing without the queue.";
 
 /** The day the policy pages last changed (ISO). Bump it when their words do. */

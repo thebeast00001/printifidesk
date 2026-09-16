@@ -1,29 +1,29 @@
--- Print Counter — paying through Printify, via Cashfree.
+-- Print Counter — paying through Printifi, via Cashfree.
 --
 -- Run after 0031.
 --
--- A desk that Printify has connected to Cashfree Easy Split can be paid
+-- A desk that Printifi has connected to Cashfree Easy Split can be paid
 -- online: the student pays a Cashfree order (UPI intent signed by
 -- Cashfree's PSP — every app takes it, amount filled in — or a card), the
 -- order is split at source (the desk's share to the desk's vendor
--- account, Printify's fee to Printify), and Cashfree's webhook is what
+-- account, Printifi's fee to Printifi), and Cashfree's webhook is what
 -- marks the order paid. No desk confirmation, no monthly settle-up for
 -- those orders: the fee was never in the desk's hands.
 --
 -- What's kept:
 --   operators.gateway_vendor_id  the desk's Cashfree vendor id, once
---                                Printify has created it (admin only)
+--                                Printifi has created it (admin only)
 --   operators.gateway_status     off | pending | active | blocked, as
 --                                Cashfree last reported it
---   orders.gateway_order_id      the Cashfree order id Printify created
+--   orders.gateway_order_id      the Cashfree order id Printifi created
 --   orders.gateway_payment_id    Cashfree's payment id, from the webhook
 --   orders.gateway_paid_at       when Cashfree said so
 --   orders.fee_settled_at        the fee was retained at source: excluded
 --                                from what the desk owes, counted as
 --                                "retained" for the admin
---   orders.gateway_refund_id     a refund Printify asked Cashfree for
+--   orders.gateway_refund_id     a refund Printifi asked Cashfree for
 --
--- The writes come from Printify's server with the service role — never
+-- The writes come from Printifi's server with the service role — never
 -- from a browser — through three security-definer functions that set a
 -- transaction-local flag the guard honours. The student can't touch any
 -- of these columns; the guard pins them like every other fact.
@@ -57,7 +57,7 @@ begin
   -- anything through the API must be the service role, with no Clerk sub.
   if public.clerk_id() is not null
      or (auth.jwt() is not null and coalesce(auth.jwt() ->> 'role', '') <> 'service_role') then
-    raise exception 'Only Printify''s server may do this';
+    raise exception 'Only Printifi''s server may do this';
   end if;
 end;
 $$;
@@ -115,7 +115,7 @@ begin
          -- Paid is accepted: the desk has nothing to check.
          status = case when status = 'placed' then 'queued' else status end,
          note   = case when status = 'placed'
-                       then 'Paid online through Printify (' || coalesce(p_group, 'gateway') || ')'
+                       then 'Paid online through Printifi (' || coalesce(p_group, 'gateway') || ')'
                        else note end
    where id = p_order;
   return true;
@@ -138,7 +138,7 @@ begin
          gateway_refund_id = p_refund_id
    where id = p_order and gateway_payment_id is not null;
   if not found then
-    raise exception 'That order was not paid through Printify';
+    raise exception 'That order was not paid through Printifi';
   end if;
 end;
 $$;
@@ -157,7 +157,7 @@ grant execute on function public.gateway_refunded(uuid, text, numeric, text) to 
 create or replace function public.guard_order_update()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  -- Printify's own server, inside gateway_begin / gateway_paid /
+  -- Printifi's own server, inside gateway_begin / gateway_paid /
   -- gateway_refunded. The flag is transaction-local and set nowhere else.
   if current_setting('printify.gateway', true) = '1' then
     return new;

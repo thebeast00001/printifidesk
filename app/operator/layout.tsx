@@ -14,8 +14,8 @@ export default function DeskLayout({ children }: { children: React.ReactNode }) 
   return (
     <StaggerIn>
       <PageHeader
-        eyebrow="Printify"
-        title="Printify Desk"
+        eyebrow="Printifi"
+        title="Printifi Desk"
         sub="Your queue, your prices, your hours. Every action here writes a timeline entry the student sees immediately."
       />
       <Container className="pt-3">

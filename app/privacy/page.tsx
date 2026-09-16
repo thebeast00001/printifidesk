@@ -3,7 +3,7 @@ import { canonical } from "@/lib/seo";
 
 export const metadata = {
   title: "Privacy policy",
-  description: "What Printify collects, what it does with it, who can see your files, and for how long.",
+  description: "What Printifi collects, what it does with it, who can see your files, and for how long.",
   alternates: { canonical: canonical("/privacy") },
 };
 
@@ -16,20 +16,20 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy policy"
-      sub="What Printify collects, what it does with it, who can see your files, and for how long."
+      sub="What Printifi collects, what it does with it, who can see your files, and for how long."
     >
       <p>
-        Printify is a campus printing service. You upload a document, a print desk near you prints it, and
-        you collect it with a token. To do that, Printify handles a small amount of information about you
+        Printifi is a campus printing service. You upload a document, a print desk near you prints it, and
+        you collect it with a token. To do that, Printifi handles a small amount of information about you
         and, for a few hours, the files you send. This page says exactly what, and why.
       </p>
 
-      <H2>What Printify collects</H2>
+      <H2>What Printifi collects</H2>
       <p>
-        <b>Your account.</b> Students sign in with Google; Printify receives your name, your email address
+        <b>Your account.</b> Students sign in with Google; Printifi receives your name, your email address
         and your Google profile picture, and nothing else from Google. People who run a print desk sign in
         with an email address and a password. Sign-in is handled by Clerk, which holds your credentials;
-        Printify stores only your account&apos;s identifier, name and email.
+        Printifi stores only your account&apos;s identifier, name and email.
       </p>
       <p>
         <b>Your profile.</b> Anything you choose to add in Settings — phone number, roll number, department,
@@ -47,7 +47,7 @@ export default function PrivacyPage() {
         price the job.
       </p>
       <p>
-        <b>Notifications.</b> If you turn on notifications, your browser gives Printify a push subscription
+        <b>Notifications.</b> If you turn on notifications, your browser gives Printifi a push subscription
         — an address the browser vendor uses to deliver a message to that device. It carries no personal
         information.
       </p>
@@ -61,7 +61,7 @@ export default function PrivacyPage() {
         Only you, and the desk you ordered from. The desk can open a file only while the order is live —
         from the moment you place it until it is collected or cancelled — and every time the desk opens a
         file, that access is recorded against your order. A link to a file expires five minutes after it is
-        made. No other desk, no other student, and nobody browsing Printify as a user can read your
+        made. No other desk, no other student, and nobody browsing Printifi as a user can read your
         documents; the database enforces this row by row, not the app.
       </p>
 
@@ -89,19 +89,19 @@ export default function PrivacyPage() {
 
       <H2>Payments</H2>
       <p>
-        Printify never handles your money. You pay the desk directly — by UPI to the desk&apos;s own account,
-        or in cash at the counter. The price you see includes Printify&apos;s platform fee, which the desk
-        later passes on to Printify. Printify does not see your bank or UPI details; the only payment
+        Printifi never handles your money. You pay the desk directly — by UPI to the desk&apos;s own account,
+        or in cash at the counter. The price you see includes Printifi&apos;s platform fee, which the desk
+        later passes on to Printifi. Printifi does not see your bank or UPI details; the only payment
         information stored is the reference number you choose to type in, so the desk can match your
         payment.
       </p>
 
-      <H2>Services Printify runs on</H2>
+      <H2>Services Printifi runs on</H2>
       <p>
         <b>Clerk</b> for sign-in. <b>Supabase</b> for the database and file storage. <b>Vercel</b> for
         hosting. <b>Google</b> for student sign-in. Your browser&apos;s vendor (Google, Apple, Mozilla) for
         delivering push notifications. <b>WhatsApp</b> only if you turn WhatsApp updates on, and only for
-        the messages you asked for. Each of these processes data on Printify&apos;s behalf to provide the
+        the messages you asked for. Each of these processes data on Printifi&apos;s behalf to provide the
         service, and for nothing else.
       </p>
 
@@ -113,13 +113,13 @@ export default function PrivacyPage() {
 
       <H2>Who this is for</H2>
       <p>
-        Printify is built for college students and the print desks that serve them. It is not intended for
+        Printifi is built for college students and the print desks that serve them. It is not intended for
         anyone under 16.
       </p>
 
       <H2>Changes</H2>
       <p>
-        If what Printify collects or does changes, this page changes and the date at the top moves. Nothing
+        If what Printifi collects or does changes, this page changes and the date at the top moves. Nothing
         is collected that isn&apos;t described here.
       </p>
 

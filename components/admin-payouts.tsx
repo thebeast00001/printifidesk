@@ -13,10 +13,10 @@ const PERIODS: { id: FeePeriod; label: string }[] = [
 ];
 
 /**
- * What Printify owes each desk from online payments it collected.
+ * What Printifi owes each desk from online payments it collected.
  *
  * The mirror of the fee ledger. Every order paid through Cashfree without a
- * split lands in Printify's account; the desk's share — bill less fee,
+ * split lands in Printifi's account; the desk's share — bill less fee,
  * refunds taken off in proportion, cancelled orders counting for nothing
  * — is owed to it. The admin sends it (UPI, bank, whatever the desk gave)
  * and records it here; the desk sees the same numbers on its Takings.
@@ -77,7 +77,7 @@ export function AdminPayouts() {
         <div>
           <h2 className="font-heading m-0 text-[18px] font-bold">Payouts to desks</h2>
           <p className="m-0 mt-0.5 text-[12.5px] text-muted">
-            Online payments land with Printify; each desk&apos;s share is owed to it until you send it and record it here.
+            Online payments land with Printifi; each desk&apos;s share is owed to it until you send it and record it here.
           </p>
           <label className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px]">
             <span className="text-muted">Desks are paid every</span>

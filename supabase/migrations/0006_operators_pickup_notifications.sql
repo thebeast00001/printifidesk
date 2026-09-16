@@ -125,10 +125,10 @@ begin
 
   msg := case new.status
     when 'queued'    then 'Order ' || coalesce((select token from public.orders where id = new.order_id), '') ||
-                          ' is in the queue at ' || coalesce(op.short_name, op.name, 'Printify') || '.'
+                          ' is in the queue at ' || coalesce(op.short_name, op.name, 'Printifi') || '.'
     when 'ready'     then 'Ready to collect. Show token ' ||
                           coalesce((select token from public.orders where id = new.order_id), '') ||
-                          ' at ' || coalesce(op.short_name, op.name, 'Printify') || '.'
+                          ' at ' || coalesce(op.short_name, op.name, 'Printifi') || '.'
     when 'collected' then 'Collected. Thanks!'
     else 'We could not print your order' ||
          coalesce(': ' || (select note from public.orders where id = new.order_id), '') || '.'

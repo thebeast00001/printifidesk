@@ -155,7 +155,7 @@ export interface Desk {
   /** Shut by the admin, with the reason kept; null while it runs. */
   shut_at: string | null;
   shut_reason: string | null;
-  /** 0032/0035: "active" = split at source; "collect" = Printify collects and pays out. */
+  /** 0032/0035: "active" = split at source; "collect" = Printifi collects and pays out. */
   gateway_status?: "off" | "collect" | "pending" | "active" | "blocked";
   gateway_vendor_id?: string | null;
   gateway_checked_at?: string | null;
@@ -439,11 +439,11 @@ export interface RangeStats {
   refunded: number;
   cash_total: number;
   upi_total: number;
-  /** Paid through Printify (Cashfree). Zero before 0032. */
+  /** Paid through Printifi (Cashfree). Zero before 0032. */
   online_total?: number;
   uncollected: number;
   median_minutes: number;
-  /** Printify's share of the collected, unrefunded orders in the window. */
+  /** Printifi's share of the collected, unrefunded orders in the window. */
   platform_fee: number;
 }
 

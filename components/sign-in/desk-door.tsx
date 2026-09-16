@@ -124,7 +124,7 @@ function SignInPane({
 
   return (
     <>
-      <Heading icon={<LogIn size={13} strokeWidth={2.4} />} eyebrow="Printify Desk" title="Sign in" />
+      <Heading icon={<LogIn size={13} strokeWidth={2.4} />} eyebrow="Printifi Desk" title="Sign in" />
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -232,7 +232,7 @@ function CreatePane({
       <Back onClick={stage === "code" ? () => setStage("details") : onBack} />
       <Heading
         icon={<UserPlus size={13} strokeWidth={2.4} />}
-        eyebrow="Printify Desk"
+        eyebrow="Printifi Desk"
         title={stage === "details" ? "Create a desk account" : "Check your email"}
       />
       {stage === "details" ? (
@@ -356,7 +356,7 @@ function ForgotPane({
       <Back onClick={stage === "code" ? () => setStage("email") : onBack} />
       <Heading
         icon={<KeyRound size={13} strokeWidth={2.4} />}
-        eyebrow="Printify Desk"
+        eyebrow="Printifi Desk"
         title={stage === "email" ? "Set a new password" : "Check your email"}
       />
       {stage === "email" ? (

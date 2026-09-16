@@ -26,7 +26,7 @@ const PERIODS: { id: FeePeriod; label: string }[] = [
 ];
 
 /**
- * Printify's side of the fee.
+ * Printifi's side of the fee.
  *
  * The rate and where desks settle to, the total across every desk for
  * today / this week / this month, and each desk's balance with a way to

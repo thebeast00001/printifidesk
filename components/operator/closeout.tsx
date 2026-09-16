@@ -173,7 +173,7 @@ export function CloseoutPanel({ operator, onClosed }: { operator: Operator; onCl
         {closing ? "Closing…" : closed ? "Closed — count saved" : "Close the desk"}
       </motion.button>
       <p className="m-0 mt-2 text-center text-[11px] text-muted">
-        Sets Printify to closed and saves today&apos;s count. Closing again today replaces it.
+        Sets Printifi to closed and saves today&apos;s count. Closing again today replaces it.
       </p>
       {error && <p className="m-0 mt-2 text-[12px] text-clay-ink dark:text-clay">{error}</p>}
 

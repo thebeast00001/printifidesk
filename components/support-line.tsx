@@ -2,7 +2,7 @@ import { MessageCircle, Mail } from "lucide-react";
 import Link from "next/link";
 
 /**
- * How to reach Printify, from the desk's footer and the legal pages. Only
+ * How to reach Printifi, from the desk's footer and the legal pages. Only
  * a channel that is actually set up is printed: a WhatsApp number from
  * NEXT_PUBLIC_SUPPORT_WHATSAPP (digits, country code first — "9198…"),
  * an email from NEXT_PUBLIC_SUPPORT_EMAIL. Neither set, the line is the
@@ -17,7 +17,7 @@ export function supportWhatsAppUrl(text?: string): string | null {
 }
 
 export function SupportLine({ desk, deskName }: { desk?: boolean; deskName?: string }) {
-  const wa = supportWhatsAppUrl(desk && deskName ? `Hi Printify — ${deskName} here.` : undefined);
+  const wa = supportWhatsAppUrl(desk && deskName ? `Hi Printifi — ${deskName} here.` : undefined);
   return (
     <p className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted">
       {wa && (

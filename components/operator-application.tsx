@@ -23,7 +23,7 @@ const FIELDS: {
   { key: "display_name", label: "What should students see?", placeholder: "e.g. Sharma Xerox, Block C", required: true },
   { key: "campus", label: "Campus", placeholder: "e.g. Main campus", required: true },
   { key: "location", label: "Where exactly", placeholder: "e.g. Ground floor, next to the canteen" },
-  { key: "phone", label: "Your phone", placeholder: "So Printify can reach you about this", required: true },
+  { key: "phone", label: "Your phone", placeholder: "So Printifi can reach you about this", required: true },
   { key: "machine", label: "Printer", placeholder: "e.g. HP LaserJet M428, duplex, mono" },
   { key: "note", label: "Anything else", placeholder: "Hours you can run, how many pages a day you can handle…", multiline: true },
 ];
@@ -77,7 +77,7 @@ export function OperatorApplication({ onChanged }: { onChanged?: () => void }) {
       <Shell tone="bone">
         <Title icon={<Clock size={16} strokeWidth={2.2} />}>Application received</Title>
         <p className="m-0 mt-1.5 max-w-[60ch] text-[12.5px] leading-relaxed opacity-80">
-          Printify is reviewing <b className="font-semibold">{existing.display_name}</b>. When it&apos;s
+          Printifi is reviewing <b className="font-semibold">{existing.display_name}</b>. When it&apos;s
           accepted, the admin sends you an owner code — enter it above and the desk is yours.
         </p>
         <dl className="m-0 mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono text-[11.5px]">

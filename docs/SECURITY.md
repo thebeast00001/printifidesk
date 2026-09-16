@@ -385,7 +385,7 @@ Found in the same pass, all in 0036:
   token counter was anyone's to read and rewrite. RLS on, no policies, no
   grants; the token trigger is security definer and still reaches it.
 - **`operators.gateway_status`** was the desk's to write through its own
-  update policy: staff could switch on "pay through Printify" for their
+  update policy: staff could switch on "pay through Printifi" for their
   desk. The operators guard now pins the three `gateway_*` columns to the
   admin (`set_gateway_collect`) and the server (the vendor route), the way
   `shut_*` were already pinned.

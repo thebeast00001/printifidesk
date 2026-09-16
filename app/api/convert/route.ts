@@ -10,7 +10,7 @@ export const maxDuration = 60;
  *
  * The converter is Gotenberg — LibreOffice behind an HTTP API — running
  * wherever CONVERT_URL points (a container you host; Vercel can't run
- * LibreOffice itself). The flow keeps the file inside Printify's own
+ * LibreOffice itself). The flow keeps the file inside Printifi's own
  * storage: the original is read with the service key, posted to the
  * converter, the PDF written back under the same folder and the same
  * document id, and the original removed. The row then points at the PDF;

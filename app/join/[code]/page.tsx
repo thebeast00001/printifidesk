@@ -17,7 +17,7 @@ export default async function JoinWithCodePage({ params }: { params: Promise<{ c
   return (
     <StaggerIn>
       <PageHeader
-        eyebrow="Printify"
+        eyebrow="Printifi"
         title="Join a desk"
         sub="A code from whoever runs the desk puts you on its staff. Sign in once; after that the counter device only asks for a PIN."
       />

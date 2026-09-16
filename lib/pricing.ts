@@ -65,7 +65,7 @@ export interface RateCard {
   minOrder: number;
   paperGsm: number;
   /**
-   * Printify's share, a percentage of the order after the minimum. Not the
+   * Printifi's share, a percentage of the order after the minimum. Not the
    * desk's to set: it comes from platform_settings, is merged onto the
    * operator row when it's fetched, and is snapshotted onto every order.
    */
@@ -193,7 +193,7 @@ export interface Quote {
   subtotal: number;
   /** What the minimum order added, if it did. */
   topUp: number;
-  /** Printify's share, on top of the lines and the top-up. */
+  /** Printifi's share, on top of the lines and the top-up. */
   platformFee: number;
   /** What lifting to the next rupee added; zero unless the desk rounds. */
   rounding: number;
