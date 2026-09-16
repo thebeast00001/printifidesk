@@ -1,9 +1,10 @@
 import { Container } from "@/components/container";
+import { NOINDEX } from "@/lib/seo";
 import { PageHeader } from "@/components/page-header";
 import { StaggerIn } from "@/components/stagger-in";
 import { ClaimAdmin, DiagnosticsView } from "@/components/diagnostics-view";
 
-export const metadata = { title: "Diagnostics" };
+export const metadata = { title: "Diagnostics", robots: NOINDEX };
 
 /**
  * Setup checks for whoever runs this deployment. Deliberately not linked from

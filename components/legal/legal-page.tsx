@@ -3,13 +3,14 @@ import { Container } from "@/components/container";
 import { PageHeader } from "@/components/page-header";
 import { StaggerIn } from "@/components/stagger-in";
 import { supportWhatsAppUrl } from "@/components/support-line";
+import { POLICIES_UPDATED_LABEL } from "@/lib/seo";
 
 /**
  * The frame both legal pages share. Plain prose, a readable line length, a
  * dated header, and the contact address from the environment — a page that
  * printed a made-up mailbox would be worse than one that says none is set.
  */
-export const LEGAL_UPDATED = "16 September 2026";
+export const LEGAL_UPDATED = POLICIES_UPDATED_LABEL;
 export const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || null;
 
 export function LegalPage({

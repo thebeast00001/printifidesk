@@ -1,4 +1,5 @@
 import { Container } from "@/components/container";
+import { NOINDEX } from "@/lib/seo";
 import { PageHeader } from "@/components/page-header";
 import { StaggerIn } from "@/components/stagger-in";
 import { DeskDoor } from "@/components/sign-in/desk-door";
@@ -6,7 +7,7 @@ import { StudentDoor } from "@/components/sign-in/student-door";
 import { requestOrigin, requestSurface } from "@/lib/server/surface";
 import { sameOriginPath } from "@/lib/surface";
 
-export const metadata = { title: "Sign in" };
+export const metadata = { title: "Sign in", robots: NOINDEX };
 
 /**
  * One address, two doors. The desk site always gets the desk's; on a shared

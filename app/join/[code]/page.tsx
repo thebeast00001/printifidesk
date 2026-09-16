@@ -1,10 +1,11 @@
 import { Container } from "@/components/container";
+import { NOINDEX } from "@/lib/seo";
 import { PageHeader } from "@/components/page-header";
 import { StaggerIn } from "@/components/stagger-in";
 import { ConnectionBanner } from "@/components/connection-banner";
 import { JoinDesk } from "@/components/join-desk";
 
-export const metadata = { title: "Join a desk" };
+export const metadata = { title: "Join a desk", robots: NOINDEX };
 
 /**
  * The link inside the QR. The code is in the path, not a query string, so it

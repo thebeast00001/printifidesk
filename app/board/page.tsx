@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Board } from "@/components/board";
+import { NOINDEX } from "@/lib/seo";
 
 export const metadata: Metadata = {
   title: "Board",
   description: "Tokens in the queue, printing and ready — the screen at the counter.",
-  robots: { index: false },
+  robots: NOINDEX,
 };
 
 /**

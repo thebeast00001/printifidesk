@@ -6,6 +6,11 @@ import { UploadCard } from "@/components/upload-card";
 import { Feed } from "@/components/feed";
 import { StaggerIn } from "@/components/stagger-in";
 import { PrivacyNote } from "@/components/privacy-note";
+import { HowItWorks } from "@/components/how-it-works";
+import { SiteFooter } from "@/components/site-footer";
+import { canonical } from "@/lib/seo";
+
+export const metadata = { alternates: { canonical: canonical("/") } };
 
 export default function Home() {
   return (
@@ -36,6 +41,8 @@ export default function Home() {
         </div>
 
         <PrivacyNote />
+        <HowItWorks />
+        <SiteFooter />
       </Container>
     </StaggerIn>
   );

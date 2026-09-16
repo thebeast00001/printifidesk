@@ -471,6 +471,12 @@ check("desktop that turned it down gets nothing", canInstall({ ...base, dismisse
 check("student /terms passes", routeFor("student", "/terms", two), { kind: "pass" });
 check("desk /board passes", routeFor("desk", "/board", two), { kind: "pass" });
 check("student /board passes", routeFor("student", "/board", two), { kind: "pass" });
+// the crawl files: each host answers for itself (robots.txt says which one is for the index)
+check("student /robots.txt passes", routeFor("student", "/robots.txt", two), { kind: "pass" });
+check("desk /robots.txt passes", routeFor("desk", "/robots.txt", two), { kind: "pass" });
+check("student /sitemap.xml passes", routeFor("student", "/sitemap.xml", two), { kind: "pass" });
+check("desk /sitemap.xml passes", routeFor("desk", "/sitemap.xml", two), { kind: "pass" });
+check("desk /opengraph-image passes", routeFor("desk", "/opengraph-image", two), { kind: "pass" });
 
 console.log("\n— the shelf and the badges —");
 check("A1 is row 1 col 1", shelfLabel(1, 1), "A1");

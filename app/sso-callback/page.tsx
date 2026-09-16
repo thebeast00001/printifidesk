@@ -1,7 +1,8 @@
 import { AuthenticateWithRedirectCallback } from "@clerk/nextjs";
+import { NOINDEX } from "@/lib/seo";
 import { Loader2 } from "lucide-react";
 
-export const metadata = { title: "Signing in" };
+export const metadata = { title: "Signing in", robots: NOINDEX };
 
 /**
  * Where Google sends the browser back. Clerk finishes the exchange here —

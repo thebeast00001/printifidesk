@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { Contact, H2, LegalPage } from "@/components/legal/legal-page";
+import { canonical } from "@/lib/seo";
 
 export const metadata = {
   title: "Terms of service",
   description: "How Printify works between you, the print desk, and Printify itself.",
+  alternates: { canonical: canonical("/terms") },
 };
 
 /** The rules, in the product's own voice, describing what it actually does. */

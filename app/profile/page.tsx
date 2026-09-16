@@ -1,9 +1,10 @@
 import { Container } from "@/components/container";
+import { NOINDEX } from "@/lib/seo";
 import { PageHeader } from "@/components/page-header";
 import { StaggerIn } from "@/components/stagger-in";
 import { ProfileView } from "@/components/profile-view";
 
-export const metadata = { title: "Profile" };
+export const metadata = { title: "Profile", robots: NOINDEX };
 
 export default function ProfilePage() {
   return (

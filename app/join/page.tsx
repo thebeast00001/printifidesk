@@ -1,10 +1,11 @@
 import { Container } from "@/components/container";
+import { NOINDEX } from "@/lib/seo";
 import { PageHeader } from "@/components/page-header";
 import { StaggerIn } from "@/components/stagger-in";
 import { ConnectionBanner } from "@/components/connection-banner";
 import { JoinDesk } from "@/components/join-desk";
 
-export const metadata = { title: "Join a desk" };
+export const metadata = { title: "Join a desk", robots: NOINDEX };
 
 /** Typing a join code by hand — the page the QR's link also lands on. */
 export default function JoinPage() {

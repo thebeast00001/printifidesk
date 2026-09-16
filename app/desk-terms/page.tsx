@@ -1,4 +1,5 @@
 import { Contact, H2, LegalPage } from "@/components/legal/legal-page";
+import { canonical } from "@/lib/seo";
 import { payoutWeekdayName } from "@/lib/server/platform";
 
 // The payout day is read on every request, so the page says what the admin set.
@@ -7,6 +8,7 @@ export const dynamic = "force-dynamic";
 export const metadata = {
   title: "Terms for print desks",
   description: "What running a desk on Printify commits you to: prices, printing, files, the platform fee, payouts, refunds and unclaimed jobs.",
+  alternates: { canonical: canonical("/desk-terms") },
 };
 
 /**

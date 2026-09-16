@@ -1,7 +1,8 @@
 import { AdminFees } from "@/components/admin-fees";
+import { NOINDEX } from "@/lib/seo";
 import { AdminPayouts } from "@/components/admin-payouts";
 
-export const metadata = { title: "Platform fee" };
+export const metadata = { title: "Platform fee", robots: NOINDEX };
 
 export default function AdminFeesPage() {
   return (

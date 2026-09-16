@@ -1,9 +1,10 @@
 import { Container } from "@/components/container";
+import { NOINDEX } from "@/lib/seo";
 import { PageHeader } from "@/components/page-header";
 import { StaggerIn } from "@/components/stagger-in";
 import { ReceiptView } from "@/components/receipt-view";
 
-export const metadata = { title: "Receipt" };
+export const metadata = { title: "Receipt", robots: NOINDEX };
 
 /** A printable receipt for one order — the student's own; RLS answers for anyone else's. */
 export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {

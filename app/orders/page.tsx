@@ -1,11 +1,12 @@
 import { Container } from "@/components/container";
+import { NOINDEX } from "@/lib/seo";
 import { PageHeader } from "@/components/page-header";
 import { StaggerIn } from "@/components/stagger-in";
 import { StatusIsland } from "@/components/status-island";
 import { OrderList } from "@/components/order-list";
 import { PrivacyNote } from "@/components/privacy-note";
 
-export const metadata = { title: "Orders" };
+export const metadata = { title: "Orders", robots: NOINDEX };
 
 export default function OrdersPage() {
   return (

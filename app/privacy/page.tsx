@@ -1,8 +1,10 @@
 import { Contact, H2, LegalPage } from "@/components/legal/legal-page";
+import { canonical } from "@/lib/seo";
 
 export const metadata = {
   title: "Privacy policy",
   description: "What Printify collects, what it does with it, who can see your files, and for how long.",
+  alternates: { canonical: canonical("/privacy") },
 };
 
 /**

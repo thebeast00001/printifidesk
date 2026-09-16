@@ -1,4 +1,5 @@
 import { Container } from "@/components/container";
+import { NOINDEX } from "@/lib/seo";
 import { PageHeader } from "@/components/page-header";
 import { StaggerIn } from "@/components/stagger-in";
 import {
@@ -10,7 +11,7 @@ import {
 import { OperatorPicker } from "@/components/operator-picker";
 import { ConnectionBanner } from "@/components/connection-banner";
 
-export const metadata = { title: "Settings" };
+export const metadata = { title: "Settings", robots: NOINDEX };
 
 export default function SettingsPage() {
   return (

@@ -85,6 +85,9 @@ const SHARED_PREFIXES = [
   "/terms",
   "/refunds",
   "/desk-terms",
+  "/robots.txt",
+  "/sitemap.xml",
+  "/opengraph-image",
   // The counter screen. A TV at the shop may have either host typed in.
   "/board",
 ];

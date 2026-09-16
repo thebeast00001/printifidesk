@@ -1,8 +1,10 @@
 import { Contact, H2, LegalPage } from "@/components/legal/legal-page";
+import { canonical } from "@/lib/seo";
 
 export const metadata = {
   title: "Refund policy",
   description: "When a Printify order is refunded, by whom, how the money comes back, and what happens to an order that goes nowhere.",
+  alternates: { canonical: canonical("/refunds") },
 };
 
 /**
