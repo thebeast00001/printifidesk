@@ -123,6 +123,7 @@ begin
 end;
 $$;
 
+drop function if exists public.claim_invite(text);
 create or replace function public.claim_invite(p_code text)
 returns table (ok boolean, operator_id uuid, operator_name text, message text)
 language plpgsql security definer set search_path = public as $$
@@ -318,6 +319,14 @@ $$;
 
 -- Takings and the ledger: the owner's (and the admin's). fee_status stays
 -- with staff — the fee lock reads it when anyone opens the desk.
+--
+-- Each table-returning function is dropped before it's made: Postgres won't
+-- change a function's return row in place ("cannot change return type of
+-- existing function"), and a project that ran an earlier shape of one of
+-- these would stop here otherwise. Nothing depends on them by pg_depend —
+-- SQL-language bodies aren't tracked — so the drops are safe, and the
+-- admin's roll-ups that call them keep working once they're back.
+drop function if exists public.fee_window(uuid, timestamptz, timestamptz);
 create or replace function public.fee_window(p_operator uuid, p_from timestamptz, p_to timestamptz default now())
 returns table (orders integer, fee numeric, retained numeric)
 language sql stable security definer set search_path = public as $$
@@ -336,6 +345,7 @@ language sql stable security definer set search_path = public as $$
   where public.is_owner(p_operator) or public.is_admin() or public.is_server();
 $$;
 
+drop function if exists public.fee_balance(uuid);
 create or replace function public.fee_balance(p_operator uuid)
 returns table (accrued numeric, settled numeric, outstanding numeric)
 language sql stable security definer set search_path = public as $$
@@ -354,6 +364,7 @@ language sql stable security definer set search_path = public as $$
    where public.is_owner(p_operator) or public.is_admin() or public.is_server();
 $$;
 
+drop function if exists public.fee_status(uuid);
 create or replace function public.fee_status(p_operator uuid)
 returns table (outstanding numeric, due numeric, due_month date, grace_days integer, locks_on date, overdue boolean)
 language sql stable security definer set search_path = public as $$
@@ -383,6 +394,7 @@ language sql stable security definer set search_path = public as $$
    where public.is_staff(p_operator) or public.is_admin();
 $$;
 
+drop function if exists public.payout_balance(uuid);
 create or replace function public.payout_balance(p_operator uuid)
 returns table (owed numeric, paid_out numeric, balance numeric, orders integer)
 language sql stable security definer set search_path = public as $$
@@ -397,6 +409,7 @@ language sql stable security definer set search_path = public as $$
    where public.is_owner(p_operator) or public.is_admin() or public.is_server();
 $$;
 
+drop function if exists public.payout_window(uuid, timestamptz, timestamptz);
 create or replace function public.payout_window(p_operator uuid, p_from timestamptz, p_to timestamptz default now())
 returns table (orders integer, gross numeric, fee numeric, share numeric)
 language sql stable security definer set search_path = public as $$
@@ -414,6 +427,7 @@ language sql stable security definer set search_path = public as $$
   where public.is_owner(p_operator) or public.is_admin() or public.is_server();
 $$;
 
+drop function if exists public.admin_fee_orders(uuid, timestamptz, timestamptz);
 create or replace function public.admin_fee_orders(p_operator uuid, p_from timestamptz, p_to timestamptz default now())
 returns table (id uuid, token text, collected_at timestamptz, total numeric, platform_fee numeric, payment_method text, refund_amount numeric, fee_settled_at timestamptz)
 language sql stable security definer set search_path = public as $$
@@ -494,6 +508,7 @@ begin
 end;
 $$;
 
+drop function if exists public.operator_wait(uuid);
 create or replace function public.operator_wait(p_operator uuid)
 returns table (open boolean, pending_orders integer, pending_pages integer, wait_minutes integer)
 language plpgsql stable security definer set search_path = public as $$
@@ -931,6 +946,7 @@ $$;
  * was placed under, not today's — with new page and colour counts for
  * some or all of its items. Returns the new figures without writing.
  */
+drop function if exists public.reprice_order(uuid, jsonb);
 create or replace function public.reprice_order(p_order uuid, p_items jsonb)
 returns table (total numeric, platform_fee numeric, rounding numeric, pages integer, colour_pages integer, lines jsonb)
 language plpgsql stable security definer set search_path = public as $$
@@ -1390,6 +1406,7 @@ end;
 $$;
 
 -- Revenue counts what the desk was paid for, collected or left on the shelf.
+drop function if exists public.operator_stats_range(uuid, timestamptz, timestamptz);
 create or replace function public.operator_stats_range(p_operator uuid, p_from timestamptz, p_to timestamptz default now())
 returns table (
   orders integer, collected integer, declined integer, pages integer, colour_pages integer,
@@ -1447,4 +1464,14 @@ grant execute on function public.withdraw_requote(uuid) to authenticated;
 grant execute on function public.accept_requote(uuid) to authenticated;
 grant execute on function public.reprice_order(uuid, jsonb) to authenticated;
 grant execute on function public.sweep_orders(uuid) to authenticated;
+-- Dropped and made again above, so their grants went with them (0036: none by default).
+grant execute on function public.operator_wait(uuid) to anon, authenticated;
+grant execute on function public.claim_invite(text) to authenticated;
+grant execute on function public.fee_window(uuid, timestamptz, timestamptz) to authenticated;
+grant execute on function public.fee_balance(uuid) to authenticated;
+grant execute on function public.fee_status(uuid) to authenticated;
+grant execute on function public.payout_balance(uuid) to authenticated;
+grant execute on function public.payout_window(uuid, timestamptz, timestamptz) to authenticated;
+grant execute on function public.admin_fee_orders(uuid, timestamptz, timestamptz) to authenticated;
+grant execute on function public.operator_stats_range(uuid, timestamptz, timestamptz) to authenticated;
 grant execute on all functions in schema public to service_role;

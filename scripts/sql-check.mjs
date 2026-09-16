@@ -2119,10 +2119,14 @@ await scenario("an owner and their staff: staff run the queue, the owner sets th
   if (!/owner/.test(invite ?? "")) throw new Error(`staff made a code: ${invite ?? "allowed"}`);
   const remove = await refused("authenticated", "hand_test", `select public.remove_staff($1, 'op_test');`, [OPERATOR]);
   if (!/owner/.test(remove ?? "")) throw new Error(`staff removed the owner: ${remove ?? "allowed"}`);
+  let takings, stats;
   await asRole("authenticated", "hand_test");
-  const { rows: takings } = await db.query(`select * from public.fee_window($1, now() - interval '1 year');`, [OPERATOR]);
-  const { rows: stats } = await db.query(`select * from public.operator_stats_range($1, now() - interval '1 year');`, [OPERATOR]);
-  await asRoot();
+  try {
+    takings = (await db.query(`select * from public.fee_window($1, now() - interval '1 year');`, [OPERATOR])).rows;
+    stats = (await db.query(`select * from public.operator_stats_range($1, now() - interval '1 year');`, [OPERATOR])).rows;
+  } finally {
+    await asRoot();
+  }
   if (takings.length || stats.length) throw new Error("staff read the takings");
   // The owner does all of it; the last owner can't step down.
   await actingAs("op_test");

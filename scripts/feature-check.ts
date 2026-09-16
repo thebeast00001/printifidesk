@@ -328,6 +328,16 @@ check(
   numbers.every((n, i) => Number(n) === i + 1),
   true,
 );
+// Postgres won't change a function's return row in place, and a live project
+// may hold an older shape of one — so from 0039 on, every table-returning
+// function a migration (re)defines is dropped first, or the SQL editor stops
+// with "cannot change return type of existing function" halfway through.
+for (const file of migrations.filter((f) => Number(f.slice(0, 4)) >= 39)) {
+  const sql = readFileSync(join(migrationsDir, file), "utf8");
+  const made = [...sql.matchAll(/create (?:or replace )?function public\.([a-z_]+)\s*\([^)]*\)\s*returns\s+table/gi)].map((m) => m[1]);
+  const undropped = made.filter((name) => !sql.includes(`drop function if exists public.${name}(`));
+  check(`${file}: table-returning functions dropped before they're made`, undropped, []);
+}
 
 console.log("\n— the maintenance secret (constant-time, so length can't leak) —");
 check("exact match accepted", secretMatches("s3cr3t-value", "s3cr3t-value"), true);
