@@ -9,8 +9,14 @@
  * read from the same variables the middleware routes by.
  */
 
-const host = (process.env.NEXT_PUBLIC_SITE_HOST ?? "printifi.store").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-const deskHost = (process.env.NEXT_PUBLIC_DESK_HOST ?? `desk.${host}`).trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+const clean = (value: string | undefined) => (value ?? "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+// The same derivation as lib/surface.ts hostsFrom: the site host, or the
+// desk host with its `desk.` taken off (production sets only the desk's);
+// on a bare localhost, the production address, so a sitemap or a canonical
+// drawn locally still names the real site.
+const deskEnv = clean(process.env.NEXT_PUBLIC_DESK_HOST);
+const host = clean(process.env.NEXT_PUBLIC_SITE_HOST) || (deskEnv.startsWith("desk.") ? deskEnv.slice("desk.".length) : "") || "printifi.store";
+const deskHost = deskEnv || `desk.${host}`;
 
 export const SITE_HOST = host;
 export const SITE_URL = `https://${host}`;

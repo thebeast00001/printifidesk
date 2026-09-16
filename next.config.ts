@@ -37,14 +37,18 @@ const securityHeaders = [
  * The site's one address. `www.` answered with the same pages, and Google
  * indexed that copy as the original — a second address for the same site
  * splits its standing between the two. Sent home for good (308) so there is
- * one. Read from the same variable the middleware routes by; unset (a bare
- * localhost) means nothing to redirect.
+ * one. The host is found the way the middleware finds it (lib/surface.ts
+ * hostsFrom): NEXT_PUBLIC_SITE_HOST, or the desk host with its `desk.`
+ * taken off. Neither set — a bare localhost — nothing redirects.
  */
-const siteHost = (process.env.NEXT_PUBLIC_SITE_HOST ?? "")
-  .trim()
-  .toLowerCase()
-  .replace(/^https?:\/\//, "")
-  .replace(/\/.*$/, "");
+const cleanHost = (value: string | undefined) =>
+  (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "");
+const deskHost = cleanHost(process.env.NEXT_PUBLIC_DESK_HOST);
+const siteHost = cleanHost(process.env.NEXT_PUBLIC_SITE_HOST) || (deskHost.startsWith("desk.") ? deskHost.slice("desk.".length) : "");
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
