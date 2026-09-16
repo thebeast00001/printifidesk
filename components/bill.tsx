@@ -170,6 +170,23 @@ function LineRows({
               sub
             />
           )}
+          {/* The desk's extras this file chose, each by the desk's own name. */}
+          {card.extras
+            .filter((e) => (line.config.extras ?? []).includes(e.id))
+            .map((e) => {
+              const copies = Math.max(1, line.config.copies);
+              const amount = e.per === "copy" ? e.price * copies : e.price;
+              return (
+                <Row
+                  key={e.id}
+                  label={e.name}
+                  hint={e.per === "copy" ? `${money(e.price, cur)} each${x}` : "once"}
+                  value={money(amount, cur)}
+                  muted={muted}
+                  sub
+                />
+              );
+            })}
         </div>
       )}
     </div>

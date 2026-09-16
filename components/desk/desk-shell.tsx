@@ -9,6 +9,7 @@ import { JoinDesk } from "../join-desk";
 import { useSurface } from "../surface-provider";
 import { useDesk } from "./desk-provider";
 import { OpenSwitch } from "./open-switch";
+import { SupportLine } from "../support-line";
 import { cn } from "@/lib/utils";
 
 /**
@@ -123,6 +124,8 @@ export function DeskShell({ children }: { children: React.ReactNode }) {
       )}
 
       {children}
+
+      <SupportLine desk deskName={operator.short_name || operator.name} />
 
       {!split && surface === "student" && (
         // One host, both sites: a deliberate way back. On its own host the

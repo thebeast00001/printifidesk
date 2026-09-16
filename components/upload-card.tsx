@@ -85,7 +85,7 @@ export function UploadCard() {
                 </b>
               </li>
               <li>
-                PDF, Word, PPT, images — <b className="font-semibold text-ink-soft">all convert</b>
+                PDF or photos — <b className="font-semibold text-ink-soft">pages counted here</b>, before you pay
               </li>
             </ul>
           </div>

@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Loader2, UserMinus, UserPlus, X } from "lucide-react";
+import { Crown, Loader2, UserMinus, UserPlus, X } from "lucide-react";
 import {
   createInvite,
   formatJoinCode,
   listStaff,
   openInvites,
   removeStaff,
+  setStaffRole,
   revokeInvite,
   type StaffInvite,
   type StaffMember,
@@ -27,11 +28,13 @@ import { cn, easeIos } from "@/lib/utils";
  * No email to ask for, nothing to spell. The last person can't remove
  * themselves — a desk with nobody on it can never be reopened from the app.
  */
-export function StaffPanel({ operator, me }: { operator: Operator; me: string | null }) {
+export function StaffPanel({ operator, me, role = "owner" }: { operator: Operator; me: string | null; role?: "owner" | "staff" }) {
+  const owner = role === "owner";
   const [staff, setStaff] = useState<StaffMember[] | null>(null);
   const [invites, setInvites] = useState<StaffInvite[]>([]);
   const [adding, setAdding] = useState(false);
   const [label, setLabel] = useState("");
+  const [asRole, setAsRole] = useState<"owner" | "staff">("staff");
   const [fresh, setFresh] = useState<{ code: string; expires_at: string; label: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,8 +55,9 @@ export function StaffPanel({ operator, me }: { operator: Operator; me: string | 
     setBusy("add");
     setError(null);
     try {
-      const made = await createInvite(operator.id, label);
+      const made = await createInvite(operator.id, label, asRole);
       setFresh({ ...made, label: label.trim() });
+      setAsRole("staff");
       setLabel("");
       setAdding(false);
       await load();
@@ -73,6 +77,19 @@ export function StaffPanel({ operator, me }: { operator: Operator; me: string | 
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't cancel that code.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function changeRole(userId: string, to: "owner" | "staff") {
+    setBusy(userId);
+    setError(null);
+    try {
+      await setStaffRole(operator.id, userId, to);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't change that role.");
     } finally {
       setBusy(null);
     }
@@ -100,10 +117,11 @@ export function StaffPanel({ operator, me }: { operator: Operator; me: string | 
         <div>
           <h2 className="font-heading m-0 text-[18px] font-bold">Staff</h2>
           <p className="m-0 mt-1 text-[12.5px] text-muted">
-            Everyone here can run the queue, take payment and change these settings.
+            Staff run the queue and take payment. Owners also set rates, payments, hours, extras, staff and see the
+            takings.
           </p>
         </div>
-        {!adding && (
+        {!adding && owner && (
           <button
             onClick={() => {
               setAdding(true);
@@ -145,6 +163,15 @@ export function StaffPanel({ operator, me }: { operator: Operator; me: string | 
                   placeholder="Who is it for? (optional)"
                   className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-[13px] outline-none focus:border-ink"
                 />
+                <select
+                  value={asRole}
+                  onChange={(e) => setAsRole(e.target.value as "owner" | "staff")}
+                  aria-label="Join as"
+                  className="h-11 shrink-0 rounded-xl border border-line bg-surface px-2.5 text-[13px] outline-none focus:border-ink"
+                >
+                  <option value="staff">as staff</option>
+                  <option value="owner">as an owner</option>
+                </select>
                 <button
                   type="submit"
                   disabled={busy === "add"}
@@ -194,24 +221,41 @@ export function StaffPanel({ operator, me }: { operator: Operator; me: string | 
                 className="flex items-center gap-3 rounded-xl border border-line bg-surface-sunk px-3 py-2.5"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-semibold">
+                  <span className="flex items-center gap-1.5 truncate text-[13px] font-semibold">
                     {s.name ?? s.email ?? s.user_id}
-                    {s.user_id === me && <span className="ml-1.5 font-normal text-muted">(you)</span>}
+                    {s.user_id === me && <span className="font-normal text-muted">(you)</span>}
+                    {(s.role ?? "owner") === "owner" && (
+                      <span className="flex items-center gap-1 rounded-full bg-bone px-2 py-0.5 text-[10.5px] font-semibold text-ink">
+                        <Crown size={10} strokeWidth={2.4} />
+                        owner
+                      </span>
+                    )}
                   </span>
                   <span className="block truncate font-mono text-[11px] text-muted">
                     {s.email && s.name ? `${s.email} · ` : ""}
                     {s.has_pin ? "PIN set" : "no PIN — can't use desk sign-in yet"}
                   </span>
                 </span>
-                <button
-                  onClick={() => remove(s.user_id)}
-                  disabled={busy === s.user_id || staff.length <= 1}
-                  title={staff.length <= 1 ? "The last person can't leave" : "Remove"}
-                  aria-label={`Remove ${s.name ?? s.email ?? "this person"}`}
-                  className="grid size-9 shrink-0 place-items-center rounded-lg border border-line text-muted transition-colors hover:text-ink disabled:opacity-40"
-                >
-                  {busy === s.user_id ? <Loader2 size={13} className="animate-spin" /> : <UserMinus size={14} strokeWidth={2.2} />}
-                </button>
+                {owner && (
+                  <button
+                    onClick={() => changeRole(s.user_id, (s.role ?? "owner") === "owner" ? "staff" : "owner")}
+                    disabled={busy === s.user_id}
+                    className="h-9 shrink-0 rounded-lg border border-line px-2.5 text-[11.5px] font-semibold text-muted transition-colors hover:text-ink disabled:opacity-40"
+                  >
+                    {(s.role ?? "owner") === "owner" ? "Make staff" : "Make owner"}
+                  </button>
+                )}
+                {owner && (
+                  <button
+                    onClick={() => remove(s.user_id)}
+                    disabled={busy === s.user_id || staff.length <= 1}
+                    title={staff.length <= 1 ? "The last person can't leave" : "Remove"}
+                    aria-label={`Remove ${s.name ?? s.email ?? "this person"}`}
+                    className="grid size-9 shrink-0 place-items-center rounded-lg border border-line text-muted transition-colors hover:text-ink disabled:opacity-40"
+                  >
+                    {busy === s.user_id ? <Loader2 size={13} className="animate-spin" /> : <UserMinus size={14} strokeWidth={2.2} />}
+                  </button>
+                )}
               </li>
             ))}
 

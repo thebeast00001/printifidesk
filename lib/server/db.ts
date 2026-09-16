@@ -37,6 +37,19 @@ export async function isStaffOf(supabase: SupabaseClient, userId: string, operat
   return Boolean(data);
 }
 
+/** 0039: the desk's owner — rates, payments, refunds and takings are theirs. */
+export async function isOwnerOf(supabase: SupabaseClient, userId: string, operatorId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("staff")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("operator_id", operatorId)
+    .maybeSingle();
+  // Before 0039 there is no role column and every member is an owner.
+  if (error?.code === "42703") return isStaffOf(supabase, userId, operatorId);
+  return (data as { role?: string } | null)?.role === "owner";
+}
+
 /** A JSON error the client can show. */
 export function fail(message: string, status = 400): Response {
   return Response.json({ ok: false, error: message }, { status });

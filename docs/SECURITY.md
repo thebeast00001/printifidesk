@@ -414,6 +414,20 @@ handed to Cashfree — only ever yields one of the configured hosts, so a
 poisoned Host header can't point a webhook elsewhere; and `/api/desk` no
 longer returns Postgres's own error text on a 500.
 
+### 15. An owner and their staff — **0039**
+
+Every member of a desk could change its prices, its UPI id, remove the
+owner, record refunds and read the takings. `staff.role` splits owner from
+staff, and the split is enforced where the writes land, not in the screens:
+`guard_operator_owner()` on the operators row, `is_owner()` in every staff,
+device and code function, the order guard on refund columns, `isOwnerOf` in
+the refund route, and the ledger functions — which now return no row at all
+to anyone but the owner, admin or server (an aggregate always yields a row,
+and a row of zeros read as "nothing owed"). The harness exercises all of it
+as the real `authenticated` role. The corrected bill and the sweep write
+under the same server flag the gateway uses, and only through functions that
+check who's asking.
+
 ### Reviewed and left alone
 
 - **No XSS sinks.** No `dangerouslySetInnerHTML`, `innerHTML`, or `eval` anywhere.

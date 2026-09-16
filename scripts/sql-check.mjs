@@ -274,8 +274,9 @@ await scenario("an order gets a token", async () => {
     on conflict (id) do nothing;
 
     -- 0001 calls the table \`staff\`; 0003 renames its column to operator_id.
-    insert into public.staff (user_id, operator_id)
-    values ('op_test', '${OPERATOR}')
+    -- 0039: the person who sets a desk up is its owner; op_test plays that part.
+    insert into public.staff (user_id, operator_id, role)
+    values ('op_test', '${OPERATOR}', 'owner')
     on conflict do nothing;
   `);
   await actingAs("student_test");
@@ -454,7 +455,7 @@ async function rateCardFromDb() {
   const { rows } = await db.query(
     `select o.currency, o.bw_per_page::text, o.colour_per_page::text, o.duplex_discount::text,
             o.staple_price::text, o.bulk_threshold, o.bulk_multiplier::text, o.min_order::text, o.paper_gsm,
-            o.round_to_rupee,
+            o.round_to_rupee, o.extras,
             ps.fee_percent::text as platform_fee_percent, ps.fee_min::text as platform_fee_min
        from public.operators o, public.platform_settings ps
       where o.id = $1;`,
@@ -465,10 +466,14 @@ async function rateCardFromDb() {
 
 await scenario("place_order prices exactly what the browser showed", async () => {
   // Rates with awkward decimals, so a .5 boundary is actually reachable.
+  // Set as the server: since 0039 the rate card is the owner's to change.
+  await actingAs(null);
   await db.query(
     `update public.operators
         set bw_per_page = 1.35, colour_per_page = 7.75, duplex_discount = 0.08,
-            staple_price = 4.50, bulk_threshold = 60, bulk_multiplier = 0.9, min_order = 10
+            staple_price = 4.50, bulk_threshold = 60, bulk_multiplier = 0.9, min_order = 10,
+            extras = '[{"id":"spiral","name":"Spiral binding","price":32.5,"per":"copy"},
+                       {"id":"lam","name":"Lamination","price":7.25,"per":"job"}]'::jsonb
       where id = $1;`,
     [OPERATOR],
   );
@@ -481,6 +486,8 @@ await scenario("place_order prices exactly what the browser showed", async () =>
   const colours = ["smart", "bw", "full"];
   const sidesOpts = ["single", "double"];
   const bindings = ["none", "staple"];
+  // 0039: extras, per copy and per job, on a rotating third of the grid.
+  const extrasOpts = [[], ["spiral"], ["spiral", "lam"]];
   let compared = 0;
 
   await actingAs("student_test");
@@ -490,8 +497,9 @@ await scenario("place_order prices exactly what the browser showed", async () =>
         for (const binding of bindings) {
           for (const copies of [1, 3]) {
             const colourPages = Math.min(pages, Math.floor(pages / 3));
+            const extras = extrasOpts[(pages + copies + bindings.indexOf(binding)) % 3];
             const lines = [
-              { pages, colourPages, config: { colour, sides, binding, copies } },
+              { pages, colourPages, config: { colour, sides, binding, copies, extras } },
               // A second, different file so the bulk slab and the per-file
               // binding both get exercised in the same order.
               { pages: 5, colourPages: 1, config: { colour: "bw", sides: "single", binding: "none", copies: 1 } },
@@ -553,7 +561,18 @@ await scenario("place_order prices exactly what the browser showed", async () =>
       }
     }
   }
-  return `${compared} jobs — every total and every line price identical to the paisa, rate card snapshotted`;
+  // An extra the desk doesn't sell is refused, not priced at nothing.
+  let refusedExtra = false;
+  try {
+    await db.query(`select public.place_order($1, $2::jsonb);`, [
+      OPERATOR,
+      JSON.stringify([{ name: "x.pdf", pages: 2, colour_pages: 0, config: { copies: 1, extras: ["gold-leaf"] } }]),
+    ]);
+  } catch (error) {
+    refusedExtra = /doesn't offer that extra/.test(String(error?.message ?? error));
+  }
+  if (!refusedExtra) throw new Error("an unknown extra was accepted");
+  return `${compared} jobs — every total and every line price identical to the paisa, extras included, rate card snapshotted; an unknown extra refused`;
 });
 
 await scenario("a file that isn't yours can't go on your order", async () => {
@@ -958,7 +977,7 @@ await scenario("a join code adds whoever claims it, exactly once", async () => {
   try {
     await db.query(`select * from public.create_invite($1, 'Admin sneaking in');`, [newDesk]);
   } catch (error) {
-    adminOut = /Only staff/.test(String(error?.message ?? error));
+    adminOut = /Only the desk's owner|Only staff/.test(String(error?.message ?? error));
   }
   if (!adminOut) throw new Error("the admin could still make a code for a staffed desk");
   const { rows: row } = await db.query(`select id from public.staff_invites where code = $1;`, [joinCode]);
@@ -1013,7 +1032,7 @@ await scenario("an expired or cancelled code is a dead code", async () => {
   try {
     await db.query(`select * from public.create_invite($1, null);`, [newDesk]);
   } catch (error) {
-    outsider = /Only staff/.test(String(error?.message ?? error));
+    outsider = /Only the desk's owner|Only staff/.test(String(error?.message ?? error));
   }
   if (!outsider) throw new Error("a non-staff user made a code");
   return "expired refused, revoked refused, outsider can't mint";
@@ -2077,6 +2096,248 @@ await scenario("the upload ceiling holds", async () => {
   return "600 MB refused, with the message the student sees";
 });
 
+/* ---------- 0039: owner and staff ---------- */
+
+await scenario("an owner and their staff: staff run the queue, the owner sets the desk", async () => {
+  await actingAs(null);
+  await db.exec(`
+    insert into public.staff (user_id, operator_id, role) values ('hand_test', '${OPERATOR}', 'staff') on conflict do nothing;
+    insert into public.profiles (id, name, email) values ('hand_test', 'Hand', 'hand@example.com') on conflict (id) do nothing;
+  `);
+  // The rate card, UPI, hours, extras: refused to staff, in words.
+  for (const [col, val] of [["bw_per_page", "9"], ["upi_vpa", "'thief@upi'"], ["hours", `'{"mon":{"open":"09:00","close":"17:00"}}'::jsonb`], ["extras", `'[]'::jsonb`], ["unclaimed_after_hours", "1"]]) {
+    const r = await refused("authenticated", "hand_test", `update public.operators set ${col} = ${val} where id = $1;`, [OPERATOR]);
+    if (!/Only the desk's owner/.test(r ?? "")) throw new Error(`staff changed ${col}: ${r ?? "allowed"}`);
+  }
+  // The switch, the note and the stock: theirs.
+  const ok = await refused("authenticated", "hand_test", `update public.operators set status_note = 'back at 3', is_open = is_open where id = $1;`, [OPERATOR]);
+  if (ok) throw new Error(`staff's own note refused: ${ok}`);
+  // Staff, devices, refunds, takings: the owner's.
+  const pair = await refused("authenticated", "hand_test", `select public.pair_device($1, 'Till');`, [OPERATOR]);
+  if (!/owner/.test(pair ?? "")) throw new Error(`staff paired a device: ${pair ?? "allowed"}`);
+  const invite = await refused("authenticated", "hand_test", `select * from public.create_invite($1, 'x');`, [OPERATOR]);
+  if (!/owner/.test(invite ?? "")) throw new Error(`staff made a code: ${invite ?? "allowed"}`);
+  const remove = await refused("authenticated", "hand_test", `select public.remove_staff($1, 'op_test');`, [OPERATOR]);
+  if (!/owner/.test(remove ?? "")) throw new Error(`staff removed the owner: ${remove ?? "allowed"}`);
+  await asRole("authenticated", "hand_test");
+  const { rows: takings } = await db.query(`select * from public.fee_window($1, now() - interval '1 year');`, [OPERATOR]);
+  const { rows: stats } = await db.query(`select * from public.operator_stats_range($1, now() - interval '1 year');`, [OPERATOR]);
+  await asRoot();
+  if (takings.length || stats.length) throw new Error("staff read the takings");
+  // The owner does all of it; the last owner can't step down.
+  await actingAs("op_test");
+  await db.query(`update public.operators set status_note = null where id = $1;`, [OPERATOR]);
+  const { rows: listed } = await db.query(`select user_id, role from public.list_staff($1) order by user_id;`, [OPERATOR]);
+  if (!listed.some((r) => r.user_id === "op_test" && r.role === "owner") || !listed.some((r) => r.user_id === "hand_test" && r.role === "staff")) {
+    throw new Error(`list_staff: ${JSON.stringify(listed)}`);
+  }
+  let lastOwner = "";
+  try {
+    await db.query(`select public.set_staff_role($1, 'op_test', 'staff');`, [OPERATOR]);
+  } catch (error) {
+    lastOwner = String(error?.message ?? error);
+  }
+  if (!/someone else the owner/.test(lastOwner)) throw new Error(`the last owner stepped down: ${lastOwner || "no error"}`);
+  await db.query(`select public.set_staff_role($1, 'hand_test', 'owner');`, [OPERATOR]);
+  await db.query(`select public.set_staff_role($1, 'hand_test', 'staff');`, [OPERATOR]);
+  // A code carries a role; an empty desk's first code makes an owner whatever it says.
+  const { rows: code } = await db.query(`select * from public.create_invite($1, 'Second owner', 'owner');`, [OPERATOR]);
+  await actingAs("newowner_test");
+  const { rows: joined } = await db.query(`select * from public.claim_invite($1);`, [code[0].code]);
+  if (!joined[0].ok) throw new Error(`claim: ${joined[0].message}`);
+  const { rows: role } = await db.query(`select role from public.staff where user_id = 'newowner_test' and operator_id = $1;`, [OPERATOR]);
+  if (role[0].role !== "owner") throw new Error(`joined as ${role[0].role}`);
+  await actingAs(null);
+  await db.query(`delete from public.staff where user_id in ('hand_test', 'newowner_test');`);
+  return "staff refused on rates, UPI, hours, extras, windows, devices, codes, removals and takings; keep the switch, note and stock; owner does all; last owner can't step down; an owner code makes an owner";
+});
+
+/* ---------- 0039: hours ---------- */
+
+await scenario("open is the switch and the schedule and not a closed day", async () => {
+  await actingAs(null);
+  const at = (iso) => db.query(`select public.operator_open_at(o, $2::timestamptz) as open from public.operators o where o.id = $1;`, [OPERATOR, iso]);
+  await db.query(
+    `update public.operators set is_open = true, tz = 'Asia/Kolkata',
+       hours = '{"mon":{"open":"09:00","close":"18:00"},"tue":{"open":"09:00","close":"18:00"},"wed":{"open":"09:00","close":"18:00"},
+                 "thu":{"open":"09:00","close":"18:00"},"fri":{"open":"18:00","close":"02:00"},"sat":{"open":"10:00","close":"14:00"},"sun":null}'::jsonb,
+       closed_on = '{2026-10-02}' where id = $1;`,
+    [OPERATOR],
+  );
+  // 2026-09-14 is a Monday. 10:00 IST = 04:30Z.
+  const cases = [
+    ["2026-09-14T04:30:00Z", true, "Monday 10:00 IST"],
+    ["2026-09-14T12:30:00Z", false, "Monday 18:00 IST, closing time"],
+    ["2026-09-14T03:00:00Z", false, "Monday 08:30 IST, before opening"],
+    ["2026-09-20T05:30:00Z", false, "Sunday, a day off"],
+    ["2026-09-18T19:30:00Z", true, "Friday 01:00 IST Saturday — past-midnight hours"],
+    ["2026-09-19T08:30:00Z", false, "Saturday 14:00 IST, closed"],
+    ["2026-10-02T05:30:00Z", false, "Gandhi Jayanti, a day marked closed"],
+  ];
+  for (const [iso, want, label] of cases) {
+    const { rows } = await at(iso);
+    if (rows[0].open !== want) throw new Error(`${label}: got ${rows[0].open}`);
+  }
+  await db.query(`update public.operators set is_open = false where id = $1;`, [OPERATOR]);
+  const { rows: off } = await at("2026-09-14T04:30:00Z");
+  if (off[0].open) throw new Error("the switch off still reads open");
+  // No weekly hours: opens_at/closes_at every day, as before 0039.
+  await db.query(`update public.operators set is_open = true, hours = null, opens_at = '08:00', closes_at = '20:00', closed_on = '{}' where id = $1;`, [OPERATOR]);
+  const { rows: legacy } = await at("2026-09-20T05:30:00Z");
+  if (!legacy[0].open) throw new Error("legacy hours don't apply on a Sunday");
+  const { rows: wait } = await db.query(`select open from public.operator_wait($1);`, [OPERATOR]);
+  if (typeof wait[0].open !== "boolean") throw new Error("operator_wait lost its open flag");
+  return "weekday hours, a day off, past-midnight hours, a closed date and the switch all read right; legacy opens_at/closes_at still apply";
+});
+
+/* ---------- 0039: the corrected bill ---------- */
+
+await scenario("the desk corrects a bill; the student accepts it or nothing changes", async () => {
+  await actingAs(null);
+  await db.query(`update public.operators set extras = '[{"id":"spiral","name":"Spiral binding","price":30,"per":"copy"}]'::jsonb where id = $1;`, [OPERATOR]);
+  await actingAs("student_fix");
+  const { rows: placed } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([
+      { name: "a.pdf", pages: 10, colour_pages: 2, config: { copies: 1, sides: "single", colour: "smart", extras: ["spiral"] } },
+      { name: "b.pdf", pages: 4, colour_pages: 0, config: { copies: 2, sides: "double", colour: "bw" } },
+    ]),
+  ]);
+  const id = placed[0].id;
+  const before = (await db.query(`select total, pages, colour_pages, rate_card from public.orders where id = $1;`, [id])).rows[0];
+  const { rows: items } = await db.query(`select id, name from public.order_items where order_id = $1 order by ordinal;`, [id]);
+  // Today's rates change; the correction must not follow them.
+  await actingAs(null);
+  await db.query(`update public.operators set colour_per_page = 99 where id = $1;`, [OPERATOR]);
+  // Staff propose: the first file has 8 colour pages, not 2.
+  await actingAs("op_test");
+  const { rows: proposed } = await db.query(`select public.propose_requote($1, $2::jsonb, 'The file has 8 colour pages, not 2') as total;`, [
+    id,
+    JSON.stringify([{ item_id: items[0].id, pages: 10, colour_pages: 8 }]),
+  ]);
+  const expected = quoteOrder(
+    [
+      { pages: 10, colourPages: 8, config: { copies: 1, sides: "single", colour: "smart", binding: "none", extras: ["spiral"] } },
+      { pages: 4, colourPages: 0, config: { copies: 2, sides: "double", colour: "bw", binding: "none" } },
+    ],
+    rateCardOf(before.rate_card),
+  ).total;
+  if (Number(proposed[0].total) !== expected) throw new Error(`proposed ${proposed[0].total}, browser would say ${expected} (from the snapshot, not the 99 rate)`);
+  const mid = (await db.query(`select total, requote_status, requote from public.orders where id = $1;`, [id])).rows[0];
+  if (Number(mid.total) !== Number(before.total) || mid.requote_status !== "proposed") throw new Error("the order changed before the student answered");
+  // Accepting the order at the old price is refused; so is a claim against it.
+  const accept = await refused("authenticated", "op_test", `update public.orders set status = 'queued' where id = $1;`, [id]);
+  if (!/waiting for the student/.test(accept ?? "")) throw new Error(`accept past a correction: ${accept ?? "allowed"}`);
+  const claim = await refused("authenticated", "student_fix", `update public.orders set payment_method = 'upi', payment_claimed_at = now() where id = $1;`, [id]);
+  if (!/accept the new price/.test(claim ?? "")) throw new Error(`claim past a correction: ${claim ?? "allowed"}`);
+  // Nobody else accepts it.
+  const stranger = await refused("authenticated", "someone_else", `select public.accept_requote($1);`, [id]);
+  if (!/isn't yours/.test(stranger ?? "")) throw new Error(`a stranger accepted: ${stranger ?? "allowed"}`);
+  // The student's push says so.
+  const { rows: told } = await db.query(`select body from public.notifications where order_id = $1 and channel = 'push' and body like '%corrected order%';`, [id]);
+  if (told.length !== 1) throw new Error(`${told.length} correction pushes`);
+  // The student accepts: the bill moves, to the paisa, and the items with it.
+  await actingAs("student_fix");
+  const { rows: accepted } = await db.query(`select public.accept_requote($1) as total;`, [id]);
+  const after = (await db.query(`select total, pages, colour_pages, requote_status, platform_fee from public.orders where id = $1;`, [id])).rows[0];
+  const { rows: line } = await db.query(`select colour_pages, price from public.order_items where id = $1;`, [items[0].id]);
+  if (Number(accepted[0].total) !== expected || Number(after.total) !== expected) throw new Error(`accepted ${after.total} ≠ ${expected}`);
+  if (after.colour_pages !== 8 || line[0].colour_pages !== 8 || after.requote_status !== "accepted") throw new Error("items or status didn't follow");
+  // Now it's a normal order again: the desk accepts, the bill stands.
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'queued' where id = $1;`, [id]);
+  // A paid order can't be corrected.
+  let paidRefused = "";
+  try {
+    await db.query(`select public.propose_requote($1, $2::jsonb, 'again');`, [id, JSON.stringify([{ item_id: items[0].id, pages: 12, colour_pages: 8 }])]);
+  } catch (error) {
+    paidRefused = String(error?.message ?? error);
+  }
+  if (!/before the order is accepted|paid/.test(paidRefused)) throw new Error(`corrected a paid order: ${paidRefused || "no error"}`);
+  // Withdrawn: the original stands and the desk can go on.
+  await actingAs("student_fix");
+  const { rows: placed2 } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [OPERATOR, JSON.stringify([{ name: "c.pdf", pages: 3, colour_pages: 0, config: { copies: 1 } }])]);
+  await actingAs("op_test");
+  const { rows: it2 } = await db.query(`select id from public.order_items where order_id = $1;`, [placed2[0].id]);
+  await db.query(`select public.propose_requote($1, $2::jsonb, 'Five pages, not three');`, [placed2[0].id, JSON.stringify([{ item_id: it2[0].id, pages: 5, colour_pages: 0 }])]);
+  await db.query(`select public.withdraw_requote($1);`, [placed2[0].id]);
+  await db.query(`update public.orders set status = 'queued' where id = $1;`, [placed2[0].id]);
+  const w = (await db.query(`select status, requote_status, pages from public.orders where id = $1;`, [placed2[0].id])).rows[0];
+  if (w.status !== "queued" || w.requote_status !== "withdrawn" || w.pages !== 3) throw new Error(`after withdraw: ${JSON.stringify(w)}`);
+  await actingAs(null);
+  await db.query(`update public.operators set colour_per_page = 7.75 where id = $1;`, [OPERATOR]);
+  await db.query(`delete from public.orders where id in ($1, $2);`, [id, placed2[0].id]);
+  return `₹${before.total} → ₹${expected} from the snapshot (today's rate ignored); desk and student both held until the yes; accepted to the paisa, items updated; a paid order refused; withdrawn → original stands`;
+});
+
+/* ---------- 0039: orders that go nowhere ---------- */
+
+await scenario("the sweep: unpaid orders expire, ready ones nobody collected are cleared, the desk keeps its money", async () => {
+  await actingAs(null);
+  await db.query(`update public.operators set unpaid_expiry_minutes = 60, unclaimed_after_hours = 24 where id = $1;`, [OPERATOR]);
+  await db.exec(`
+    insert into public.push_subscriptions (user_id, endpoint, p256dh, auth, desk)
+    values ('student_sweep', 'https://fcm.googleapis.com/fcm/send/sweep', 'k', 'a', false) on conflict (endpoint) do nothing;
+    insert into public.profiles (id, name) values ('student_sweep', 'Sweep') on conflict (id) do nothing;
+  `);
+  await actingAs("student_sweep");
+  const mk = async (name) => (await db.query(`select public.place_order($1, $2::jsonb) as id;`, [OPERATOR, JSON.stringify([{ name, pages: 2, colour_pages: 0, config: { copies: 1 } }])])).rows[0].id;
+  const stale = await mk("stale.pdf");     // unpaid, old → cancelled by the system
+  const fresh = await mk("fresh.pdf");     // unpaid, new → left alone
+  const claimed = await mk("claimed.pdf"); // unpaid but claimed, old → left alone (the desk decides)
+  const shelf = await mk("shelf.pdf");     // ready two days ago → unclaimed
+  const scheduled = await mk("later.pdf"); // unpaid, old, scheduled pickup → left alone
+  await db.query(`update public.orders set payment_method = 'upi', payment_claimed_at = now() where id = $1;`, [claimed]);
+  await actingAs(null);
+  // Back-dating is exactly what the guard pins; the server flag is how time is moved here.
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`update public.orders set created_at = now() - interval '3 hours' where id in ($1, $2, $3);`, [stale, claimed, scheduled]);
+  await db.query(`update public.orders set pickup_mode = 'scheduled', pickup_at = now() + interval '1 day' where id = $1;`, [scheduled]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+  // The shelf job: paid online, printed, ready, forgotten.
+  await db.query(`select public.gateway_begin($1, $2, false);`, [shelf, `PF${shelf.replace(/-/g, "")}`]);
+  await db.query(`select public.gateway_paid($1, 'cf_shelf', (select total from public.orders where id = $1), 'upi', now());`, [shelf]);
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'printing' where id = $1;`, [shelf]);
+  await db.query(`update public.orders set status = 'ready' where id = $1;`, [shelf]);
+  await actingAs(null);
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`update public.orders set ready_at = now() - interval '2 days' where id = $1;`, [shelf]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+  const slotBefore = (await db.query(`select shelf_slot from public.orders where id = $1;`, [shelf])).rows[0].shelf_slot;
+  const owedBefore = Number((await db.query(`select balance from public.payout_balance($1);`, [OPERATOR])).rows[0]?.balance ?? NaN);
+  if (!Number.isFinite(owedBefore)) throw new Error("payout_balance didn't answer the server");
+
+  // A stranger can't run the sweep; staff can; the server can.
+  const stranger = await refused("authenticated", "someone_else", `select public.sweep_orders($1);`, [OPERATOR]);
+  if (!/Not your desk/.test(stranger ?? "")) throw new Error(`stranger swept: ${stranger ?? "allowed"}`);
+  await actingAs("op_test");
+  const { rows: swept } = await db.query(`select public.sweep_orders($1) as n;`, [OPERATOR]);
+  if (swept[0].n !== 2) throw new Error(`swept ${swept[0].n}, want 2`);
+  await actingAs(null);
+  const st = async (id) => (await db.query(`select status, cancelled_by, note from public.orders where id = $1;`, [id])).rows[0];
+  const a = await st(stale), b = await st(fresh), c = await st(claimed), d = await st(shelf), e = await st(scheduled);
+  if (a.status !== "cancelled" || a.cancelled_by !== "system" || !/Not paid within 60 minutes/.test(a.note)) throw new Error(`stale: ${JSON.stringify(a)}`);
+  if (b.status !== "placed" || c.status !== "placed" || e.status !== "placed") throw new Error("a fresh, claimed or scheduled order was touched");
+  if (d.status !== "unclaimed" || !/Not collected within 24 hours/.test(d.note)) throw new Error(`shelf: ${JSON.stringify(d)}`);
+  // The student heard both.
+  const { rows: pushes } = await db.query(`select order_id, body from public.notifications where channel = 'push' and order_id in ($1, $2) and (body like '%cancelled%' or body like '%wasn''t collected%');`, [stale, shelf]);
+  if (pushes.length !== 2) throw new Error(`${pushes.length} pushes for the two endings: ${JSON.stringify(pushes)}`);
+  // The slot is free again, the files are due to purge, the money stays owed.
+  const { rows: slotUse } = await db.query(`select count(*)::int as n from public.orders where operator_id = $1 and status = 'ready' and shelf_slot = $2;`, [OPERATOR, slotBefore]);
+  if (slotBefore && slotUse[0].n !== 0) throw new Error("the shelf slot is still held");
+  const owedAfter = Number((await db.query(`select balance from public.payout_balance($1);`, [OPERATOR])).rows[0].balance);
+  if (Math.abs(owedAfter - owedBefore) > 0.005) throw new Error(`the desk's share moved: ${owedBefore} → ${owedAfter}`);
+  const { rows: fee } = await db.query(`select orders from public.fee_window($1, now() - interval '1 hour') where true;`, [OPERATOR]);
+  if (typeof fee[0]?.orders !== "number") throw new Error("fee_window didn't answer the server");
+  // Running it again does nothing.
+  const { rows: again } = await db.query(`select public.sweep_all_orders() as n;`);
+  if (again[0].n !== 0) throw new Error(`a second sweep found ${again[0].n}`);
+  await db.query(`delete from public.orders where id in ($1, $2, $3, $4, $5);`, [stale, fresh, claimed, shelf, scheduled]);
+  await db.query(`update public.operators set unpaid_expiry_minutes = 120, unclaimed_after_hours = 48 where id = $1;`, [OPERATOR]);
+  return "stale unpaid → cancelled by the system; fresh, claimed and scheduled left; forgotten ready → unclaimed, slot freed, share kept; both told; stranger refused; a second sweep finds nothing";
+});
+
 /* ---------- 0037: a payment through Printify is heard on both sides ---------- */
 
 await scenario("a gateway payment pushes 'paid online' to the desk and 'paid ₹x' to the student, once", async () => {
@@ -2171,13 +2432,20 @@ const GRANTS = {
   "operator_stats_range(uuid,timestamp with time zone,timestamp with time zone)": ["authenticated"],
   "adjust_stock(uuid,integer,integer,text)": ["authenticated"],
   "list_staff(uuid)": ["authenticated"],
-  "add_staff(uuid,text)": ["authenticated"],
+  "add_staff(uuid,text,text)": ["authenticated"],
+  "set_staff_role(uuid,text,text)": ["authenticated"],
+  "is_owner(uuid)": ["anon", "authenticated"],
+  "propose_requote(uuid,jsonb,text)": ["authenticated"],
+  "withdraw_requote(uuid)": ["authenticated"],
+  "accept_requote(uuid)": ["authenticated"],
+  "reprice_order(uuid,jsonb)": ["authenticated"],
+  "sweep_orders(uuid)": ["authenticated"],
   "remove_staff(uuid,text)": ["authenticated"],
   "close_desk(uuid,numeric,text)": ["authenticated"],
   "set_my_pin(uuid,text)": ["authenticated"],
   "pair_device(uuid,text)": ["authenticated"],
   "revoke_device(uuid)": ["authenticated"],
-  "create_invite(uuid,text)": ["authenticated"],
+  "create_invite(uuid,text,text)": ["authenticated"],
   "claim_invite(text)": ["authenticated"],
   "revoke_invite(uuid)": ["authenticated"],
   "create_operator(text,text)": ["authenticated"],
@@ -2204,6 +2472,7 @@ const GRANTS = {
   "admin_payout_desks(timestamp with time zone,timestamp with time zone)": ["authenticated"],
   "set_gateway_collect(uuid,boolean)": ["authenticated"],
   // The server's.
+  "sweep_all_orders()": [],
   "claim_notifications(integer)": [],
   "complete_notification(bigint,text,text)": [],
   "gateway_begin(uuid,text,boolean)": [],
@@ -2219,6 +2488,8 @@ const GRANTS = {
   "price_line(integer,integer,jsonb,operators,double precision)": [],
   "to_paise(double precision)": [],
   "desk_share(orders)": [],
+  "notify_student(text,uuid,text)": [],
+  "operator_open_at(operators,timestamp with time zone)": [],
 };
 
 await scenario("every function is granted to exactly who calls it, and nothing to PUBLIC", async () => {

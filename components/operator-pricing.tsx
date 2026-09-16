@@ -8,6 +8,7 @@ import { isQrOnlyMerchant, normaliseVpa, parseUpiQr, vpaProblem, type UpiKind } 
 import { decodePixels } from "./operator/scan-sheet";
 import { money, quote, rateCardOf, DEFAULT_CONFIG } from "@/lib/pricing";
 import { cn, spring } from "@/lib/utils";
+import { ExtrasSettings, WeeklyHoursSettings, WindowsSettings } from "./operator/desk-setup";
 
 type Field = {
   key: keyof OperatorSettings;
@@ -262,7 +263,11 @@ export function OperatorPricing({
         ))}
       </div>
 
-      <HoursSettings operator={operator} onSaved={onSaved} />
+      <ExtrasSettings operator={operator} onSaved={onSaved} />
+
+      <WeeklyHoursSettings operator={operator} onSaved={onSaved} />
+
+      <WindowsSettings operator={operator} onSaved={onSaved} />
 
       <UpiSettings operator={operator} onSaved={onSaved} />
 
@@ -554,99 +559,3 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
   );
 }
 
-/**
- * Advertised opening hours.
- *
- * These no longer decide whether Printify is open — the switch does — but they
- * generate the pickup slots a student can book, so an evening desk offering
- * 9-to-5 slots is a real problem.
- */
-function HoursSettings({ operator, onSaved }: { operator: Operator; onSaved: () => void }) {
-  const trim = (t: string | null | undefined) => (t ?? "").slice(0, 5);
-  const [opens, setOpens] = useState(trim(operator.opens_at));
-  const [closes, setCloses] = useState(trim(operator.closes_at));
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setOpens(trim(operator.opens_at));
-    setCloses(trim(operator.closes_at));
-  }, [operator.opens_at, operator.closes_at]);
-
-  const ordered = opens < closes;
-  const dirty = opens !== trim(operator.opens_at) || closes !== trim(operator.closes_at);
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      await updateOperator(operator.id, {
-        opens_at: `${opens}:00`,
-        closes_at: `${closes}:00`,
-      } as OperatorSettings);
-      onSaved();
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't save those hours.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="mt-5 border-t border-line pt-5">
-      <p className="label-caps m-0 mb-2">Hours</p>
-      <p className="m-0 mb-3 max-w-[60ch] text-[11.5px] leading-relaxed text-muted">
-        Used to generate the pickup times students can book. Opening and closing is still the
-        switch, not the clock.
-      </p>
-
-      <div className="flex flex-wrap items-end gap-2.5">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[12.5px] font-semibold tracking-[-0.01em]">Opens</span>
-          <input
-            type="time"
-            value={opens}
-            onChange={(e) => setOpens(e.target.value)}
-            className="rounded-lg border border-line bg-surface-sunk px-2.5 py-1.5 font-mono text-[13px] outline-none focus:border-ink"
-          />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[12.5px] font-semibold tracking-[-0.01em]">Closes</span>
-          <input
-            type="time"
-            value={closes}
-            onChange={(e) => setCloses(e.target.value)}
-            className={cn(
-              "rounded-lg border bg-surface-sunk px-2.5 py-1.5 font-mono text-[13px] outline-none",
-              ordered ? "border-line focus:border-ink" : "border-clay",
-            )}
-          />
-        </label>
-
-        <motion.button
-          whileTap={{ scale: dirty && ordered ? 0.96 : 1 }}
-          transition={spring}
-          disabled={!dirty || !ordered || saving}
-          onClick={save}
-          className={cn(
-            "flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-semibold transition-colors",
-            dirty && ordered ? "bg-ink text-paper" : "border border-line text-faint",
-          )}
-        >
-          {saving ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} strokeWidth={2.6} /> : null}
-          {saving ? "Saving…" : saved ? "Saved" : "Save hours"}
-        </motion.button>
-      </div>
-
-      {!ordered && (
-        <p className="m-0 mt-2 text-[11.5px] text-clay-ink dark:text-clay">
-          Closing time has to be after opening time. Overnight hours aren&apos;t supported yet.
-        </p>
-      )}
-      {error && <p className="m-0 mt-2 text-[12px] text-clay-ink dark:text-clay">{error}</p>}
-    </div>
-  );
-}

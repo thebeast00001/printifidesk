@@ -73,7 +73,7 @@ export function surfaceFor(
 /** The desk's pages, by their internal (single-host) path prefix. */
 const DESK_PREFIXES = ["/operator", "/join", "/admin", "/diagnostics"];
 /** The student's pages. `/` is handled on its own. */
-const STUDENT_PREFIXES = ["/orders", "/profile", "/settings"];
+const STUDENT_PREFIXES = ["/orders", "/profile", "/settings", "/receipt"];
 /** Pages both sites have, each rendering its own version. */
 const SHARED_PREFIXES = [
   "/sign-in",
@@ -83,6 +83,8 @@ const SHARED_PREFIXES = [
   "/desk.webmanifest",
   "/privacy",
   "/terms",
+  "/refunds",
+  "/desk-terms",
   // The counter screen. A TV at the shop may have either host typed in.
   "/board",
 ];

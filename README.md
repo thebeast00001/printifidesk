@@ -657,6 +657,81 @@ So the number of hops is what the code controls:
 The database's own region is the remaining lever, and it's yours — see
 *Marked for you*.
 
+### What a shop asks for in its first week (`0038`, `0039`)
+
+Six things, built for the pitch to stationery shops, each a fact the
+database enforces rather than a screen that suggests it:
+
+- **An owner and their staff.** `staff.role` — the earliest member of every
+  existing desk became its owner. Staff run the queue: accept, print, hand
+  over, message, count stock, flip the switch, set their own PIN. Only the
+  owner touches the rate card, UPI, hours, extras, staff, devices, refunds
+  and the takings: `guard_operator_owner()` refuses the owner's columns to
+  staff in words, `remove_staff`/`add_staff`/`set_staff_role`/`pair_device`/
+  `revoke_device`/`create_invite` check `is_owner()`, the order guard
+  refuses a refund from staff, `/api/payments/refund` asks `isOwnerOf`, and
+  the ledgers (`fee_window`, `fee_balance`, `payout_*`, `operator_stats_range`)
+  answer only the owner, the admin and the server — with *no* row for anyone
+  else, not a row of zeros. Join codes carry a role; an empty desk's first
+  code makes an owner whatever it says; the last owner can't step down.
+  The desk site reads the role once (`myRole()`) and hides the owner's
+  forms from staff (`components/desk/faces.tsx`), with a line saying whose
+  they are; the Staff panel shows crowns and lets an owner make or unmake
+  one.
+- **Hours by weekday, days closed, a timezone.** `operators.hours`
+  (`{mon:{open,close},…,sun:null}`), `closed_on date[]`, `tz`.
+  `operator_open_at(op, at)` is the one answer to "open now?" — the switch,
+  that weekday's hours (or `opens_at`–`closes_at` when none are set, as
+  before), not a closed date, not shut; hours past midnight belong to the
+  day they started on. `operator_wait().open` reads it, so the top bar and
+  the picker follow the schedule without a redeploy; `lib/hours.ts` is the
+  same reading in the browser for "till 6 PM" / "opens Mon 9 AM" and the
+  pickup picker's days. The editor is `WeeklyHoursSettings`.
+- **Extras.** `operators.extras` — up to twelve `{id, name, price, per:
+  copy|job}`, in the desk's own words. `price_line()` and `lineCost()` price
+  them the same way (per-copy ones by the copies, per-job ones once) and
+  the 144-job grid now includes them; `place_order()` refuses an id the
+  desk doesn't sell; the snapshot on the order carries them so the bill and
+  the receipt name each one. Students pick them per file on the sheet
+  (`ExtrasRow`), with the delta on each chip like every other row.
+- **A corrected bill.** The desk finds twelve colour pages where the file
+  said two: *Correct bill* on a placed, unpaid order opens `RequoteSheet`
+  (counts per file, a reason the student reads, the new total previewed
+  from the order's own rate card). `propose_requote()` prices it in the
+  database from the same snapshot — never today's rates — stores the
+  proposal on `orders.requote`, pushes the student, and nothing on the
+  bill moves. The student sees it in the capsule (`CorrectedBill`): accept
+  → `accept_requote()` re-prices the order and its items to the paisa;
+  cancel → the usual cancel. Meanwhile the desk can't accept at the old
+  price, the student can't claim against it, the pay sheet won't offer
+  payment and `/api/payments/session` refuses (and makes a fresh Cashfree
+  order when a bill changed under an old one). A paid order can't be
+  corrected — the bill stands; a shortfall is cash at the counter.
+- **Orders that go nowhere.** Two windows per desk (`unpaid_expiry_minutes`,
+  `unclaimed_after_hours`; 0 = never). `sweep_orders(desk)` cancels an
+  unpaid, unclaimed, asap order past the first as `cancelled_by = 'system'`
+  and marks a *ready* job past the second **`unclaimed`** — a new status:
+  shelf slot free (the in-use set is ready jobs), files purged six hours
+  on, the student told either way, the desk's share and the fee kept
+  (it printed). The portal sweeps on load; the daily purge cron sweeps
+  every desk (`sweep_all_orders`). History and stats count it; the
+  student's card says *Not collected* with why.
+- **Uploads are what the desk can print.** PDF and photos only; Word,
+  PowerPoint and text files are turned away with the one-step way out
+  ("File → Save as PDF"). The upload names its own content type from the
+  extension when the browser has none, and the bucket's
+  `allowed_mime_types` is PDF plus the image types — so every job at the
+  desk opens, and every page count on a bill was measured.
+
+Also: a printable **receipt** per order (`/receipt/<id>`, from the
+snapshot; *Print or save as PDF* is the browser's dialog, the one route to a
+file that works on every phone without a server making one), a **refund
+policy** (`/refunds`) and **terms for print desks** (`/desk-terms`) written
+from what the code does and linked from every legal page, and a
+**support line** on the desk site and the legal pages that prints a WhatsApp
+link and an email only when `NEXT_PUBLIC_SUPPORT_WHATSAPP` /
+`NEXT_PUBLIC_SUPPORT_EMAIL` are set.
+
 ### The shelf, the board, the badges, the buzz
 
 Four small things (`0030`), each one a fact the app already had, put
@@ -1176,7 +1251,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0037** in the SQL editor, pasted from the files, **in
+2. **Run 0022 → 0039** in the SQL editor, pasted from the files, **in
    number order** — a later migration can name a column an earlier one
    adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
    student update on an order failed and the X on /orders did nothing).
@@ -1195,6 +1270,15 @@ Things the code can't do on its own, in the order they bite:
    the admin's fee rows errors quietly; until 0034, a too-late cancel is
    refused by the policy alone (silently) rather than by the guard (in words);
    until 0035, online payment can't be turned on for a desk.
+   **Then 0038 and 0039, each on its own** — 0038 is one line (a new order
+   status) and *must* be run and finished before 0039 is pasted: Postgres
+   refuses a new enum value in the transaction that added it, and 0039's
+   functions name it. Until they run: no owner/staff roles (everyone on a
+   desk is an owner), no weekly hours or days closed, no extras, no
+   corrected bills, no unclaimed sweep, and the desk's settings page
+   errors on the columns it can't find. `/diagnostics` probes them as one
+   line. Set `NEXT_PUBLIC_SUPPORT_WHATSAPP` (digits, country code first)
+   on both Vercel projects for the WhatsApp support link to appear.
    **Then 0036, now** — it's the security pass (`docs/SECURITY.md` §14):
    until it runs, every function in the database is callable by anyone
    with the anon key, and two of them hand out the notification queue —
@@ -1219,7 +1303,7 @@ Things the code can't do on its own, in the order they bite:
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
    project, so: create a new project in **Mumbai (`ap-south-1`)**, run
-   `0001 → 0037` in its SQL editor, create the private `documents` bucket,
+   `0001 → 0039` in its SQL editor, create the private `documents` bucket,
    add both Clerk domains under Authentication → Third-Party Auth, then
    swap `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    and `SUPABASE_SERVICE_ROLE_KEY` on both Vercel projects and in

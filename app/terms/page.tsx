@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Contact, H2, LegalPage } from "@/components/legal/legal-page";
 
 export const metadata = {
@@ -28,30 +29,38 @@ export default function TermsPage() {
         The full price is shown before you place an order, itemised per file, including a platform fee that
         is a percentage of the order and appears on the bill as its own line. The price you agree to is the
         price recorded on the order; it does not change afterwards, even if the desk changes its rates. Page
-        counts are worked out from your file in your browser; if a file turns out to have more pages than
-        counted, the desk may decline the job before printing it.
+        counts are worked out from your file in your browser. If a file turns out to have more pages, or
+        more colour pages, than were counted, the desk may send you a corrected bill before accepting the
+        order: you see the new price and the reason, and accept it or cancel. Nothing is charged until you
+        have.
       </p>
 
       <H2>Paying</H2>
       <p>
-        You pay the desk directly, by UPI or in cash. Telling Printify you have paid does not complete the
-        payment; the desk confirms it when the money arrives, and may decline an order that hasn&apos;t
-        been paid for.
+        Two ways. You can pay the desk directly, by UPI to its own id or in cash; telling Printify you have
+        paid does not complete the payment — the desk confirms it when the money arrives, and may decline an
+        order that hasn&apos;t been paid for. Or, where the desk has it, you can pay through Printify
+        (&ldquo;Pay · UPI, card&rdquo;): the payment is taken by Printify&apos;s payment partner, Cashfree
+        Payments, and the order is marked paid the moment it lands, with nothing for the desk to check. An
+        order left unpaid past the desk&apos;s window is cancelled for you, and you&apos;re told.
       </p>
 
       <H2>Collecting</H2>
       <p>
         Every order has a token and a QR code. Whoever shows the QR code collects the job — treat it like
-        the ticket it is; if you share it, you have handed the job to that person. Uncollected jobs are the
-        desk&apos;s to deal with as it sees fit after a reasonable time.
+        the ticket it is; if you share it, you have handed the job to that person. A job left on the shelf
+        past the desk&apos;s window is cleared as not collected: you&apos;re told, the files are deleted,
+        and — because it was printed — what was paid for it isn&apos;t refunded by Printify.
       </p>
 
       <H2>Problems, refunds and reports</H2>
       <p>
         If a print is wrong, report it from the order in the app; the desk sees the report and decides
-        whether to reprint or refund. Refunds are paid by the desk, in the way you paid, and are recorded on
-        the order. Printify records the outcome; it does not hold funds and cannot refund on a desk&apos;s
-        behalf.
+        whether to reprint or refund. A payment made to the desk directly is refunded by the desk, the way
+        you paid; a payment made through Printify is refunded through Cashfree to what you paid with.
+        Either way it&apos;s recorded on the order. The{" "}
+        <Link href="/refunds" className="font-semibold text-ink underline-offset-2 hover:underline">refund policy</Link>{" "}
+        has the detail.
       </p>
 
       <H2>What you may print</H2>
@@ -73,7 +82,8 @@ export default function TermsPage() {
         was ordered; handing jobs to the person holding the QR code; treating students&apos; files as
         confidential and opening them only to print them; and settling the platform fee on collected orders
         each month. A desk whose fee is overdue past the grace period cannot open until it settles.
-        Printify may remove a desk that doesn&apos;t keep to this.
+        Printify may remove a desk that doesn&apos;t keep to this. The full agreement is the{" "}
+        <Link href="/desk-terms" className="font-semibold text-ink underline-offset-2 hover:underline">terms for print desks</Link>.
       </p>
 
       <H2>Availability and limits</H2>

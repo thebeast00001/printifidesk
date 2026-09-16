@@ -177,7 +177,13 @@ export function PaySheet({
               {operator?.short_name || operator?.name || "your operator"}
             </Drawer.Description>
 
-            {operator && gateway && !claimed && order && (
+            {order?.requote_status === "proposed" && (
+              <Panel tone="clay">
+                <AlertCircle size={15} strokeWidth={2.2} />
+                The desk corrected this bill. Accept the new price on your order first, then pay.
+              </Panel>
+            )}
+            {operator && gateway && !claimed && order && order.requote_status !== "proposed" && (
               <>
                 <OnlinePay
                   orderId={order.id}
@@ -205,7 +211,7 @@ export function PaySheet({
                 <Loader2 size={15} className="animate-spin" />
                 Loading…
               </Panel>
-            ) : gateway && !claimed && !showDirect ? null : !request ? (
+            ) : order?.requote_status === "proposed" ? null : gateway && !claimed && !showDirect ? null : !request ? (
               <Panel tone="clay">
                 <AlertCircle size={15} strokeWidth={2.2} />
                 This operator hasn&apos;t added a UPI id yet — pay cash at the desk.
@@ -358,6 +364,7 @@ export function PaySheet({
               </>
             )}
 
+            {order?.requote_status !== "proposed" && (
             <div className="mt-5 border-t border-line pt-4">
               {claimed ? (
                 <p className="m-0 flex items-center gap-2 rounded-[14px] bg-bone px-4 py-3 text-[12.5px] leading-relaxed text-ink">
@@ -430,6 +437,7 @@ export function PaySheet({
                 whether a transfer succeeded, so they confirm it themselves before printing.
               </p>
             </div>
+            )}
           </div>
         </Drawer.Content>
       </Drawer.Portal>

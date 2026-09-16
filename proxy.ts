@@ -13,6 +13,7 @@ import { hostsFrom, routeFor, surfaceFor } from "@/lib/surface";
  */
 const isProtected = createRouteMatcher([
   "/orders(.*)",
+  "/receipt(.*)",
   "/profile(.*)",
   "/diagnostics(.*)",
   "/admin(.*)",

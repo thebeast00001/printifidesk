@@ -6,7 +6,9 @@ import { UPI_APPS, appLink, cleanReference, handleOf, isQrOnlyMerchant, isValidV
 import { gatewayOrderId, vendorShare, vendorStatus, verifyWebhook, webhookSignature } from "../lib/server/cashfree";
 import { shelfLabel, shelfSlots } from "../lib/orders";
 import { pickBadges } from "../components/operator-picker";
-import { paise, quoteOrder, rateCardOf, roundedTotal } from "../lib/pricing";
+import { describe, paise, quoteOrder, rateCardOf, roundedTotal } from "../lib/pricing";
+import { isOpenAt, nextChange } from "../lib/hours";
+import { contentTypeOf, kindOf, validate } from "../lib/analysis";
 import type { Operator } from "../lib/orders";
 import { secretMatches } from "../lib/server/secret";
 import { readFileSync, readdirSync } from "node:fs";
@@ -519,6 +521,83 @@ check("this month starts on the 1st", iso(periodStart("month", sat)), "2026-09-0
 // A Monday is its own week start; a Sunday belongs to the week that began six days earlier.
 check("Monday is the week start", iso(periodStart("week", new Date(2026, 8, 7, 9, 0, 0))), "2026-09-07 0:00");
 check("Sunday looks back six days", iso(periodStart("week", new Date(2026, 8, 13, 9, 0, 0))), "2026-09-07 0:00");
+
+console.log("\n— hours by weekday (0039) —");
+const week: Operator = {
+  ...({} as Operator),
+  is_open: true,
+  shut_at: null,
+  tz: "Asia/Kolkata",
+  opens_at: "08:00:00",
+  closes_at: "20:00:00",
+  hours: {
+    mon: { open: "09:00", close: "18:00" },
+    tue: { open: "09:00", close: "18:00" },
+    wed: { open: "09:00", close: "18:00" },
+    thu: { open: "09:00", close: "18:00" },
+    fri: { open: "18:00", close: "02:00" },
+    sat: { open: "10:00", close: "14:00" },
+    sun: null,
+  },
+  closed_on: ["2026-10-02"],
+};
+// 2026-09-14 is a Monday; 10:00 IST is 04:30Z.
+check("Monday 10:00 is open", isOpenAt(week, new Date("2026-09-14T04:30:00Z")), true);
+check("Monday 18:00 (closing time) is closed", isOpenAt(week, new Date("2026-09-14T12:30:00Z")), false);
+check("Sunday is a day off", isOpenAt(week, new Date("2026-09-20T05:30:00Z")), false);
+check("Friday's hours run past midnight into Saturday 01:00", isOpenAt(week, new Date("2026-09-18T19:30:00Z")), true);
+check("Saturday 14:00 is closed", isOpenAt(week, new Date("2026-09-19T08:30:00Z")), false);
+check("a date marked closed is closed", isOpenAt(week, new Date("2026-10-02T05:30:00Z")), false);
+check("the switch off wins", isOpenAt({ ...week, is_open: false }, new Date("2026-09-14T04:30:00Z")), false);
+check("while open the label says till when", nextChange(week, new Date("2026-09-14T04:30:00Z")), "till 6 PM");
+check("before opening it says when", nextChange(week, new Date("2026-09-14T02:00:00Z")), "opens 9 AM");
+check("on a day off it names the next day", nextChange(week, new Date("2026-09-20T05:30:00Z")), "opens tomorrow 9 AM");
+check("no weekly hours: opens_at/closes_at every day", isOpenAt({ ...week, hours: null }, new Date("2026-09-20T05:30:00Z")), true);
+check(
+  "the pickup picker skips a closed day",
+  buildSlots({ ...week, pages_per_minute: 20, handling_minutes: 3 } as Operator, 10, new Date("2026-10-02T03:00:00Z")).every(
+    (slot) => !slot.at.startsWith("2026-10-02"),
+  ),
+  true,
+);
+
+console.log("\n— extras (0039) —");
+const withExtras = rateCardOf({
+  bw_per_page: 2,
+  colour_per_page: 10,
+  duplex_discount: 0,
+  staple_price: 5,
+  bulk_threshold: 1000,
+  bulk_multiplier: 1,
+  min_order: 0,
+  extras: [
+    { id: "spiral", name: "Spiral binding", price: 30, per: "copy" },
+    { id: "lam", name: "Lamination", price: 12.5, per: "job" },
+    { id: "bad", name: "", price: 1, per: "copy" },
+    { id: "Bad Id", name: "x", price: 1, per: "copy" },
+    { id: "dear", name: "x", price: 9999, per: "copy" },
+  ],
+});
+check("extras are read and checked", withExtras.extras.map((e) => e.id).join(","), "spiral,lam");
+const bw3 = { colour: "bw", sides: "single", binding: "none", copies: 3 } as const;
+const noExtra = quoteOrder([{ pages: 10, colourPages: 0, config: { ...bw3 } }], withExtras);
+const spiral = quoteOrder([{ pages: 10, colourPages: 0, config: { ...bw3, extras: ["spiral"] } }], withExtras);
+const both = quoteOrder([{ pages: 10, colourPages: 0, config: { ...bw3, extras: ["spiral", "lam"] } }], withExtras);
+const unknown = quoteOrder([{ pages: 10, colourPages: 0, config: { ...bw3, extras: ["gold"] } }], withExtras);
+check("a per-copy extra is charged per copy", paise(spiral.total - noExtra.total), 90);
+check("a per-job extra is charged once", paise(both.total - spiral.total), 12.5);
+check("the bill carries the extras line", both.lines[0].extras, 102.5);
+check("an extra the desk doesn't sell costs nothing here (the database refuses it)", unknown.total, noExtra.total);
+check("describe() counts the extras", describe(both, both.lines[0].config), "30 pages b/w + 2 extras + 3 copies");
+
+console.log("\n— uploads (0039) —");
+const fake = (name: string, type = "") => ({ name, type, size: 10 }) as unknown as File;
+check("PDF is taken", kindOf(fake("notes.pdf", "application/pdf")), "PDF");
+check("a photo is taken", kindOf(fake("IMG_1.HEIC")), "IMAGE");
+check("Word is turned away with the way out", validate(fake("essay.docx"))?.includes("Save it as a PDF first"), true);
+check("PowerPoint too", validate(fake("deck.pptx"))?.includes("Save it as a PDF first"), true);
+check("the upload names its type when the browser doesn't", contentTypeOf(fake("scan.heic")), "image/heic");
+check("the upload keeps the browser's type when it has one", contentTypeOf(fake("a.pdf", "application/pdf")), "application/pdf");
 
 const done = fails === 0 ? "\nPASS - all checks passed" : `\nFAIL - ${fails} check(s) failed`;
 console.log(done);

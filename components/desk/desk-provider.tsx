@@ -6,7 +6,7 @@ import { useOperatorQueue } from "@/hooks/use-tracking";
 import { isPairedDevice } from "@/lib/desk-auth";
 import { listStaff } from "@/lib/desk";
 import { useApp } from "@/lib/store";
-import { operatorNames, type Operator, type OrderRow } from "@/lib/orders";
+import { operatorNames, type Operator, type OrderRow , myRole, type StaffRole } from "@/lib/orders";
 
 type Backend = ReturnType<typeof useOperatorQueue>["backend"];
 
@@ -25,6 +25,8 @@ interface DeskValue {
   paired: boolean;
   /** This person has set a PIN for the current desk. */
   hasPin: boolean;
+  /** 0039: owner or staff on this desk. Owner until known, so nothing flashes hidden for the person who set the desk up. */
+  role: StaffRole;
   refreshPin: () => Promise<void>;
   chooseDesk: (id: string) => void;
 }
@@ -48,6 +50,7 @@ export function DeskProvider({ children }: { children: React.ReactNode }) {
   const [preferred, setPreferred] = useState<string | null>(null);
   const [paired, setPaired] = useState(false);
   const [hasPin, setHasPin] = useState(false);
+  const [role, setRole] = useState<StaffRole>("owner");
   const setPending = useApp((s) => s.setOperatorPending);
 
   useEffect(() => {
@@ -76,6 +79,15 @@ export function DeskProvider({ children }: { children: React.ReactNode }) {
     void refreshPin();
   }, [refreshPin]);
 
+  useEffect(() => {
+    if (!operatorId) return;
+    let alive = true;
+    void myRole(operatorId).then((r) => alive && setRole(r));
+    return () => {
+      alive = false;
+    };
+  }, [operatorId, userId]);
+
   // Leaving the desk site clears the dock badge, so the student-side dock
   // never shows a stale operator count.
   useEffect(() => () => setPending(null), [setPending]);
@@ -102,6 +114,7 @@ export function DeskProvider({ children }: { children: React.ReactNode }) {
         userId: userId ?? null,
         paired,
         hasPin,
+        role,
         refreshPin,
         chooseDesk,
       }}

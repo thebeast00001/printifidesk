@@ -107,6 +107,8 @@ export interface StaffMember {
   joined_at: string;
   /** Whether they can start a shift from a paired device. */
   has_pin: boolean;
+  /** 0039: the owner sets rates, payments, hours and staff; staff run the queue. */
+  role?: "owner" | "staff";
 }
 
 export async function listStaff(operatorId: string): Promise<StaffMember[]> {
@@ -116,13 +118,22 @@ export async function listStaff(operatorId: string): Promise<StaffMember[]> {
   return (data ?? []) as StaffMember[];
 }
 
-export async function addStaff(operatorId: string, email: string): Promise<void> {
+export async function addStaff(operatorId: string, email: string, role: "owner" | "staff" = "staff"): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) throw new Error("No database connection.");
   const { error } = await supabase.rpc("add_staff", {
     p_operator: operatorId,
     p_email: email.trim(),
+    p_role: role,
   });
+  if (error) throw new Error(explain(error.message));
+}
+
+/** Owner or staff — the owner's call, and never the last owner down to staff. */
+export async function setStaffRole(operatorId: string, userId: string, role: "owner" | "staff"): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { error } = await supabase.rpc("set_staff_role", { p_operator: operatorId, p_user: userId, p_role: role });
   if (error) throw new Error(explain(error.message));
 }
 
@@ -161,16 +172,18 @@ export function joinLink(code: string): string {
   return `${origin}/join/${code}`;
 }
 
-/** Makes a code for this desk. Staff of the desk, or an admin. */
+/** Makes a code for this desk. The desk's owner, or an admin for a desk with nobody on it. */
 export async function createInvite(
   operatorId: string,
   label: string,
+  role: "owner" | "staff" = "staff",
 ): Promise<{ code: string; expires_at: string }> {
   const supabase = getSupabase();
   if (!supabase) throw new Error("No database connection.");
   const { data, error } = await supabase.rpc("create_invite", {
     p_operator: operatorId,
     p_label: label.trim() || null,
+    p_role: role,
   });
   if (error) throw new Error(explain(error.message));
   const row = data?.[0] as { code: string; expires_at: string } | undefined;

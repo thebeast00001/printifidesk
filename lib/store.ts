@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { DEFAULT_CONFIG, type PrintConfig, type QuoteLine } from "./pricing";
+import { DEFAULT_CONFIG, sameExtras, type PrintConfig, type QuoteLine } from "./pricing";
 import type { FileKind } from "./analysis";
 import { releaseThumbnails } from "./thumbnails";
 
@@ -192,9 +192,11 @@ export function sharedConfig(
   for (const key of ["colour", "sides", "binding", "copies"] as const) {
     if (ready.some((f) => f.config[key] !== first[key])) varies.add(key);
   }
+  if (ready.some((f) => !sameExtras(f.config.extras, first.extras))) varies.add("extras");
   return { config: first, varies };
 }
 
 /** True when this file has drifted from the sheet-wide setting. */
 export const isCustomised = (file: UploadFile, sheet: PrintConfig) =>
-  (["colour", "sides", "binding", "copies"] as const).some((k) => file.config[k] !== sheet[k]);
+  (["colour", "sides", "binding", "copies"] as const).some((k) => file.config[k] !== sheet[k]) ||
+  !sameExtras(file.config.extras, sheet.extras);

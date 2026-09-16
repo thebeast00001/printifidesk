@@ -219,6 +219,65 @@ function deltaLabel(delta: number, currency: string): string | null {
  * it applies to — switching every file to one-sided is a different number from
  * switching one.
  */
+/**
+ * The desk's extras (0039): its own names and prices, as many as apply.
+ * Each chip shows what adding it would do to this total, the way the
+ * other rows do; a chip that's already on shows the desk's price.
+ */
+function ExtrasRow({
+  card,
+  chosen,
+  varies,
+  copies,
+  delta,
+  onChange,
+}: {
+  card: RateCard;
+  chosen: string[];
+  varies: boolean;
+  copies: number;
+  delta: (next: string[]) => number;
+  onChange: (next: string[]) => void;
+}) {
+  if (card.extras.length === 0) return null;
+  return (
+    <div className="mt-[18px]">
+      <p className="label-caps m-0 mb-2.5">
+        Extras
+        {varies && <VariesTag />}
+      </p>
+      <div className="flex flex-wrap gap-[7px]">
+        {card.extras.map((e) => {
+          const active = !varies && chosen.includes(e.id);
+          const next = active ? chosen.filter((id) => id !== e.id) : [...chosen.filter((id) => id !== e.id), e.id];
+          const label = deltaLabel(delta(next), card.currency);
+          const own = `+${money(e.price, card.currency)}${e.per === "copy" && copies > 1 ? ` × ${copies}` : e.per === "copy" ? "/copy" : ""}`;
+          return (
+            <motion.button
+              key={e.id}
+              whileTap={{ scale: 0.95 }}
+              transition={spring}
+              aria-pressed={active}
+              onClick={() => onChange(next)}
+              className={cn(
+                "rounded-xl border px-3.5 py-2.5 text-[13px] font-semibold tracking-[-0.01em]",
+                active ? "border-ink bg-ink text-paper" : "border-line bg-surface text-ink-soft",
+              )}
+            >
+              <span className="block">
+                {e.name}
+                <span className={cn("mt-px block font-mono text-[10px] font-normal", active ? "opacity-60" : "opacity-80")}>
+                  {active ? own : label ?? own}
+                </span>
+              </span>
+            </motion.button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ChipGroups({
   colourPages,
   card,
@@ -234,7 +293,7 @@ function ChipGroups({
   config: PrintConfig;
   varies: Set<Group>;
   idPrefix: string;
-  delta: (group: Group, value: string | number) => number;
+  delta: (group: Group, value: string | number | string[]) => number;
   onChange: <K extends Group>(key: K, value: PrintConfig[K]) => void;
   smartNote?: React.ReactNode;
 }) {
@@ -417,7 +476,7 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
    * the same pure `quoteOrder`, so the number on the chip is the number the
    * footer will show — not an approximation of it.
    */
-  const deltaFor = (scope: number | "all") => (group: Group, value: string | number) => {
+  const deltaFor = (scope: number | "all") => (group: Group, value: string | number | string[]) => {
     const next = lines.map((line, i) =>
       scope === "all" || scope === i
         ? { ...line, config: { ...line.config, [group]: value } }
@@ -551,6 +610,15 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
           delta={deltaFor("all")}
           onChange={setConfig}
           smartNote={smartNote}
+        />
+
+        <ExtrasRow
+          card={card}
+          chosen={shared.config.extras ?? []}
+          varies={shared.varies.has("extras")}
+          copies={shared.config.copies}
+          delta={(next) => deltaFor("all")("extras", next)}
+          onChange={(next) => setConfig("extras", next)}
         />
 
         <CopiesPicker
@@ -713,7 +781,7 @@ function FileCard({
   open: boolean;
   onToggle: () => void;
   customised: boolean;
-  delta: (group: Group, value: string | number) => number;
+  delta: (group: Group, value: string | number | string[]) => number;
   onChange: <K extends Group>(key: K, value: PrintConfig[K]) => void;
   onReset: () => void;
 }) {
@@ -785,6 +853,15 @@ function FileCard({
                 idPrefix={file.id}
                 delta={delta}
                 onChange={onChange}
+              />
+
+              <ExtrasRow
+                card={card}
+                chosen={file.config.extras ?? []}
+                varies={false}
+                copies={file.config.copies}
+                delta={(next) => delta("extras", next)}
+                onChange={(next) => onChange("extras", next)}
               />
 
               <CopiesPicker

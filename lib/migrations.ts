@@ -50,6 +50,8 @@ export const MIGRATION_PROBES: MigrationProbe[] = [
   { id: "0035", without: "online payment can't be turned on for a desk; no payouts ledger", check: column("orders", "gateway_split") },
   // is_server() is granted to nobody in a browser: "permission denied" means present, "no such function" means missing.
   { id: "0036", without: "every function is callable by anyone with the anon key; the notification queue is readable", check: fn("is_server") },
+  // 0038 is the enum value alone and can't be asked for from here; 0039 can't apply without it.
+  { id: "0038+0039", without: "no owner/staff roles, weekly hours, extras, corrected bills or unclaimed orders; the pay sheet and desk settings error", check: column("operators", "extras") },
 ];
 
 export interface MigrationReport {

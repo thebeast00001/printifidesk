@@ -2,13 +2,14 @@ import Link from "next/link";
 import { Container } from "@/components/container";
 import { PageHeader } from "@/components/page-header";
 import { StaggerIn } from "@/components/stagger-in";
+import { supportWhatsAppUrl } from "@/components/support-line";
 
 /**
  * The frame both legal pages share. Plain prose, a readable line length, a
  * dated header, and the contact address from the environment — a page that
  * printed a made-up mailbox would be worse than one that says none is set.
  */
-export const LEGAL_UPDATED = "12 September 2026";
+export const LEGAL_UPDATED = "16 September 2026";
 export const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || null;
 
 export function LegalPage({
@@ -31,10 +32,18 @@ export function LegalPage({
             See also the{" "}
             <Link href="/privacy" className="font-semibold underline-offset-2 hover:underline">
               privacy policy
-            </Link>{" "}
-            and the{" "}
+            </Link>
+            , the{" "}
             <Link href="/terms" className="font-semibold underline-offset-2 hover:underline">
               terms of service
+            </Link>
+            , the{" "}
+            <Link href="/refunds" className="font-semibold underline-offset-2 hover:underline">
+              refund policy
+            </Link>{" "}
+            and the{" "}
+            <Link href="/desk-terms" className="font-semibold underline-offset-2 hover:underline">
+              terms for print desks
             </Link>
             .
           </p>
@@ -50,13 +59,28 @@ export function H2({ children }: { children: React.ReactNode }) {
 
 /** The contact line. Only a real address is ever printed. */
 export function Contact() {
-  return SUPPORT_EMAIL ? (
+  const wa = supportWhatsAppUrl();
+  return SUPPORT_EMAIL || wa ? (
     <p>
-      Questions, corrections or requests about your data: write to{" "}
-      <a href={`mailto:${SUPPORT_EMAIL}`} className="font-semibold text-ink underline-offset-2 hover:underline">
-        {SUPPORT_EMAIL}
-      </a>
-      .
+      Questions, corrections or requests about your data:{" "}
+      {wa && (
+        <>
+          message Printify on{" "}
+          <a href={wa} target="_blank" rel="noopener noreferrer" className="font-semibold text-ink underline-offset-2 hover:underline">
+            WhatsApp
+          </a>
+          {SUPPORT_EMAIL ? ", or " : "."}
+        </>
+      )}
+      {SUPPORT_EMAIL && (
+        <>
+          write to{" "}
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="font-semibold text-ink underline-offset-2 hover:underline">
+            {SUPPORT_EMAIL}
+          </a>
+          .
+        </>
+      )}
     </p>
   ) : (
     <p>

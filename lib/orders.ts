@@ -4,7 +4,8 @@ import { ensureSession, getSupabase } from "./supabase/client";
 import { changed } from "./changed";
 import { platformSettings } from "./platform";
 import { pokeDispatch } from "./push";
-import type { PrintConfig, RateSource } from "./pricing";
+import type { Extra, PrintConfig, RateSource } from "./pricing";
+import type { WeeklyHours } from "./hours";
 import type { UpiKind } from "./upi";
 
 export type OrderStatus =
@@ -15,7 +16,23 @@ export type OrderStatus =
   | "ready"
   | "collected"
   | "cancelled"
-  | "failed";
+  | "failed"
+  /** Printed and marked ready, never collected within the desk's window (0039). */
+  | "unclaimed";
+
+/** The desk's corrected bill, as proposed — nothing on the order changes until the student accepts. */
+export interface Requote {
+  from: number | string;
+  total: number | string;
+  platform_fee: number | string;
+  rounding: number | string;
+  pages: number;
+  colour_pages: number;
+  lines: { item_id: string; pages: number; colour_pages: number; price: number | string }[];
+  note: string;
+  by: string | null;
+  at: string;
+}
 
 export interface OrderItemRow {
   id: string;
@@ -51,7 +68,11 @@ export interface OrderRow {
   /* Portal handling (0007) */
   is_priority: boolean;
   operator_note: string | null;
-  cancelled_by: "student" | "operator" | null;
+  /** "system": not paid within the desk's window (0039). */
+  cancelled_by: "student" | "operator" | "system" | null;
+  /* 0039: a bill the desk corrected before accepting; the student says yes or cancels. */
+  requote?: Requote | null;
+  requote_status?: "proposed" | "accepted" | "withdrawn" | null;
   /** "gateway" is a payment through Printify (Cashfree), marked by the server. */
   payment_method: "upi" | "cash" | "gateway" | null;
   payment_claimed_at: string | null;
@@ -155,6 +176,14 @@ export interface Operator {
   upi_qr?: string | null;
   /** 0032/0035: "active" = split at source; "collect" = Printify collects and pays the desk out. */
   gateway_status?: "off" | "collect" | "pending" | "active" | "blocked";
+  /* 0039: hours by weekday (null = use opens_at/closes_at every day), days
+     closed, the desk's timezone; named extras; the two housekeeping windows. */
+  hours?: WeeklyHours | null;
+  closed_on?: string[];
+  tz?: string;
+  extras?: Extra[];
+  unpaid_expiry_minutes?: number;
+  unclaimed_after_hours?: number;
   accepts_cash: boolean;
   paper_stock: number | null;
   low_paper_at: number;
@@ -205,6 +234,12 @@ export type OperatorSettings = Partial<
     | "shelf_rows"
     | "shelf_cols"
     | "upi_qr"
+    | "hours"
+    | "closed_on"
+    | "tz"
+    | "extras"
+    | "unpaid_expiry_minutes"
+    | "unclaimed_after_hours"
   >
 >;
 
@@ -218,6 +253,7 @@ const OPERATOR_SELECT_LEGACY =
 // 42703 ("column does not exist") steps down one list at a time, so a
 // project on 0028 still gets 0027's columns rather than none of them.
 const OPERATOR_SELECTS = [
+  OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status, hours, closed_on, tz, extras, unpaid_expiry_minutes, unclaimed_after_hours", // 0039
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status", // 0032
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr", // 0031
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols", // 0030
@@ -276,6 +312,7 @@ export const STATUS_LABEL: Record<OrderStatus, string> = {
   collected: "Collected",
   cancelled: "Cancelled",
   failed: "Couldn't print",
+  unclaimed: "Not collected",
 };
 
 /** What the counter does next. Drives the operator console's buttons. */
@@ -702,6 +739,82 @@ export async function staffOperatorIds(): Promise<string[]> {
     .eq("user_id", session.userId)
     .order("created_at", { ascending: true });
   return ((data ?? []) as { operator_id: string }[]).map((r) => r.operator_id);
+}
+
+export type StaffRole = "owner" | "staff";
+
+/**
+ * Whether this account owns the desk or works it (0039). Read from the
+ * caller's own staff row; before 0039 there is no column, and everyone
+ * counts as owner, which is how it always was.
+ */
+export async function myRole(operatorId: string): Promise<StaffRole> {
+  const supabase = getSupabase();
+  if (!supabase) return "staff";
+  const session = await ensureSession();
+  if (session.status !== "ready") return "staff";
+  const { data, error } = await supabase
+    .from("staff")
+    .select("role")
+    .eq("user_id", session.userId)
+    .eq("operator_id", operatorId)
+    .maybeSingle();
+  if (error?.code === "42703") return "owner";
+  return ((data as { role?: StaffRole } | null)?.role ?? "staff") as StaffRole;
+}
+
+/* ---------- 0039: the corrected bill, and orders that go nowhere ---------- */
+
+export interface RequoteItem {
+  item_id: string;
+  pages: number;
+  colour_pages: number;
+}
+
+/** The desk's proposal; the order's bill is untouched until the student accepts. Returns the new total. */
+export async function proposeRequote(orderId: string, items: RequoteItem[], note: string): Promise<number> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase isn't configured.");
+  const { data, error } = await supabase.rpc("propose_requote", { p_order: orderId, p_items: items, p_note: note.trim() });
+  if (error) throw new Error(friendly(error.message));
+  changed("orders");
+  return Number(data);
+}
+
+export async function withdrawRequote(orderId: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase isn't configured.");
+  const { error } = await supabase.rpc("withdraw_requote", { p_order: orderId });
+  if (error) throw new Error(friendly(error.message));
+  changed("orders");
+}
+
+export async function acceptRequote(orderId: string): Promise<number> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase isn't configured.");
+  const { data, error } = await supabase.rpc("accept_requote", { p_order: orderId });
+  if (error) throw new Error(friendly(error.message));
+  changed("orders");
+  return Number(data);
+}
+
+/** What the corrected counts would come to, priced from the order's own snapshot — for the desk's form. */
+export async function repriceOrder(orderId: string, items: RequoteItem[]): Promise<{ total: number; platform_fee: number; rounding: number } | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("reprice_order", { p_order: orderId, p_items: items });
+  if (error) throw new Error(friendly(error.message));
+  const row = data?.[0] as { total: string | number; platform_fee: string | number; rounding: string | number } | undefined;
+  return row ? { total: Number(row.total), platform_fee: Number(row.platform_fee), rounding: Number(row.rounding) } : null;
+}
+
+/** The desk's housekeeping: unpaid orders past their window, ready ones nobody collected. */
+export async function sweepOrders(operatorId: string): Promise<number> {
+  const supabase = getSupabase();
+  if (!supabase) return 0;
+  const { data, error } = await supabase.rpc("sweep_orders", { p_operator: operatorId });
+  if (error) return 0;
+  return Number(data ?? 0);
 }
 
 export async function operatorQueue(operatorId: string): Promise<OrderRow[]> {

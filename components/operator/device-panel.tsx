@@ -26,11 +26,14 @@ export function DevicePanel({
   operator,
   hasPin,
   onPinChanged,
+  owner = true,
 }: {
   operator: Operator;
   hasPin: boolean;
   /** The desk shell keeps the PIN flag; tell it when one is set. */
   onPinChanged?: () => void;
+  /** 0039: pairing and revoking are the owner's; anyone sets their own PIN. */
+  owner?: boolean;
 }) {
   const [devices, setDevices] = useState<DeskDevice[] | null>(null);
   const [paired, setPaired] = useState(false);
@@ -159,6 +162,8 @@ export function DevicePanel({
               Forget pairing on this browser
             </button>
           </>
+        ) : !owner ? (
+          <p className="m-0 mt-2.5 text-[12px] text-muted">Only the desk&apos;s owner pairs a device. Your PIN below works on any device they&apos;ve paired.</p>
         ) : (
           <form
             onSubmit={(e) => {
@@ -206,6 +211,7 @@ export function DevicePanel({
                       : " · not used yet"}
                   </span>
                 </span>
+                {owner && (
                 <button
                   onClick={() => revoke(d)}
                   disabled={busy === d.id}
@@ -215,6 +221,7 @@ export function DevicePanel({
                 >
                   {busy === d.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={14} strokeWidth={2.2} />}
                 </button>
+                )}
               </li>
             ))}
           </ul>

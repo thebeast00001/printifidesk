@@ -9,6 +9,7 @@ import {
   Coins,
   CreditCard,
   Package,
+  PencilRuler,
   ChevronDown,
   Clock,
   Download,
@@ -48,6 +49,8 @@ import { summarisePages } from "@/lib/pages";
 import { openReports, resolveReport, type OrderReport } from "@/lib/reports";
 import { useAuthKey } from "@/hooks/use-auth-key";
 import { subscribeTable, type ConnectionState } from "@/lib/realtime";
+import { sweepOrders, withdrawRequote } from "@/lib/orders";
+import { RequoteSheet } from "./operator/requote-sheet";
 import { AlertToggle, useNewOrderAlert, type PaidSignal } from "./new-order-alert";
 import { useApp } from "@/lib/store";
 import { AgeBadge, DueBadge, hourLabel, useNow } from "./operator/age";
@@ -81,6 +84,7 @@ const STATUS_STYLE: Record<string, string> = {
   collected: "border border-line bg-surface-sunk text-muted",
   cancelled: "border border-line bg-surface-sunk text-muted",
   failed: "bg-clay text-clay-ink",
+  unclaimed: "border border-line bg-surface-sunk text-muted",
 };
 
 const DECLINE_REASONS = [
@@ -99,7 +103,7 @@ const DECLINE_REASONS = [
  * action writes a row a student sees over realtime, so nothing here is
  * cosmetic.
  */
-export function OperatorPortal({ operator }: { operator: Operator }) {
+export function OperatorPortal({ operator, owner = true }: { operator: Operator; owner?: boolean }) {
   const authKey = useAuthKey();
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [stats, setStats] = useState<OperatorStats | null>(null);
@@ -175,6 +179,9 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
   const now = useNow();
 
   const load = useCallback(async () => {
+    // Housekeeping first (0039): unpaid orders past their window, ready ones
+    // nobody collected — so what's fetched next is already tidy.
+    await sweepOrders(operator.id);
     const [rows, s] = await Promise.all([
       operatorOrders(operator.id),
       operatorStats(operator.id),
@@ -287,7 +294,7 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
         case "reports":
           return reported.has(o.id);
         case "history":
-          return ["collected", "cancelled", "failed"].includes(o.status);
+          return ["collected", "cancelled", "failed", "unclaimed"].includes(o.status);
       }
     });
 
@@ -511,6 +518,9 @@ export function OperatorPortal({ operator }: { operator: Operator }) {
                   onResolve={(id, resolution) =>
                     run(order.id, () => resolveReport(id, resolution))
                   }
+                  canRefund={owner}
+                  onWithdrawRequote={() => run(order.id, () => withdrawRequote(order.id))}
+                  onRequoted={() => void load()}
                 />
               </motion.div>
             ))}
@@ -611,10 +621,17 @@ function OrderCard({
   onRefund,
   reports,
   onResolve,
+  canRefund = true,
+  onWithdrawRequote,
+  onRequoted,
 }: {
   order: OrderRow;
   operator: Operator;
   now: number;
+  /** 0039: refunds are the owner's. */
+  canRefund?: boolean;
+  onWithdrawRequote: () => void;
+  onRequoted: () => void;
   /** The top of the queue: bigger token, and its own label. */
   hero?: boolean;
   onSlip: () => void;
@@ -637,6 +654,10 @@ function OrderCard({
 }) {
   const [open, setOpen] = useState(false);
   const [declining, setDeclining] = useState(false);
+  const [requoting, setRequoting] = useState(false);
+  // A correction the student hasn't answered: accepting waits on them.
+  const correctionPending = order.requote_status === "proposed";
+  const canCorrect = order.status === "placed" && !order.payment_taken_at && !order.gateway_paid_at && !correctionPending;
   // The confirm row: what arrived, pre-filled with the bill. Only a UPI
   // claim gets it — cash is counted in the hand.
   const [confirming, setConfirming] = useState(false);
@@ -715,6 +736,24 @@ function OrderCard({
               >
                 <CreditCard size={10} strokeWidth={2.4} />
                 paid online
+              </span>
+            )}
+            {correctionPending && order.requote && (
+              <span
+                className="flex items-center gap-1 rounded-full bg-bone px-2.5 py-1 text-[10.5px] font-semibold text-ink"
+                title={`Corrected to ${money(Number(order.requote.total), currency)} — ${order.requote.note}. Waiting for the student to accept.`}
+              >
+                <PencilRuler size={10} strokeWidth={2.4} />
+                bill corrected · {money(Number(order.requote.from), currency)} → {money(Number(order.requote.total), currency)} · waiting
+              </span>
+            )}
+            {order.requote_status === "accepted" && order.requote && (
+              <span
+                className="flex items-center gap-1 rounded-full bg-sage px-2.5 py-1 text-[10.5px] font-semibold text-sage-ink"
+                title={`The student accepted the corrected bill — ${order.requote.note}.`}
+              >
+                <PencilRuler size={10} strokeWidth={2.4} />
+                corrected · accepted
               </span>
             )}
             {order.payment_claimed_at && !order.payment_taken_at && (
@@ -815,14 +854,27 @@ function OrderCard({
         <div className="flex basis-full flex-wrap items-center gap-2 sm:basis-auto sm:shrink-0">
           {order.status === "placed" ? (
             <>
-              <ActionButton
-                onClick={() => (order.payment_method === "upi" ? setConfirming((v) => !v) : onAccept())}
-                busy={busy}
-                primary
-              >
-                <Check size={14} strokeWidth={2.6} />
-                {order.payment_claimed_at ? "Confirm payment" : "Payment taken"}
-              </ActionButton>
+              {correctionPending ? (
+                <ActionButton onClick={onWithdrawRequote} busy={busy}>
+                  <Undo2 size={14} strokeWidth={2.4} />
+                  Withdraw correction
+                </ActionButton>
+              ) : (
+                <ActionButton
+                  onClick={() => (order.payment_method === "upi" ? setConfirming((v) => !v) : onAccept())}
+                  busy={busy}
+                  primary
+                >
+                  <Check size={14} strokeWidth={2.6} />
+                  {order.payment_claimed_at ? "Confirm payment" : "Payment taken"}
+                </ActionButton>
+              )}
+              {canCorrect && (
+                <ActionButton onClick={() => setRequoting(true)} busy={busy}>
+                  <PencilRuler size={14} strokeWidth={2.2} />
+                  Correct bill
+                </ActionButton>
+              )}
               <ActionButton onClick={() => setDeclining((v) => !v)} busy={busy}>
                 <X size={14} strokeWidth={2.4} />
                 Decline
@@ -1037,11 +1089,15 @@ function OrderCard({
 
               <ReportList reports={reports} busy={busy} onResolve={onResolve} />
 
-              <RefundRow order={order} currency={currency} busy={busy} onRefund={onRefund} />
+              {canRefund && <RefundRow order={order} currency={currency} busy={busy} onRefund={onRefund} />}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {canCorrect && (
+        <RequoteSheet order={order} currency={currency} open={requoting} onOpenChange={setRequoting} onSent={onRequoted} />
+      )}
     </article>
   );
 }

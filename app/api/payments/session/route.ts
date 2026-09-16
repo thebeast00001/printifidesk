@@ -39,12 +39,14 @@ export async function POST(request: Request) {
 
   const { data: order } = await supabase
     .from("orders")
-    .select("id, user_id, operator_id, token, status, total, platform_fee, payment_taken_at, gateway_order_id, gateway_paid_at")
+    .select("id, user_id, operator_id, token, status, total, platform_fee, payment_taken_at, gateway_order_id, gateway_paid_at, requote_status")
     .eq("id", orderId)
     .maybeSingle();
   if (!order || order.user_id !== userId) return fail("That order isn't yours.", 404);
   if (order.gateway_paid_at || order.payment_taken_at) return Response.json({ ok: true, paid: true });
   if (order.status !== "placed") return fail("This order isn't waiting for payment.");
+  // The desk corrected the bill (0039): the student answers that before any money moves.
+  if (order.requote_status === "proposed") return fail("The desk corrected this bill — accept the new price on your order first.");
 
   const { data: operator } = await supabase
     .from("operators")
@@ -86,7 +88,9 @@ export async function POST(request: Request) {
         await reconcileOrder(supabase, order.id, order.gateway_order_id);
         return Response.json({ ok: true, paid: true });
       }
-      if (existing.order_status === "ACTIVE" && existing.payment_session_id) {
+      // Reused only for the same amount: a corrected bill (0039) means a
+      // new Cashfree order, and the old one is left to expire.
+      if (existing.order_status === "ACTIVE" && existing.payment_session_id && Math.abs(Number(existing.order_amount) - total) < 0.005) {
         return Response.json({ ok: true, paymentSessionId: existing.payment_session_id, mode: cashfreeEnv() });
       }
     }

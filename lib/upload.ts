@@ -1,7 +1,7 @@
 "use client";
 
 import { DOCUMENTS_BUCKET, SUPABASE_KEY, SUPABASE_URL, getSupabase } from "./supabase/client";
-import type { Analysis } from "./analysis";
+import { contentTypeOf, type Analysis } from "./analysis";
 
 /**
  * Uploads go over XHR rather than supabase-js so the progress bar reflects
@@ -29,7 +29,9 @@ export function uploadToStorage({
     xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
     xhr.setRequestHeader("apikey", SUPABASE_KEY);
     xhr.setRequestHeader("x-upsert", "true");
-    if (file.type) xhr.setRequestHeader("Content-Type", file.type);
+    // Settled from the extension when the browser has no type: the bucket
+    // takes PDF and images only (0039), and a blank type would be refused.
+    xhr.setRequestHeader("Content-Type", contentTypeOf(file));
 
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress?.(event.loaded / event.total);

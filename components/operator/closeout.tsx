@@ -8,6 +8,7 @@ import { operatorOrders, statsForRange, type RangeStats } from "@/lib/operator";
 import { money } from "@/lib/pricing";
 import type { Operator, OrderRow } from "@/lib/orders";
 import { clockLabel, cn, spring } from "@/lib/utils";
+import { hoursOn, localParts } from "@/lib/hours";
 
 /**
  * Closing out the day, in the order a person counts it.
@@ -140,7 +141,7 @@ export function CloseoutPanel({ operator, onClosed }: { operator: Operator; onCl
             ) : (
               <ul className="m-0 mt-2 flex list-none flex-col gap-1.5 p-0">
                 {shelf.map((o) => (
-                  <ShelfRow key={o.id} order={o} closesAt={operator.closes_at} />
+                  <ShelfRow key={o.id} order={o} closesAt={hoursOn(operator, localParts(new Date(), operator.tz).day)?.close ?? operator.closes_at} />
                 ))}
               </ul>
             )}

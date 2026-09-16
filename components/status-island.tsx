@@ -15,6 +15,7 @@ import type { ConnectionState } from "@/lib/realtime";
 import { PaySheet } from "./pay-sheet";
 import { clearFlight, useCheckoutFlight } from "@/lib/gateway";
 import { ReportSheet } from "./report-sheet";
+import { CorrectedBill } from "./corrected-bill";
 import { DeskMessages } from "./desk-messages";
 import { isPairedDevice } from "@/lib/desk-auth";
 import Link from "next/link";
@@ -83,6 +84,7 @@ export function StatusIsland() {
         onPay={() => setPaying(true)}
         onStartOver={() => openSheet("upload")}
         onReport={() => setReporting(true)}
+        onChanged={reload}
       />
       <PaySheet
         order={order}
@@ -110,6 +112,7 @@ function LiveOrder({
   onPay,
   onStartOver,
   onReport,
+  onChanged,
 }: {
   order: OrderRow;
   events: OrderEventRow[];
@@ -120,6 +123,7 @@ function LiveOrder({
   onPay: () => void;
   onStartOver: () => void;
   onReport: () => void;
+  onChanged: () => void;
 }) {
   const barRef = useRef<HTMLSpanElement>(null);
   const [, tick] = useState(0);
@@ -254,7 +258,10 @@ function LiveOrder({
         </p>
       )}
 
-      {order.status === "placed" && !order.payment_claimed_at && (
+      {/* The desk corrected the bill: a yes or a cancel before any paying. */}
+      <CorrectedBill order={order} onDone={onChanged} />
+
+      {order.status === "placed" && !order.payment_claimed_at && order.requote_status !== "proposed" && (
         <motion.button
           layout="position"
           whileTap={{ scale: 0.98 }}
@@ -300,6 +307,7 @@ function detail(order: OrderRow, queue: QueueStatus | null): string {
 
   switch (order.status) {
     case "placed":
+      if (order.requote_status === "proposed") return `${sheets} · the desk corrected the bill — accept or cancel`;
       return order.payment_claimed_at
         ? `${sheets} · waiting for the operator to confirm`
         : `${sheets} · pay to join the queue`;

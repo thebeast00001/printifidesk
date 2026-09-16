@@ -18,6 +18,38 @@ export interface PrintConfig {
   sides: Sides;
   binding: Binding;
   copies: number;
+  /** Ids of the desk's extras chosen for this file (0039). Absent means none. */
+  extras?: string[];
+}
+
+/**
+ * A named add-on a desk sells — spiral binding, lamination, A3 — priced
+ * per copy of the file or once for the job. The desk's own list, in its
+ * own words; the id is what a file's config points at.
+ */
+export interface Extra {
+  id: string;
+  name: string;
+  price: number;
+  per: "copy" | "job";
+}
+
+/** The desk's extras from its row (or an order's snapshot), every one checked before it's trusted. */
+export function extrasOf(raw: unknown): Extra[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Extra[] = [];
+  for (const e of raw) {
+    if (!e || typeof e !== "object") continue;
+    const { id, name, price, per } = e as Record<string, unknown>;
+    const n = typeof price === "string" ? Number.parseFloat(price) : price;
+    if (typeof id !== "string" || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(id)) continue;
+    if (typeof name !== "string" || name.trim().length === 0 || name.length > 40) continue;
+    if (typeof n !== "number" || !Number.isFinite(n) || n < 0 || n > 5000) continue;
+    if (per !== "copy" && per !== "job") continue;
+    if (out.some((x) => x.id === id)) continue;
+    out.push({ id, name: name.trim(), price: n, per });
+  }
+  return out.slice(0, 12);
 }
 
 export interface RateCard {
@@ -46,6 +78,8 @@ export interface RateCard {
    * amount, and ₹14 is typed right far more often than ₹13.91.
    */
   roundToRupee: boolean;
+  /** The desk's named add-ons (0039); empty for a desk that sells none. */
+  extras: Extra[];
 }
 
 /** Shape of the operator row the rate card is read from. */
@@ -62,6 +96,7 @@ export interface RateSource {
   platform_fee_percent?: number | string | null;
   platform_fee_min?: number | string | null;
   round_to_rupee?: boolean | null;
+  extras?: unknown;
 }
 
 const num = (v: number | string | null | undefined, fallback: number) => {
@@ -90,6 +125,7 @@ export function rateCardOf(operator: RateSource | null | undefined): RateCard {
     platformFeePercent: num(operator?.platform_fee_percent, 0),
     platformFeeMin: num(operator?.platform_fee_min, 0),
     roundToRupee: operator?.round_to_rupee === true,
+    extras: extrasOf(operator?.extras),
   };
 }
 
@@ -137,6 +173,8 @@ export interface LineBill {
   bulkSaving: number;
   duplexSaving: number;
   binding: number;
+  /** The desk's extras this file chose, all copies. */
+  extras: number;
   price: number;
 }
 
@@ -145,6 +183,8 @@ export interface Quote {
   colourPages: number;
   paper: number;
   binding: number;
+  /** Extras across every file. */
+  extras: number;
   duplexSaving: number;
   bulkSaving: number;
   /** The files, each with its own arithmetic laid out. */
@@ -190,9 +230,23 @@ interface LineCost {
   colourList: number;
   paper: number;
   binding: number;
+  extras: number;
   duplexSaving: number;
   bulkSaving: number;
   raw: number;
+}
+
+/**
+ * What a file's chosen extras cost: per-copy ones by the copies, per-job
+ * ones once. Unknown ids cost nothing — the desk may have dropped one
+ * since the file was set up — and place_order() refuses them anyway.
+ */
+export function extrasCost(config: PrintConfig, card: RateCard, copies: number): number {
+  const chosen = config.extras ?? [];
+  if (chosen.length === 0) return 0;
+  return card.extras
+    .filter((e) => chosen.includes(e.id))
+    .reduce((n, e) => n + e.price * (e.per === "copy" ? copies : 1), 0);
 }
 
 /**
@@ -222,6 +276,7 @@ function lineCost(
   const paper = afterBulk - duplexSaving;
 
   const bind = binding === "staple" ? card.staplePrice : 0;
+  const extras = extrasCost(config, card, copies);
 
   return {
     bwPages: bwPages * copies,
@@ -230,9 +285,11 @@ function lineCost(
     colourList: inkedPages * card.colourPerPage,
     paper: paper * copies,
     binding: bind * copies,
+    extras,
     duplexSaving: duplexSaving * copies,
     bulkSaving: bulkSaving * copies,
-    raw: (paper + bind) * copies,
+    // The same sum, in the same order, as price_line() in the database.
+    raw: (paper + bind) * copies + extras,
   };
 }
 
@@ -250,11 +307,14 @@ function lineBill(line: QuoteLine, cost: LineCost, copies: number): LineBill {
     bulkSaving: paise(cost.bulkSaving),
     duplexSaving: paise(cost.duplexSaving),
     binding: paise(cost.binding),
+    extras: paise(cost.extras),
   };
-  const summed = paise(parts.bwCost + parts.colourCost - parts.bulkSaving - parts.duplexSaving + parts.binding);
+  const summed = paise(
+    parts.bwCost + parts.colourCost - parts.bulkSaving - parts.duplexSaving + parts.binding + parts.extras,
+  );
   const drift = paise(price - summed);
   if (drift !== 0) {
-    const key = (["bwCost", "colourCost", "binding"] as const).reduce((a, b) =>
+    const key = (["bwCost", "colourCost", "binding", "extras"] as const).reduce((a, b) =>
       parts[a] >= parts[b] ? a : b,
     );
     parts[key] = paise(parts[key] + drift);
@@ -332,6 +392,7 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
     colourPages: sum((c) => c.inkedPages),
     paper: paise(sum((c) => c.paper)),
     binding: paise(sum((c) => c.binding)),
+    extras: paise(sum((c) => c.extras)),
     duplexSaving: paise(sum((c) => c.duplexSaving)),
     bulkSaving: paise(sum((c) => c.bulkSaving)),
     lines: bills,
@@ -372,8 +433,16 @@ export function describe(q: Quote, config: PrintConfig): string {
   else parts.push(`${q.bwPages} pages b/w`);
 
   if (config.binding === "staple") parts.push("stapled");
+  if (config.extras?.length) parts.push(config.extras.length === 1 ? "1 extra" : `${config.extras.length} extras`);
   if (config.copies > 1) parts.push(`${config.copies} copies`);
   return parts.join(" + ");
+}
+
+/** Two files' extras, compared as sets. */
+export function sameExtras(a: string[] | undefined, b: string[] | undefined): boolean {
+  const x = [...(a ?? [])].sort();
+  const y = [...(b ?? [])].sort();
+  return x.length === y.length && x.every((v, i) => v === y[i]);
 }
 
 /**
@@ -387,9 +456,11 @@ export function describeOrder(q: Quote, lines: QuoteLine[]): string {
   if (lines.length === 1) return describe(q, lines[0].config);
 
   const varies = (key: keyof PrintConfig) =>
-    lines.some((l) => l.config[key] !== lines[0].config[key]);
+    key === "extras"
+      ? lines.some((l) => !sameExtras(l.config.extras, lines[0].config.extras))
+      : lines.some((l) => l.config[key] !== lines[0].config[key]);
 
-  const differing = (["colour", "sides", "binding", "copies"] as const)
+  const differing = (["colour", "sides", "binding", "copies", "extras"] as const)
     .filter(varies)
     .map((k) => (k === "colour" ? "colour" : k === "sides" ? "sides" : k));
 

@@ -36,6 +36,13 @@ export async function POST(request: Request) {
 
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
 
+  // Housekeeping first (0039): every desk's unpaid orders past their window
+  // and ready ones nobody collected. The files of what's just been marked
+  // unclaimed get their purge stamp from the trigger; they go next run.
+  let swept = 0;
+  const sweep = await supabase.rpc("sweep_all_orders");
+  if (!sweep.error) swept = Number(sweep.data ?? 0);
+
   const { data, error } = await supabase
     .from("documents")
     .select("id, storage_path")
@@ -46,7 +53,7 @@ export async function POST(request: Request) {
   if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });
 
   const expired = (data ?? []) as Expired[];
-  if (expired.length === 0) return Response.json({ ok: true, removed: 0 });
+  if (expired.length === 0) return Response.json({ ok: true, removed: 0, swept });
 
   // Storage first: a deleted row with a surviving object is an orphan nothing
   // will ever clean up, whereas a surviving row with no object is self-healing.
@@ -73,7 +80,7 @@ export async function POST(request: Request) {
     );
   }
 
-  return Response.json({ ok: true, removed: expired.length });
+  return Response.json({ ok: true, removed: expired.length, swept });
 }
 
 /**

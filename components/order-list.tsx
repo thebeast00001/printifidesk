@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import { AlertCircle, Check, ChevronDown, Flag, Loader2, Receipt, X } from "lucide-react";
 import { useOrderHistory } from "@/hooks/use-tracking";
@@ -25,6 +26,7 @@ const STATUS_STYLE: Record<OrderStatus, string> = {
   collected: "border border-line bg-surface-sunk text-muted",
   cancelled: "border border-line bg-surface-sunk text-muted",
   failed: "bg-clay text-clay-ink",
+  unclaimed: "border border-line bg-surface-sunk text-muted",
 };
 
 export function OrderList() {
@@ -263,6 +265,18 @@ function OrderCard({
           </span>
         )}
 
+        {/* A receipt once there's a payment to receipt. */}
+        {order.payment_taken_at && (
+          <Link
+            href={`/receipt/${order.id}`}
+            aria-label={`Receipt for order ${order.token ?? ""}`}
+            title="Receipt — print it or save it as a PDF"
+            className="grid size-10 shrink-0 place-items-center rounded-xl border border-line bg-surface-sunk text-muted transition-colors hover:text-ink"
+          >
+            <Receipt size={15} strokeWidth={2.2} />
+          </Link>
+        )}
+
         <button
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
@@ -348,8 +362,12 @@ function PaymentLine({ order }: { order: OrderRow }) {
     }${order.shortfall_cleared_at ? " · the rest taken in cash" : ""}.`;
   } else if (claimed) {
     text = `You marked this paid${method ? ` by ${method}` : ""}; the desk hasn't confirmed it yet.`;
+  } else if (order.status === "unclaimed") {
+    text = `Not collected within the desk's window, so it was cleared from the shelf${paid ? " — the payment stands, since it was printed" : ""}. Ask at the counter if you still need it.`;
   } else if (order.status === "placed") {
-    text = "Not paid yet.";
+    text = order.requote_status === "proposed" ? "The desk corrected the bill — accept the new price or cancel." : "Not paid yet.";
+  } else if (order.status === "cancelled" && order.cancelled_by === "system") {
+    text = `${order.note ?? "Not paid in time"}. Nothing was charged.`;
   } else if (order.status === "cancelled" || order.status === "failed") {
     text = "Nothing was charged.";
   } else {

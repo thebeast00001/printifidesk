@@ -95,7 +95,7 @@ function Dropzone({ onFiles, compact }: { onFiles: (f: FileList) => void; compac
         </span>
         {!compact && (
           <span className="mt-1 block text-[12.5px] text-muted">
-            PDF, Word, PowerPoint, images · up to 50 MB each
+            PDF or photos (JPG, PNG, HEIC) · up to 50 MB each · Word? Save it as PDF first
           </span>
         )}
       </button>

@@ -8,11 +8,17 @@ import type { PDFPageProxy } from "pdfjs-dist";
  * Page count and which pages actually carry colour are what the quote is built
  * from, so they are measured here rather than guessed — the whole smart-colour
  * pitch falls apart if the numbers are made up. PDFs and images are measured
- * exactly; anything needing server-side conversion (Word, PowerPoint) is
- * estimated and flagged, and re-measured after conversion.
+ * exactly, and (0039) they are the only kinds taken: a Word or PowerPoint
+ * file can't be counted here and can't be printed at the desk without the
+ * program that made it, so the student exports it as a PDF first — one
+ * step in Word, Google Docs and PowerPoint alike — and every job arrives
+ * as a file the desk can open and a count the bill can stand on.
  */
 
-export type FileKind = "PDF" | "DOCX" | "PPTX" | "XLSX" | "IMAGE" | "TXT" | "OTHER";
+export type FileKind = "PDF" | "IMAGE" | "OTHER";
+
+/** The exact reason a file was turned away, so the message can say what to do instead. */
+export type Rejection = "office" | "text" | "other";
 
 export interface Analysis {
   pages: number;
@@ -31,34 +37,57 @@ const COLOUR_PIXEL_RATIO = 0.004;
 /** Channel spread that counts a pixel as coloured rather than grey. */
 const COLOUR_CHANNEL_SPREAD = 24;
 
-export const ACCEPTED_EXTENSIONS = [
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".ppt",
-  ".pptx",
-  ".xls",
-  ".xlsx",
-  ".txt",
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".webp",
-  ".heic",
-] as const;
+export const ACCEPTED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif"] as const;
+
+const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif"];
+const OFFICE_EXTENSIONS = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".odt", ".odp", ".ods", ".pages", ".key"];
+
+export function extensionOf(name: string): string {
+  const lower = name.toLowerCase();
+  const dot = lower.lastIndexOf(".");
+  return dot === -1 ? "" : lower.slice(dot);
+}
 
 export function kindOf(file: File): FileKind {
-  const name = file.name.toLowerCase();
-  const ext = name.slice(name.lastIndexOf("."));
-
-  if (ext === ".pdf") return "PDF";
-  if (ext === ".doc" || ext === ".docx") return "DOCX";
-  if (ext === ".ppt" || ext === ".pptx") return "PPTX";
-  if (ext === ".xls" || ext === ".xlsx") return "XLSX";
-  if (ext === ".txt") return "TXT";
-  if (file.type.startsWith("image/") || [".png", ".jpg", ".jpeg", ".webp", ".heic"].includes(ext))
-    return "IMAGE";
+  const ext = extensionOf(file.name);
+  if (ext === ".pdf" || file.type === "application/pdf") return "PDF";
+  if (file.type.startsWith("image/") || IMAGE_EXTENSIONS.includes(ext)) return "IMAGE";
   return "OTHER";
+}
+
+/** Why a file isn't one we take. */
+export function rejectionOf(file: File): Rejection {
+  const ext = extensionOf(file.name);
+  if (OFFICE_EXTENSIONS.includes(ext)) return "office";
+  if (ext === ".txt" || ext === ".rtf" || ext === ".md") return "text";
+  return "other";
+}
+
+/**
+ * What the upload is sent as. Browsers report an empty type for some
+ * files (HEIC on older Android, anything renamed), and the bucket only
+ * takes PDF and images — so the type is settled here, from the extension
+ * when the browser has nothing to say.
+ */
+export function contentTypeOf(file: File): string {
+  if (file.type === "application/pdf" || file.type.startsWith("image/")) return file.type;
+  switch (extensionOf(file.name)) {
+    case ".pdf":
+      return "application/pdf";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".webp":
+      return "image/webp";
+    case ".heic":
+      return "image/heic";
+    case ".heif":
+      return "image/heif";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 export function validate(file: File): string | null {
@@ -67,7 +96,14 @@ export function validate(file: File): string | null {
     return `Too large — ${formatBytes(file.size)}. The limit is ${formatBytes(MAX_FILE_BYTES)}.`;
   }
   if (kindOf(file) === "OTHER") {
-    return "We can't print this file type. Try PDF, Word, PowerPoint or an image.";
+    switch (rejectionOf(file)) {
+      case "office":
+        return "Save it as a PDF first — File → Save as PDF in Word, or File → Download → PDF in Google Docs — then add the PDF. The desk prints exactly what you see.";
+      case "text":
+        return "Print it to PDF first (File → Print → Save as PDF), then add the PDF.";
+      default:
+        return "PDF or a photo (JPG, PNG, WebP, HEIC). Save it as a PDF first, then add that.";
+    }
   }
   return null;
 }
@@ -97,16 +133,8 @@ export async function analyse(
       note: "Took too long to scan here — we'll count the pages at the counter.",
     });
   }
-  if (kind === "IMAGE") return analyseImage(file);
-
-  // Needs LibreOffice on the server before it can be measured. The estimate
-  // keeps the quote honest-ish; the sheet marks it as approximate.
-  return {
-    pages: estimatePages(file),
-    colourIndex: [],
-    exact: false,
-    note: "Page count confirmed after we convert it to PDF.",
-  };
+  // validate() turned everything else away; this is the image path.
+  return analyseImage(file);
 }
 
 function withTimeout(work: Promise<Analysis>, fallback: Analysis): Promise<Analysis> {
@@ -125,10 +153,9 @@ function withTimeout(work: Promise<Analysis>, fallback: Analysis): Promise<Analy
   });
 }
 
+/** A PDF that couldn't be scanned in time: a rough count so the quote isn't blank, marked as such. */
 function estimatePages(file: File) {
-  const kind = kindOf(file);
-  const bytesPerPage = kind === "PPTX" ? 120_000 : kind === "TXT" ? 2_500 : 45_000;
-  return Math.max(1, Math.round(file.size / bytesPerPage));
+  return Math.max(1, Math.round(file.size / 45_000));
 }
 
 async function analysePdf(

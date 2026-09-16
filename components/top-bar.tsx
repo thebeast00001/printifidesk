@@ -13,6 +13,7 @@ import { useApp } from "@/lib/store";
 import { perPage, rateCardOf } from "@/lib/pricing";
 import type { Operator, OperatorWait } from "@/lib/orders";
 import { clockLabel, cn } from "@/lib/utils";
+import { hoursOn, localParts, nextChange } from "@/lib/hours";
 
 export function TopBar() {
   const { scrollY } = useScroll();
@@ -124,12 +125,15 @@ function Headline({
  * decides whether the desk is open, and this only ever reports the switch.
  */
 function Status({ open, operator }: { open: boolean; operator: Operator | null }) {
-  if (open) {
-    const till = clockLabel(operator?.closes_at);
-    return <>Open now{till ? ` · till ${till}` : ""}</>;
-  }
-  const opens = clockLabel(operator?.opens_at);
-  return <>Closed{opens ? ` · opens ${opens}` : ""}</>;
+  // The schedule's next move, in the desk's own timezone: "till 6 PM" while
+  // open; "opens 9 AM", "opens Mon 9 AM" while not. With the switch off
+  // inside its hours there is nothing to promise, so just "Closed".
+  // The database's word on open/closed comes first; the schedule only adds
+  // the phrase that agrees with it, so a project still on the old
+  // operator_wait() can't read "Open now · opens 9 AM".
+  const next = operator ? nextChange(operator) : null;
+  if (open) return <>Open now{next?.startsWith("till") ? ` · ${next}` : ""}</>;
+  return <>Closed{next?.startsWith("opens") ? ` · ${next}` : ""}</>;
 }
 
 
@@ -154,7 +158,7 @@ function IdleHeadline({ wait, operator }: { wait: OperatorWait; operator: Operat
     if (wait.wait_minutes > 0) out.push(`Ready in about ${wait.wait_minutes} min`);
     out.push(`B&W from ${perPage(card.bwPerPage, card.currency)}`);
     if (card.colourPerPage > card.bwPerPage) out.push("Colour where needed");
-    const till = clockLabel(operator.closes_at);
+    const till = clockLabel(hoursOn(operator, localParts(new Date(), operator.tz).day)?.close);
     if (till) out.push(`Open till ${till}`);
     out.push("Print from your phone");
     return out;

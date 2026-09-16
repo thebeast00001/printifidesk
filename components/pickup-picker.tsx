@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { motion } from "motion/react";
 import { cn, spring } from "@/lib/utils";
 import type { Operator } from "@/lib/orders";
+import { hoursOn, localParts } from "@/lib/hours";
 
 const SLOT_MINUTES = 30;
 /** How far ahead a student can book. Beyond this the queue is guesswork. */
@@ -33,10 +34,6 @@ function timeToMinutes(value: string | null | undefined, fallback: number): numb
 export function buildSlots(operator: Operator | null, pages: number, now = new Date()): Slot[] {
   if (!operator) return [];
 
-  const opens = timeToMinutes(operator.opens_at, 9 * 60);
-  const closes = timeToMinutes(operator.closes_at, 20 * 60);
-  if (closes <= opens) return [];
-
   const ppm = Math.max(Number(operator.pages_per_minute) || 20, 1);
   const leadMinutes = Math.ceil(pages / ppm) + (operator.handling_minutes ?? 3);
   const earliest = new Date(now.getTime() + (leadMinutes + 5) * 60_000);
@@ -47,6 +44,15 @@ export function buildSlots(operator: Operator | null, pages: number, now = new D
   for (let dayOffset = 0; dayOffset <= 2 && slots.length < 24; dayOffset++) {
     const day = new Date(now);
     day.setDate(day.getDate() + dayOffset);
+
+    // That weekday's hours (0039), none on a day the desk marked closed.
+    const parts = localParts(day, operator.tz);
+    if ((operator.closed_on ?? []).includes(parts.date)) continue;
+    const hours = hoursOn(operator, parts.day);
+    if (!hours) continue;
+    const opens = timeToMinutes(hours.open, 9 * 60);
+    const closes = timeToMinutes(hours.close, 20 * 60);
+    if (closes <= opens) continue;
 
     for (let mins = opens; mins <= closes; mins += SLOT_MINUTES) {
       const at = new Date(day);
