@@ -47,7 +47,13 @@ export async function generateMetadata(): Promise<Metadata> {
       title: { default: "Printify Desk", template: "%s · Printify Desk" },
       description: "The counter's side of Printify: the queue, the prices, the hours, the handover.",
       manifest: "/desk.webmanifest",
-      icons: { icon: "/desk-icon-192.png", apple: "/desk-icon-192.png" },
+      icons: {
+        icon: [
+          { url: "/desk-favicon.ico", sizes: "48x48" },
+          { url: "/desk-icon-192.png", sizes: "192x192", type: "image/png" },
+        ],
+        apple: "/desk-icon-192.png",
+      },
       appleWebApp: { capable: true, statusBarStyle: "default", title: "Printify Desk" },
       // A tool for people who already have it: out of every index. Its
       // copies of the legal pages point their canonical at the student site.
@@ -61,9 +67,18 @@ export async function generateMetadata(): Promise<Metadata> {
     description: TAGLINE,
     keywords: [BRAND, BRAND_ALT, SITE_HOST, "campus printing", "print from phone", "print shop near me", "UPI printing", "college printout"],
     manifest: "/manifest.webmanifest",
+    // Two icons, both named with their size: the .ico a search result shows
+    // (Google wants a multiple of 48 px, and fetches /favicon.ico by default
+    // wherever a page doesn't say), and the PNG a tab or an install uses.
     // apple-touch-icon: without it iOS puts a screenshot of the page on the
     // home screen instead of the icon.
-    icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
+    icons: {
+      icon: [
+        { url: "/favicon.ico", sizes: "48x48" },
+        { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      ],
+      apple: "/icon-192.png",
+    },
     appleWebApp: { capable: true, statusBarStyle: "default", title: BRAND },
     // What a shared link unfurls into. The image is drawn by opengraph-image.tsx.
     openGraph: { type: "website", siteName: BRAND, url: SITE_URL, title: `${BRAND} — print from your phone, collect at the desk`, description: TAGLINE, locale: "en_IN" },

@@ -33,6 +33,19 @@ const securityHeaders = [
   { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
 ];
 
+/**
+ * The site's one address. `www.` answered with the same pages, and Google
+ * indexed that copy as the original — a second address for the same site
+ * splits its standing between the two. Sent home for good (308) so there is
+ * one. Read from the same variable the middleware routes by; unset (a bare
+ * localhost) means nothing to redirect.
+ */
+const siteHost = (process.env.NEXT_PUBLIC_SITE_HOST ?? "")
+  .trim()
+  .toLowerCase()
+  .replace(/^https?:\/\//, "")
+  .replace(/\/.*$/, "");
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   // No reason to announce the framework in every response.
@@ -43,6 +56,17 @@ const nextConfig: NextConfig = {
   turbopack: { root: __dirname },
   experimental: {
     optimizePackageImports: ["lucide-react", "motion"],
+  },
+  async redirects() {
+    if (!siteHost) return [];
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: `www.${siteHost}` }],
+        destination: `https://${siteHost}/:path*`,
+        permanent: true,
+      },
+    ];
   },
   async headers() {
     return [
