@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 
   const { data: operator } = await supabase
     .from("operators")
-    .select("id, name, short_name, gateway_vendor_id, gateway_status, shut_at")
+    .select("id, name, short_name, gateway_vendor_id, gateway_status, shut_at, gateway_paused")
     .eq("id", order.operator_id)
     .maybeSingle();
   if (!operator || operator.shut_at) return fail("This desk can't take payments right now.");
@@ -60,6 +60,8 @@ export async function POST(request: Request) {
   if (!splitting && operator.gateway_status !== "collect") {
     return fail("This desk doesn't take online payment through Printify yet.");
   }
+  // 0040: the owner paused it. Students pay the desk directly meanwhile.
+  if (operator.gateway_paused) return fail("This desk has paused payments through Printify for now — pay the desk directly.");
 
   const { data: profile } = await supabase
     .from("profiles")

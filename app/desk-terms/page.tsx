@@ -1,4 +1,8 @@
 import { Contact, H2, LegalPage } from "@/components/legal/legal-page";
+import { payoutWeekdayName } from "@/lib/server/platform";
+
+// The payout day is read on every request, so the page says what the admin set.
+export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "Terms for print desks",
@@ -10,7 +14,8 @@ export const metadata = {
  * built from what the code does. Nothing here promises a schedule or a
  * number the code doesn't enforce or the admin doesn't set.
  */
-export default function DeskTermsPage() {
+export default async function DeskTermsPage() {
+  const payoutDay = await payoutWeekdayName();
   return (
     <LegalPage
       title="Terms for print desks"
@@ -69,8 +74,18 @@ export default function DeskTermsPage() {
         Where Printify has switched it on for your desk, students can pay through Printify&apos;s payment
         partner, Cashfree Payments. Such an order is marked paid and queued the moment the money lands; you
         print without checking anything. Your share — the bill less the platform fee, less any refund in
-        proportion — is owed to you and paid out by Printify to the account you gave; Takings shows the running
-        balance and every payout.
+        proportion — is owed to you and paid out by Printify to the account you gave,{" "}
+        {payoutDay ? (
+          <>
+            <b>every {payoutDay}</b>, for everything paid up to then.
+          </>
+        ) : (
+          <>on the payout day shown in Takings.</>
+        )}{" "}
+        Takings lists every online-paid order with the bill, the fee, your share and Cashfree&apos;s payment
+        reference, the running balance, and every payout with the exact orders it covered — downloadable for your
+        accounts. The desk&apos;s owner can <b>pause payments through Printify at any time</b>; students then pay
+        your UPI id directly, as always, and what is already owed is still paid out.
       </p>
 
       <H2>Refunds</H2>

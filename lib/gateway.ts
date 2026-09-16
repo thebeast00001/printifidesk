@@ -30,7 +30,12 @@ export function gatewayMode(): GatewayMode | null {
  * admin collecting for it ("collect").
  */
 export function canPayOnline(operator: Operator | null | undefined): boolean {
-  return gatewayMode() !== null && (operator?.gateway_status === "active" || operator?.gateway_status === "collect");
+  return (
+    gatewayMode() !== null &&
+    (operator?.gateway_status === "active" || operator?.gateway_status === "collect") &&
+    // 0040: the owner may pause it; the admin's switch-on stays as it was.
+    operator?.gateway_paused !== true
+  );
 }
 
 interface CheckoutResult {

@@ -411,3 +411,56 @@ export function WindowsSettings({ operator, onSaved }: { operator: Operator; onS
     </div>
   );
 }
+
+/* ---------- payments through Printify: the owner's switch ---------- */
+
+/**
+ * Payments through Printify (0040). Switching them on is the admin's — it
+ * commits Printify's account — but pausing them is the owner's, at any
+ * moment: students pay the desk directly meanwhile, and nothing else
+ * changes. "You're never locked in" is most of what a shop wants to hear.
+ */
+export function OnlinePaymentsSwitch({ operator, onSaved }: { operator: Operator; onSaved: () => void }) {
+  const { saving, saved, error, run } = useSave(onSaved);
+  const status = operator.gateway_status ?? "off";
+  const live = status === "collect" || status === "active";
+  const paused = operator.gateway_paused === true;
+
+  return (
+    <div className="mt-5 border-t border-line pt-5">
+      <p className="label-caps m-0 mb-2">Payments through Printify</p>
+      {!live ? (
+        <p className="m-0 max-w-[60ch] text-[11.5px] leading-relaxed text-muted">
+          {status === "pending"
+            ? "Being set up — Printify is verifying the account it will pay you into."
+            : status === "blocked"
+              ? "Printify couldn't verify the payout account. Ask on the support line below."
+              : "Not switched on for this desk. Students pay your UPI id directly — the money is yours instantly and Printify never holds it. Ask Printify to switch on card and any-app UPI payments through its checkout if you want them; you can pause them yourself at any time."}
+        </p>
+      ) : (
+        <>
+          <p className="m-0 max-w-[60ch] text-[11.5px] leading-relaxed text-muted">
+            Students can pay by card or any UPI app through Printify&apos;s checkout; the order queues itself the moment
+            the money lands and your share is paid out to you on the payout day — every order and every payout is
+            listed under Takings. <b className="font-semibold">Pause it whenever you like</b>: students then pay your
+            UPI id directly, as always, until you switch it back on.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold", paused ? "bg-clay text-clay-ink" : "bg-sage text-sage-ink")}>
+              {paused ? "Paused — students pay you directly" : "On — students can pay through Printify"}
+            </span>
+            <SaveButton
+              dirty
+              valid
+              saving={saving}
+              saved={saved}
+              onClick={() => void run(() => updateOperator(operator.id, { gateway_paused: !paused } as OperatorSettings), "Couldn't change that.")}
+              label={paused ? "Resume payments through Printify" : "Pause payments through Printify"}
+            />
+          </div>
+        </>
+      )}
+      {error && <p className="m-0 mt-2 text-[12px] text-clay-ink dark:text-clay">{error}</p>}
+    </div>
+  );
+}

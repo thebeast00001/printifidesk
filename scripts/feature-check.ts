@@ -19,7 +19,7 @@ import { deskPrefix, parseScan } from "../components/operator/scan-sheet";
 import QRCode from "qrcode";
 import jsQR from "jsqr";
 import { deskPath, hostsFrom, isSingleHost, onDesk, routeFor, sameOriginPath, surfaceFor } from "../lib/surface";
-import { periodStart } from "../lib/platform";
+import { nextPayoutDate, periodStart } from "../lib/platform";
 
 let fails = 0;
 const check = (name: string, got: unknown, want: unknown) => {
@@ -608,6 +608,14 @@ check("Word is turned away with the way out", validate(fake("essay.docx"))?.incl
 check("PowerPoint too", validate(fake("deck.pptx"))?.includes("Save it as a PDF first"), true);
 check("the upload names its type when the browser doesn't", contentTypeOf(fake("scan.heic")), "image/heic");
 check("the upload keeps the browser's type when it has one", contentTypeOf(fake("a.pdf", "application/pdf")), "application/pdf");
+
+console.log("\n— the payout day (0040) —");
+// 2026-09-16 is a Wednesday (IST). Monday payouts: next is the 21st; Wednesday: today.
+const wed = new Date("2026-09-16T05:00:00Z");
+check("Monday payout from a Wednesday → next Monday", nextPayoutDate(1, "Asia/Kolkata", wed).getDate(), 21);
+check("payout day today counts as today", nextPayoutDate(3, "Asia/Kolkata", wed).getDate(), 16);
+check("Sunday payout → the coming Sunday", nextPayoutDate(7, "Asia/Kolkata", wed).getDate(), 20);
+check("late at night IST it's still the desk's day, not UTC's", nextPayoutDate(4, "Asia/Kolkata", new Date("2026-09-16T19:30:00Z")).getDate(), 17);
 
 const done = fails === 0 ? "\nPASS - all checks passed" : `\nFAIL - ${fails} check(s) failed`;
 console.log(done);

@@ -184,6 +184,8 @@ export interface Operator {
   extras?: Extra[];
   unpaid_expiry_minutes?: number;
   unclaimed_after_hours?: number;
+  /** 0040: the owner's switch — payments through Printify paused; students pay the desk directly meanwhile. */
+  gateway_paused?: boolean;
   accepts_cash: boolean;
   paper_stock: number | null;
   low_paper_at: number;
@@ -240,6 +242,7 @@ export type OperatorSettings = Partial<
     | "extras"
     | "unpaid_expiry_minutes"
     | "unclaimed_after_hours"
+    | "gateway_paused"
   >
 >;
 
@@ -253,6 +256,7 @@ const OPERATOR_SELECT_LEGACY =
 // 42703 ("column does not exist") steps down one list at a time, so a
 // project on 0028 still gets 0027's columns rather than none of them.
 const OPERATOR_SELECTS = [
+  OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status, hours, closed_on, tz, extras, unpaid_expiry_minutes, unclaimed_after_hours, gateway_paused", // 0040
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status, hours, closed_on, tz, extras, unpaid_expiry_minutes, unclaimed_after_hours", // 0039
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status", // 0032
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr", // 0031

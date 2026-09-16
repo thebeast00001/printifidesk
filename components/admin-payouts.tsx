@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Loader2, Send, X } from "lucide-react";
-import { adminPayoutDesks, periodStart, recordPayout, type DeskPayoutRow, type FeePeriod } from "@/lib/platform";
+import { adminPayoutDesks, nextPayoutDate, periodStart, platformSettings, recordPayout, setPayoutDay, WEEKDAYS, type DeskPayoutRow, type FeePeriod } from "@/lib/platform";
 import { money } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +27,25 @@ export function AdminPayouts() {
   const [rows, setRows] = useState<DeskPayoutRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const from = useMemo(() => periodStart(period), [period]);
+  // 0040: the day desks are paid on — a promise the desks' Takings and the
+  // terms both read from the same row.
+  const [payoutDay, setPayoutDayState] = useState<number | null>(null);
+  const [savingDay, setSavingDay] = useState(false);
+  useEffect(() => {
+    void platformSettings().then((s) => setPayoutDayState(s.payout_weekday));
+  }, []);
+  async function changeDay(weekday: number) {
+    setSavingDay(true);
+    setError(null);
+    try {
+      await setPayoutDay(weekday);
+      setPayoutDayState(weekday);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't set the payout day.");
+    } finally {
+      setSavingDay(false);
+    }
+  }
 
   const load = useCallback(async () => {
     setError(null);
@@ -60,6 +79,25 @@ export function AdminPayouts() {
           <p className="m-0 mt-0.5 text-[12.5px] text-muted">
             Online payments land with Printify; each desk&apos;s share is owed to it until you send it and record it here.
           </p>
+          <label className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px]">
+            <span className="text-muted">Desks are paid every</span>
+            <select
+              value={payoutDay ?? 1}
+              disabled={payoutDay === null || savingDay}
+              onChange={(e) => void changeDay(Number(e.target.value))}
+              className="rounded-lg border border-line bg-surface-sunk px-2 py-1 text-[12.5px] font-semibold outline-none focus:border-ink disabled:opacity-60"
+            >
+              {WEEKDAYS.map((d, i) => (
+                <option key={d} value={i + 1}>{d}</option>
+              ))}
+            </select>
+            {payoutDay && (
+              <span className="text-muted">
+                — next {nextPayoutDate(payoutDay).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}. Every
+                desk sees this day in Takings and in the terms.
+              </span>
+            )}
+          </label>
         </div>
         <div className="flex gap-0.5 rounded-full border border-line bg-surface-sunk p-1">
           {PERIODS.map((p) => (

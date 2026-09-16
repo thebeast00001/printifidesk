@@ -8,7 +8,7 @@ import { isQrOnlyMerchant, normaliseVpa, parseUpiQr, vpaProblem, type UpiKind } 
 import { decodePixels } from "./operator/scan-sheet";
 import { money, quote, rateCardOf, DEFAULT_CONFIG } from "@/lib/pricing";
 import { cn, spring } from "@/lib/utils";
-import { ExtrasSettings, WeeklyHoursSettings, WindowsSettings } from "./operator/desk-setup";
+import { ExtrasSettings, OnlinePaymentsSwitch, WeeklyHoursSettings, WindowsSettings } from "./operator/desk-setup";
 
 type Field = {
   key: keyof OperatorSettings;
@@ -270,6 +270,8 @@ export function OperatorPricing({
       <WindowsSettings operator={operator} onSaved={onSaved} />
 
       <UpiSettings operator={operator} onSaved={onSaved} />
+
+      <OnlinePaymentsSwitch operator={operator} onSaved={onSaved} />
 
       {/* Two real quotes, so a mistyped decimal is obvious before saving. */}
       <div className="mt-5 grid gap-2.5 sm:grid-cols-2">

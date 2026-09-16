@@ -18,6 +18,8 @@ export interface PlatformSettings {
   payee_kind: UpiKind;
   /** Days past month-end before an unsettled fee locks the desk closed. */
   grace_days: number;
+  /** 0040: the day Printify pays desks their online share — 1 Monday … 7 Sunday. */
+  payout_weekday: number;
   updated_at: string;
 }
 
@@ -28,6 +30,7 @@ const EMPTY: PlatformSettings = {
   payee_name: null,
   payee_kind: "personal",
   grace_days: 15,
+  payout_weekday: 1,
   updated_at: "",
 };
 
@@ -67,6 +70,7 @@ async function fetchSettings(): Promise<PlatformSettings> {
         payee_name: data.payee_name ?? null,
         payee_kind: data.payee_kind === "merchant" ? "merchant" : "personal",
         grace_days: Number(data.grace_days ?? 15),
+        payout_weekday: Number(data.payout_weekday ?? 1),
         updated_at: data.updated_at,
       };
   cache = { at: Date.now(), value };
@@ -199,6 +203,41 @@ export interface Payout {
   amount: number;
   note: string | null;
   created_at: string;
+  /** 0040: the window of online orders this payout covered; null on payouts recorded before it. */
+  covers_from: string | null;
+  covers_to: string | null;
+}
+
+/** One online-paid order as the desk's statement shows it (0040). */
+export interface PayoutOrderRow {
+  id: string;
+  token: string | null;
+  paid_at: string;
+  status: string;
+  total: number;
+  platform_fee: number;
+  refund_amount: number | null;
+  share: number;
+  /** Cashfree's payment id — the line the desk can check against Printify's word. */
+  payment_id: string | null;
+}
+
+export const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
+
+/**
+ * The next payout date for a given weekday (1 Monday … 7 Sunday), in the
+ * desk's timezone. Today counts if today is the day. Returned as a Date at
+ * local midnight, for formatting; the promise is the day, not a time.
+ */
+export function nextPayoutDate(weekday: number, tz = "Asia/Kolkata", from: Date = new Date()): Date {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(from);
+  const get = (t: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === t)?.value ?? "";
+  const todayIndex = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].indexOf(get("weekday").slice(0, 3).toLowerCase());
+  const want = Math.min(7, Math.max(1, Math.round(weekday))) - 1;
+  const ahead = (want - todayIndex + 7) % 7;
+  const local = new Date(Number(get("year")), Number(get("month")) - 1, Number(get("day")));
+  local.setDate(local.getDate() + ahead);
+  return local;
 }
 
 const num = (v: unknown) => Number(v ?? 0);
@@ -225,9 +264,10 @@ export async function payoutWindow(operatorId: string, from: Date, to: Date = ne
 export async function listPayouts(operatorId: string): Promise<Payout[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
+  // `*`: covers_from/covers_to arrive with 0040; before it they read as null.
   const { data, error } = await supabase
     .from("platform_payouts")
-    .select("id, amount, note, created_at")
+    .select("*")
     .eq("operator_id", operatorId)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -237,15 +277,51 @@ export async function listPayouts(operatorId: string): Promise<Payout[]> {
     amount: num(r.amount),
     note: (r.note as string | null) ?? null,
     created_at: String(r.created_at),
+    covers_from: (r.covers_from as string | null) ?? null,
+    covers_to: (r.covers_to as string | null) ?? null,
   }));
 }
 
-/** Admin only, enforced in SQL. "I sent the desk this much." */
-export async function recordPayout(operatorId: string, amount: number, note: string): Promise<void> {
+/** The desk's statement: every online-paid order in the window, with the share on each. Owner or admin. */
+export async function payoutOrders(operatorId: string, from: Date | string, to: Date | string = new Date()): Promise<PayoutOrderRow[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const iso = (d: Date | string) => (typeof d === "string" ? d : d.toISOString());
+  const { data, error } = await supabase.rpc("payout_orders", { p_operator: operatorId, p_from: iso(from), p_to: iso(to) });
+  if (error) throw new Error(explain(error.message));
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    id: String(r.id),
+    token: (r.token as string | null) ?? null,
+    paid_at: String(r.paid_at),
+    status: String(r.status),
+    total: num(r.total),
+    platform_fee: num(r.platform_fee),
+    refund_amount: r.refund_amount === null || r.refund_amount === undefined ? null : num(r.refund_amount),
+    share: num(r.share),
+    payment_id: (r.payment_id as string | null) ?? null,
+  }));
+}
+
+/** Admin only, enforced in SQL. "I sent the desk this much, for everything up to now." */
+export async function recordPayout(operatorId: string, amount: number, note: string, coversTo: Date = new Date()): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) throw new Error("No database connection.");
-  const { error } = await supabase.rpc("record_payout", { p_operator: operatorId, p_amount: amount, p_note: note.trim() || null });
+  const { error } = await supabase.rpc("record_payout", {
+    p_operator: operatorId,
+    p_amount: amount,
+    p_note: note.trim() || null,
+    p_covers_to: coversTo.toISOString(),
+  });
   if (error) throw new Error(explain(error.message));
+}
+
+/** Admin only: the weekday desks are paid on (1 Monday … 7 Sunday). */
+export async function setPayoutDay(weekday: number): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { error } = await supabase.rpc("set_payout_day", { p_weekday: weekday });
+  if (error) throw new Error(explain(error.message));
+  cache = null;
 }
 
 export async function adminPayoutDesks(from: Date, to: Date = new Date()): Promise<DeskPayoutRow[]> {

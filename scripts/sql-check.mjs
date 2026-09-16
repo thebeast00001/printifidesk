@@ -2342,6 +2342,77 @@ await scenario("the sweep: unpaid orders expire, ready ones nobody collected are
   return "stale unpaid → cancelled by the system; fresh, claimed and scheduled left; forgotten ready → unclaimed, slot freed, share kept; both told; stranger refused; a second sweep finds nothing";
 });
 
+/* ---------- 0040: trust, made visible ---------- */
+
+await scenario("the owner can pause payments through Printify; payouts say what they covered; the payout day is the admin's", async () => {
+  await actingAs(null);
+  await db.exec(`insert into public.staff (user_id, operator_id, role) values ('hand_pause', '${OPERATOR}', 'staff') on conflict do nothing;`);
+  await db.query(`update public.operators set gateway_paused = false where id = $1;`, [OPERATOR]);
+  // Staff can't; the owner can, both ways; the admin's switch-on is untouched.
+  const byStaff = await refused("authenticated", "hand_pause", `update public.operators set gateway_paused = true where id = $1;`, [OPERATOR]);
+  if (!/Only the desk's owner/.test(byStaff ?? "")) throw new Error(`staff paused: ${byStaff ?? "allowed"}`);
+  const byOwner = await refused("authenticated", "op_test", `update public.operators set gateway_paused = true where id = $1;`, [OPERATOR]);
+  if (byOwner) throw new Error(`owner refused: ${byOwner}`);
+  const ownerOn = await refused("authenticated", "op_test", `update public.operators set gateway_status = 'collect' where id = $1;`, [OPERATOR]);
+  if (!/Only Printify switches/.test(ownerOn ?? "")) throw new Error(`owner switched the gateway on: ${ownerOn ?? "allowed"}`);
+  await actingAs(null);
+  const { rows: paused } = await db.query(`select gateway_paused from public.operators where id = $1;`, [OPERATOR]);
+  if (!paused[0].gateway_paused) throw new Error("the pause didn't land");
+  await db.query(`update public.operators set gateway_paused = false where id = $1;`, [OPERATOR]);
+
+  // Two online orders, then a payout that covers them; the statement lists exactly those.
+  await actingAs("student_trust");
+  const mk = async (name) => (await db.query(`select public.place_order($1, $2::jsonb) as id;`, [OPERATOR, JSON.stringify([{ name, pages: 3, colour_pages: 0, config: { copies: 1 } }])])).rows[0].id;
+  const a1 = await mk("t1.pdf");
+  const a2 = await mk("t2.pdf");
+  await actingAs(null);
+  for (const id of [a1, a2]) {
+    await db.query(`select public.gateway_begin($1, $2, false);`, [id, `PF${id.replace(/-/g, "")}`]);
+    await db.query(`select public.gateway_paid($1, $2, (select total from public.orders where id = $1), 'upi', now());`, [id, `cf_${id.slice(0, 8)}`]);
+  }
+  await actingAs("admin_test");
+  const { rows: bal } = await db.query(`select balance from public.payout_balance($1);`, [OPERATOR]);
+  const owed = Number(bal[0].balance);
+  if (owed <= 0) throw new Error("nothing owed after two online payments");
+  const { rows: pid } = await db.query(`select public.record_payout($1, $2, 'Week 38', now()) as id;`, [OPERATOR, owed]);
+  const { rows: payout } = await db.query(`select covers_from, covers_to from public.platform_payouts where id = $1;`, [pid[0].id]);
+  const { rows: listed } = await db.query(`select id, share, payment_id from public.payout_orders($1, $2, $3);`, [OPERATOR, payout[0].covers_from, payout[0].covers_to]);
+  if (!listed.some((r) => r.id === a1) || !listed.some((r) => r.id === a2)) throw new Error("the statement misses an order it paid for");
+  if (listed.some((r) => !r.payment_id)) throw new Error("a line lacks Cashfree's reference");
+  // The share the statement shows sums to what was paid... for the two new lines at least.
+  const two = listed.filter((r) => r.id === a1 || r.id === a2).reduce((n, r) => n + Number(r.share), 0);
+  if (two <= 0) throw new Error("the shares on the statement are zero");
+  // A window can't end before the last one did.
+  let back = "";
+  try {
+    await db.query(`select public.record_payout($1, 1, 'again', now() - interval '1 hour');`, [OPERATOR]);
+  } catch (error) {
+    back = String(error?.message ?? error);
+  }
+  if (!/ends before the last/.test(back)) throw new Error(`a backwards window was recorded: ${back || "no error"}`);
+  // The statement is the owner's; staff and strangers get nothing.
+  const asStaff = await (async () => { await asRole("authenticated", "hand_pause"); try { return (await db.query(`select * from public.payout_orders($1, '1970-01-01', now());`, [OPERATOR])).rows.length; } finally { await asRoot(); } })();
+  if (asStaff !== 0) throw new Error("staff read the payout statement");
+  // The payout day: the admin's alone, 1–7.
+  await actingAs("op_test");
+  let notAdmin = "";
+  try { await db.query(`select public.set_payout_day(5);`); } catch (error) { notAdmin = String(error?.message ?? error); }
+  if (!/Only the admin/.test(notAdmin)) throw new Error(`an owner set the payout day: ${notAdmin || "no error"}`);
+  await actingAs("admin_test");
+  await db.query(`select public.set_payout_day(5);`);
+  const { rows: day } = await db.query(`select payout_weekday from public.platform_settings where id;`);
+  if (day[0].payout_weekday !== 5) throw new Error(`payout day ${day[0].payout_weekday}`);
+  let bad = "";
+  try { await db.query(`select public.set_payout_day(9);`); } catch (error) { bad = String(error?.message ?? error); }
+  if (!/1 \(Monday\) to 7/.test(bad)) throw new Error(`weekday 9 accepted: ${bad || "no error"}`);
+  await db.query(`select public.set_payout_day(1);`);
+  await actingAs(null);
+  await db.query(`delete from public.platform_payouts where id = $1;`, [pid[0].id]);
+  await db.query(`delete from public.orders where id in ($1, $2);`, [a1, a2]);
+  await db.query(`delete from public.staff where user_id = 'hand_pause';`);
+  return "staff can't pause, the owner can, switching on stays the admin's; a payout records its window and its statement names the orders with Cashfree's refs; staff get no statement; the payout day is admin-only, 1–7";
+});
+
 /* ---------- 0037: a payment through Printify is heard on both sides ---------- */
 
 await scenario("a gateway payment pushes 'paid online' to the desk and 'paid ₹x' to the student, once", async () => {
@@ -2472,7 +2543,9 @@ const GRANTS = {
   "restore_operator(uuid)": ["authenticated"],
   "payout_balance(uuid)": ["authenticated"],
   "payout_window(uuid,timestamp with time zone,timestamp with time zone)": ["authenticated"],
-  "record_payout(uuid,numeric,text)": ["authenticated"],
+  "record_payout(uuid,numeric,text,timestamp with time zone)": ["authenticated"],
+  "payout_orders(uuid,timestamp with time zone,timestamp with time zone)": ["authenticated"],
+  "set_payout_day(integer)": ["authenticated"],
   "admin_payout_desks(timestamp with time zone,timestamp with time zone)": ["authenticated"],
   "set_gateway_collect(uuid,boolean)": ["authenticated"],
   // The server's.

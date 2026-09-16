@@ -723,6 +723,20 @@ database enforces rather than a screen that suggests it:
   `allowed_mime_types` is PDF plus the image types — so every job at the
   desk opens, and every page count on a bill was measured.
 
+**Trust, made visible (`0040`).** "Printify collects and pays me later"
+asks a desk to extend credit. Three things make that promise checkable
+and revocable: the **owner's switch** (`operators.gateway_paused` — pause
+payments through Printify at any moment, students pay the desk directly
+meanwhile; switching *on* stays the admin's, staff can't touch either),
+**the money per order** (`payout_orders()` — every online-paid order with
+the bill, the fee, the share and Cashfree's reference, on the desk's
+Takings; a payout now records the window it covered, `covers_from`/
+`covers_to`, so every payout opens to the exact orders behind it, with a
+CSV for the accountant), and a **fixed payout day**
+(`platform_settings.payout_weekday`, set on `/admin`, shown as *next payout
+Mon 22 Sep* on Takings and named in `/desk-terms`, which reads it on every
+request).
+
 Also: a printable **receipt** per order (`/receipt/<id>`, from the
 snapshot; *Print or save as PDF* is the browser's dialog, the one route to a
 file that works on every phone without a server making one), a **refund
@@ -1251,7 +1265,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0039** in the SQL editor, pasted from the files, **in
+2. **Run 0022 → 0040** in the SQL editor, pasted from the files, **in
    number order** — a later migration can name a column an earlier one
    adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
    student update on an order failed and the X on /orders did nothing).
@@ -1270,6 +1284,10 @@ Things the code can't do on its own, in the order they bite:
    the admin's fee rows errors quietly; until 0034, a too-late cancel is
    refused by the policy alone (silently) rather than by the guard (in words);
    until 0035, online payment can't be turned on for a desk.
+   **Then 0040** — the owner's pause switch, per-order payout statements
+   and the payout day. After it runs, pick the day on `/admin` → *Payouts to
+   desks* (it defaults to Monday); the desks' Takings and `/desk-terms`
+   read it from the same row.
    **Then 0038 and 0039, each on its own** — 0038 is one line (a new order
    status) and *must* be run and finished before 0039 is pasted: Postgres
    refuses a new enum value in the transaction that added it, and 0039's
@@ -1303,7 +1321,7 @@ Things the code can't do on its own, in the order they bite:
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
    project, so: create a new project in **Mumbai (`ap-south-1`)**, run
-   `0001 → 0039` in its SQL editor, create the private `documents` bucket,
+   `0001 → 0040` in its SQL editor, create the private `documents` bucket,
    add both Clerk domains under Authentication → Third-Party Auth, then
    swap `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    and `SUPABASE_SERVICE_ROLE_KEY` on both Vercel projects and in

@@ -52,6 +52,7 @@ export const MIGRATION_PROBES: MigrationProbe[] = [
   { id: "0036", without: "every function is callable by anyone with the anon key; the notification queue is readable", check: fn("is_server") },
   // 0038 is the enum value alone and can't be asked for from here; 0039 can't apply without it.
   { id: "0038+0039", without: "no owner/staff roles, weekly hours, extras, corrected bills or unclaimed orders; the pay sheet and desk settings error", check: column("operators", "extras") },
+  { id: "0040", without: "the owner can't pause online payments; payouts have no statement; no payout day on Takings or the terms", check: column("operators", "gateway_paused") },
 ];
 
 export interface MigrationReport {
