@@ -36,20 +36,11 @@ const securityHeaders = [
 /**
  * The site's one address. `www.` answered with the same pages, and Google
  * indexed that copy as the original — a second address for the same site
- * splits its standing between the two. Sent home for good (308) so there is
- * one. The host is found the way the middleware finds it (lib/surface.ts
- * hostsFrom): NEXT_PUBLIC_SITE_HOST, or the desk host with its `desk.`
- * taken off. Neither set — a bare localhost — nothing redirects.
+ * splits its standing between the two. Any `www.` host is sent to the same
+ * name without it, for good (308), whatever the deployment's host variables
+ * say: the rule needs nothing configured to be right, and a bare localhost
+ * never has a `www.` to match.
  */
-const cleanHost = (value: string | undefined) =>
-  (value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, "")
-    .replace(/\/.*$/, "");
-const deskHost = cleanHost(process.env.NEXT_PUBLIC_DESK_HOST);
-const siteHost = cleanHost(process.env.NEXT_PUBLIC_SITE_HOST) || (deskHost.startsWith("desk.") ? deskHost.slice("desk.".length) : "");
-
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   // No reason to announce the framework in every response.
@@ -62,12 +53,11 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["lucide-react", "motion"],
   },
   async redirects() {
-    if (!siteHost) return [];
     return [
       {
         source: "/:path*",
-        has: [{ type: "host", value: `www.${siteHost}` }],
-        destination: `https://${siteHost}/:path*`,
+        has: [{ type: "host", value: "www.(?<bare>.+)" }],
+        destination: "https://:bare/:path*",
         permanent: true,
       },
     ];
