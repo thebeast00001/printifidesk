@@ -126,6 +126,7 @@ export function AccountSettings() {
       setProfile(row);
     }
     setLoading(false);
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {
@@ -312,6 +313,7 @@ export function PrivacySettings() {
     const session = await ensureSession();
     if (session.status !== "ready") return setDocs([]);
     setDocs(await listDocuments());
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {
@@ -332,7 +334,7 @@ export function PrivacySettings() {
   return (
     <SettingsGroup
       title="Privacy"
-      note="Operators can send a file to the printer but never download it. Deleting removes the stored copy immediately."
+      note="Only the desk you order from can open a file, only while the order is live, and every open is recorded. Deleting removes the stored copy immediately."
     >
       <SettingsRow
         label="Delete stored files"
@@ -418,6 +420,7 @@ export function NotificationSettings() {
     setEnabled(row?.notify_whatsapp ?? true);
     setPhone(row?.phone ?? null);
     setRecent((log ?? []) as NotificationRow[]);
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {
@@ -529,6 +532,7 @@ function PushRow() {
 
   const load = useCallback(async () => {
     setState(await pushState());
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {

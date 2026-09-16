@@ -213,7 +213,7 @@ export function ScanSheet({
       setMatch({ order: candidates[0], proof: "unverified" });
       setChoices([]);
     },
-    [ready],
+    [ready, operatorId],
   );
 
   // Camera loop. Runs only while the sheet is open and no order has been

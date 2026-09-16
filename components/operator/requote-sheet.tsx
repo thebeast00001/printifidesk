@@ -54,7 +54,7 @@ export function RequoteSheet({
       if (!Number.isFinite(pages) || pages < 1 || pages > 5000) return null;
       if (!Number.isFinite(colour) || colour < 0 || colour > pages) return null;
       // The same layering the bill uses: defaults, the order's, then the file's own.
-      out.push({ pages, colourPages: colour, config: { ...DEFAULT_CONFIG, ...order.config, ...(it.config ?? {}) } as PrintConfig });
+      out.push({ pages, colourPages: colour, config: { ...DEFAULT_CONFIG, ...order.config, ...it.config } as PrintConfig });
     }
     return out;
   }, [items, counts, order.config]);

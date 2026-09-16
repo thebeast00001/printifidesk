@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { useAuth, useUser } from "@clerk/nextjs";
 import { registerClerkBridge, syncProfile } from "@/lib/supabase/client";
 import { useProfileSync } from "@/lib/profile-sync";
@@ -31,7 +31,7 @@ export function SupabaseBridge() {
    * seconds is swapped for a fresh one. With a twenty-second heartbeat, every
    * token is replaced before it can lapse.
    */
-  const freshToken = async () => {
+  const freshToken = useCallback(async () => {
     const token = await getToken();
     if (!token) return null;
     const remaining = jwtMsRemaining(token);
@@ -39,7 +39,7 @@ export function SupabaseBridge() {
       return (await getToken({ skipCache: true })) ?? token;
     }
     return token;
-  };
+  }, [getToken]);
 
   // Register synchronously too, so the very first render already has a token
   // getter — otherwise the first query races ahead of this effect.
@@ -61,7 +61,7 @@ export function SupabaseBridge() {
       fullName: user.fullName,
       avatarUrl: user.imageUrl ?? null,
     }).then(setSyncError);
-  }, [getToken, userId, isLoaded, user, setSyncError]);
+  }, [freshToken, userId, isLoaded, user, setSyncError]);
 
   return null;
 }

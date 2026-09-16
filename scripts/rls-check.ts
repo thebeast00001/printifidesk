@@ -68,7 +68,7 @@ if (!SUPABASE_URL || !ANON_KEY || !STUDENT_SECRET || !studentEmail) {
 async function clerk<T>(secret: string, path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`https://api.clerk.com/v1${path}`, {
     ...init,
-    headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json", ...init?.headers },
   });
   if (!res.ok) throw new Error(`Clerk ${path} → ${res.status} ${await res.text()}`);
   return (await res.json()) as T;

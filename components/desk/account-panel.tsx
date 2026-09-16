@@ -46,6 +46,7 @@ export function AccountPanel() {
     const row = (data as Me | null) ?? { name: null, phone: null };
     setMe(row);
     setDraft({ name: row.name ?? "", phone: row.phone ?? "" });
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {

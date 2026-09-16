@@ -338,7 +338,7 @@ function UpiSettings({ operator, onSaved }: { operator: Operator; onSaved: () =>
     setMc(operator.upi_mc ?? null);
     setQrText(operator.upi_qr ?? null);
     setRound(operator.round_to_rupee === true);
-  }, [operator.upi_vpa, operator.upi_name, operator.upi_kind, operator.upi_mc, operator.round_to_rupee]);
+  }, [operator.upi_vpa, operator.upi_name, operator.upi_kind, operator.upi_mc, operator.upi_qr, operator.round_to_rupee]);
 
   // A paste from WhatsApp or a business app brings invisible characters,
   // and some phones copy a QR's whole upi:// text — both become the id.

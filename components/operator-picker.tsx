@@ -65,6 +65,7 @@ export function OperatorPicker() {
       list.map(async (op) => [op.id, await operatorWait(op.id).catch(() => null)] as const),
     );
     setWaits(Object.fromEntries(pairs));
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   const priced = useMemo(

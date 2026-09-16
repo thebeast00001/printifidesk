@@ -162,7 +162,7 @@ function IdleHeadline({ wait, operator }: { wait: OperatorWait; operator: Operat
     if (till) out.push(`Open till ${till}`);
     out.push("Print from your phone");
     return out;
-  }, [wait.wait_minutes, card, operator.closes_at]);
+  }, [wait.wait_minutes, card, operator]);
 
   const [index, setIndex] = useState(0);
 

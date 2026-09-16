@@ -42,6 +42,7 @@ export function DiagnosticsView() {
     if (state.status !== "ready") return;
     setWho(await whoami());
     setStaffOperator(await staffOperatorId());
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {
@@ -211,6 +212,7 @@ export function ClaimAdmin() {
     // Somebody holds it. Whether that's you is the useful distinction — a seat
     // taken by a mistyped row looks identical to no seat at all otherwise.
     setState((await isAdmin()) ? "claimed" : "held-by-other");
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {

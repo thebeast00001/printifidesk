@@ -1214,30 +1214,44 @@ rendering, since their colours aren't in the operator list.
 
 ```
 app/
-  layout.tsx          fonts, metadata, theme provider, <AppChrome>
-  page.tsx            home — upload, files, live status, totals
-  orders/page.tsx     your orders, live
-  operator/page.tsx   Printify Operator — the live print queue
-  profile/page.tsx    totals, stored documents, connection status
-  settings/page.tsx   appearance, account, privacy
+  layout.tsx            fonts, metadata + structured data, theme, <AppChrome>
+  page.tsx              home — upload, files, live status, how it works, footer
+  orders/, profile/, settings/, receipt/[id]/   the student's own pages
+  operator/             the desk: queue, takings, settings (served as / on the desk host)
+  admin/                fee, desks, applications — the admin only
+  join/, sign-in/, sso-callback/, board/, diagnostics/
+  privacy/ terms/ refunds/ desk-terms/          the policies (server-rendered)
+  api/                  payments (Cashfree), notifications, purge, convert, desk sign-in
+  robots.txt/ sitemap.xml/ opengraph-image.tsx  what a search engine is told
 components/
-  status-island.tsx   live job capsule, driven entirely by order rows
-  operator-board.tsx  the only thing that advances an order
-  order-list.tsx      your orders, with cancel while still cancellable
-  print-sheet.tsx     upload step → options step → place order
-  upload-step.tsx     dropzone, per-file progress
-  feed.tsx            your stored documents
-  widgets-row.tsx     real totals from my_totals()
-  search-dialog.tsx   ⌘K over your documents and orders
+  status-island.tsx     live job capsule, driven entirely by order rows
+  operator-portal.tsx   the desk's queue — the only thing that advances an order
+  operator/             the desk's tools: scan, slip, shelf, stock, staff, devices,
+                        close-out, messages, hours/extras/windows (desk-setup), requote
+  desk/                 the desk site's frame: provider, faces, payouts, fees, account
+  order-list.tsx        your orders, with cancel while still cancellable
+  print-sheet.tsx       upload step → options step → place order
+  upload-step.tsx       dropzone, per-file progress
+  pay-sheet.tsx         UPI, cash, or Printify's hosted checkout
+  feed.tsx              your stored documents
+  widgets-row.tsx       real totals from my_totals()
+  search-dialog.tsx     ⌘K over your documents and orders
+  site-footer.tsx, how-it-works.tsx   the public face of the home page
+  legal/                the policies' shared frame
 hooks/
-  use-tracking.ts     realtime subscriptions + queue reads
-  use-uploader.ts     validate → analyse → upload → record
+  use-tracking.ts       realtime subscriptions + queue reads
+  use-uploader.ts       validate → analyse → upload (→ convert) → record
 lib/
-  orders.ts           order reads/writes and the status machine
-  analysis.ts         page count + per-page colour
-  pricing.ts          pure quote engine — same code client and server
-  supabase/client.ts  browser client, tokens bridged from Clerk
-supabase/migrations/  schema, RLS, triggers, queue functions
+  orders.ts             order reads/writes and the status machine
+  analysis.ts           page count + per-page colour; which files are taken
+  pricing.ts            pure quote engine — same code client and server
+  hours.ts              the desk's week, the Open switch, and which one decides
+  gateway.ts, server/cashfree.ts   paying through Printify
+  seo.ts                the site's name, address and public pages, once
+  surface.ts            the two-site routing table
+  supabase/client.ts    browser client, tokens bridged from Clerk
+supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0041)
+scripts/                the checks: pricing parity, features, the SQL harness, RLS
 ```
 
 ## Traps worth knowing about
@@ -1271,18 +1285,18 @@ can't silently turn every page monochrome.
 
 Kept honest deliberately — anything listed here has no UI pretending otherwise.
 
-- **Payment gateway.** Deliberate — see above.
-- **Server-side conversion.** Word and PowerPoint page counts are estimated from
-  file size and shown with a visible `≈`; they need Gotenberg to be exact. Page
-  review previews PDFs for the same reason.
+- **Server-side page counting.** The browser counts pages and colour from
+  the file itself; nothing on the server opens a PDF to check. A wrong count
+  is caught by the desk opening the file, and fixed with a corrected bill.
 - **Phone OTP.** Clerk is set up with email and Google; SMS sign-in isn't
   enabled yet.
 - **Resumable uploads.** A dropped connection at 90% starts again. Supabase
   supports TUS; the uploader doesn't use it yet.
 - **Batch printing.** The operator opens files order by order rather than
   merging a shift's mono jobs into one spool.
-- **Reorder and camera scan.** Both are real gaps in the student flow, neither
-  is stubbed.
+- **Reorder.** One tap to place the same job again is a real gap in the
+  student flow; it isn't stubbed. (The desk's camera scan is built — see
+  *Scan to hand over*.)
 - **Recovery when an order is declined.** The capsule now offers *Try again*,
   which reopens the sheet — but not one tap to re-place the identical job with
   another operator, which is what it should eventually do.
@@ -1395,13 +1409,14 @@ Things the code can't do on its own, in the order they bite:
 
 Being specific about this matters more than a green badge:
 
-- `npm run check` — types, pricing (168 jobs with a 3.25% fee: whole paise,
+- `npm run check` — types, lint (oxlint: Next's rules, the hooks rules,
+  the correctness set), pricing (168 jobs with a 3.25% fee: whole paise,
   lines + top-up + fee = total, the fee is the percentage of what sits under
   it), phone normalisation, pickup slots, UPI link format, the write-guard
-  column list, the two-site routing table, the fee's calendar windows, and
-  the SQL below. **Passes.**
+  column list, the two-site routing table, the fee's calendar windows, the
+  desk's hours and switch, the payout day, and the SQL below. **Passes.**
 - `npm run build` — **passes.**
-- `npm run check:sql` — all twenty-five migrations applied, re-applied, and their
+- `npm run check:sql` — all forty-one migrations applied, re-applied, and their
   triggers driven through a real order under a real JWT: tokens, the timeline,
   the write guard, per-file settings, the report constraint, the upload
   ceiling, the order rate limit, document ownership, push endpoint sanity, and

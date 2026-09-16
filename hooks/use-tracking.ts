@@ -58,6 +58,7 @@ function blockedBy(session: SessionState): Backend | null {
  */
 function useRealtime(onChange: () => void, enabled: boolean, filter?: string) {
   const handler = useRef(onChange);
+  // oxlint-disable-next-line react/refs -- the latest-value ref, read by callbacks that outlive this render
   handler.current = onChange;
 
   useEffect(() => {
@@ -80,6 +81,7 @@ function useRealtime(onChange: () => void, enabled: boolean, filter?: string) {
 function useReloadOn(topic: Topic, load: () => Promise<void> | void) {
   const version = useChanged(topic);
   const current = useRef(load);
+  // oxlint-disable-next-line react/refs -- the latest-value ref, read by callbacks that outlive this render
   current.current = load;
   useEffect(() => {
     if (version > 0) void current.current();
@@ -143,6 +145,7 @@ export function useActiveOrder() {
         message: error instanceof Error ? error.message : "Couldn't reach the database.",
       });
     }
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {
@@ -223,6 +226,7 @@ export function useOrderHistory() {
     }
     setOrders(await listOrders());
     setBackend({ state: "ready" });
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {
@@ -247,6 +251,7 @@ export function useTotals() {
     }
     setTotals(await myTotals());
     setReady(true);
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {
@@ -282,6 +287,7 @@ export function useOperatorWait() {
       setWait(null);
     }
     setReady(true);
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {
@@ -312,6 +318,7 @@ export function useActiveCount() {
       .in("status", ACTIVE_STATUSES);
     setCount(n ?? 0);
     setReady(true);
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {
@@ -357,6 +364,7 @@ export function useOperatorQueue(preferred: string | null = null) {
         message: error instanceof Error ? error.message : "Couldn't reach the database.",
       });
     }
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey, preferred]);
 
   useEffect(() => {

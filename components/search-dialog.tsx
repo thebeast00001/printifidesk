@@ -58,6 +58,7 @@ export function SearchDialog() {
     const [d, o] = await Promise.all([listDocuments(), listOrders()]);
     setDocs(d);
     setOrders(o);
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {

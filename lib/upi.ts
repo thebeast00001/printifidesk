@@ -211,7 +211,7 @@ export function parseUpiQr(text: string): ScannedUpi | null {
  */
 function parseBharatQr(raw: string): ScannedUpi | null {
   // Tag 00, length 02, value 01: the payload format indicator every EMV QR opens with.
-  if (!/^000201/.test(raw)) return null;
+  if (!raw.startsWith("000201")) return null;
   const top = tlvEntries(raw);
   if (!top) return null;
   let vpa: string | null = null;

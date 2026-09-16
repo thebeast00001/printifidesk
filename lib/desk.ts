@@ -118,17 +118,6 @@ export async function listStaff(operatorId: string): Promise<StaffMember[]> {
   return (data ?? []) as StaffMember[];
 }
 
-export async function addStaff(operatorId: string, email: string, role: "owner" | "staff" = "staff"): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) throw new Error("No database connection.");
-  const { error } = await supabase.rpc("add_staff", {
-    p_operator: operatorId,
-    p_email: email.trim(),
-    p_role: role,
-  });
-  if (error) throw new Error(explain(error.message));
-}
-
 /** Owner or staff — the owner's call, and never the last owner down to staff. */
 export async function setStaffRole(operatorId: string, userId: string, role: "owner" | "staff"): Promise<void> {
   const supabase = getSupabase();

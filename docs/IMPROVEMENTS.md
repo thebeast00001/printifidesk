@@ -15,7 +15,7 @@ Built and passing `npm run check` + `npm run build`:
 | 1.1 | Web push — `lib/push.ts`, `public/sw.js`, dispatch sends push before WhatsApp |
 | 1.2 | QR handover token in the status island |
 | 1.3 | Per-file print settings — `order_items.config`, `0013` |
-| 1.5 | UTR field on the pay sheet, frozen once the operator confirms |
+| 1.5 | UTR field — built, then removed: students didn't have it to hand, and online payment through Printify (0032) settles the question by itself |
 | 1.9 | Report a bad print — `order_reports`, `0013` |
 | 1.6 | Live countdown from `ready_at` / queue position |
 | 2.1 | Audible alert — synthesised chime + browser notification |
@@ -99,10 +99,12 @@ the sheet override per file, defaulting to the job-level setting.
 50 MB file entirely and the student starts over. Supabase Storage supports
 resumable (TUS) uploads; the progress UI is already built for it.
 
-### 1.5 Paste the UPI reference (UTR) — done
-Payment is honour-system: the student says they paid, the operator checks their
-app. Ask for the 12-digit UTR on the "I've paid" step and show it on the
-operator's card. Costs one input field, turns a guess into a lookup.
+### 1.5 Paste the UPI reference (UTR) — built, then taken out
+Payment by the desk's own UPI id is honour-system: the student says they paid,
+the operator checks their app. The UTR field asked the student for a number
+most don't know where to find, so it was removed; a payment through Printify's
+own checkout (0032) is confirmed by the gateway and needs no reference. The
+desk still sees a reference on an order when the gateway recorded one.
 
 ### 1.6 A live countdown, not a static number — done
 "About 8 min" is computed once and sits there. Tick it down from `queued_at`

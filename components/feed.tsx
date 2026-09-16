@@ -37,6 +37,7 @@ export function Feed() {
       });
     }
     setState({ kind: "ready", docs: await listDocuments() });
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {
@@ -70,7 +71,7 @@ export function Feed() {
         <>
           <SignedOutNotice
             title="Sign in to keep your files"
-            body="Uploads are stored against your account so you can reprint them later."
+            body="Uploads are kept in your account — private to you — until you delete them, or six hours after the order they're on is collected."
           />
           <OperatorRates />
         </>

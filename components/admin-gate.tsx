@@ -29,6 +29,7 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
     setClerkId(session.userId);
     setSeatTaken(await adminsExist());
     setAdmin(await isAdmin());
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {

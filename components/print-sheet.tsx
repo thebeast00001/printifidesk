@@ -38,7 +38,6 @@ import {
   quoteOrder,
   rateCardOf,
   type PrintConfig,
-  type QuoteLine,
   type RateCard,
 } from "@/lib/pricing";
 import { cn, easeIos, spring } from "@/lib/utils";

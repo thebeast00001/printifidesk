@@ -21,14 +21,13 @@ import { SettingsGroup } from "./settings-ui";
 import { InstallRow } from "./install-app";
 import { useTotals } from "@/hooks/use-tracking";
 import { useAuthKey } from "@/hooks/use-auth-key";
-import { ensureSession, getSupabase, type SessionState } from "@/lib/supabase/client";
+import { ensureSession, getSupabase } from "@/lib/supabase/client";
 import { listDocuments, type DocumentRow } from "@/lib/upload";
 import { staffOperatorId } from "@/lib/orders";
 import { isAdmin } from "@/lib/operator";
 import { formatBytes } from "@/lib/analysis";
 import { useApp } from "@/lib/store";
 import { useSurface } from "./surface-provider";
-import { cn } from "@/lib/utils";
 
 interface Profile {
   name: string | null;
@@ -47,7 +46,6 @@ export function ProfileView() {
   const { split } = useSurface();
   const openSheet = useApp((s) => s.openSheet);
 
-  const [session, setSession] = useState<SessionState | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [docs, setDocs] = useState<DocumentRow[] | null>(null);
   const [isStaff, setIsStaff] = useState(false);
@@ -55,7 +53,6 @@ export function ProfileView() {
 
   const load = useCallback(async () => {
     const state = await ensureSession();
-    setSession(state);
 
     if (state.status !== "ready") {
       setDocs([]);
@@ -77,6 +74,7 @@ export function ProfileView() {
     setProfile((row as Profile) ?? null);
     setDocs(documents);
     setIsStaff(Boolean(operator));
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {

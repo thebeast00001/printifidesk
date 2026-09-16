@@ -113,7 +113,7 @@ export function SlipDialog({
                   <li key={item.id} className="border-t border-[#eee] py-2 first:border-0">
                     <p className="m-0 truncate text-[12.5px] font-semibold">{item.name}</p>
                     <p className="m-0 font-mono text-[11px] text-[#555]">
-                      {item.pages} p · {settingsLine({ ...order.config, ...(item.config ?? {}) })}
+                      {item.pages} p · {settingsLine({ ...order.config, ...item.config })}
                     </p>
                   </li>
                 ))}

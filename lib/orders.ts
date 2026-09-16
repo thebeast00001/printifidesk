@@ -603,20 +603,6 @@ export async function listOrders(): Promise<OrderRow[]> {
   return (data ?? []) as OrderRow[];
 }
 
-/** The one job the status capsule follows: the newest that isn't finished. */
-export async function activeOrder(): Promise<OrderRow | null> {
-  const supabase = getSupabase();
-  if (!supabase) return null;
-  const { data } = await supabase
-    .from("orders")
-    .select(ORDER_SELECT)
-    .in("status", ACTIVE_STATUSES)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return (data as OrderRow) ?? null;
-}
-
 /**
  * The live order with its timeline embedded — one query where there were
  * two. PostgREST follows order_events.order_id, and the student's own RLS
@@ -811,16 +797,6 @@ export async function acceptRequote(orderId: string): Promise<number> {
   return Number(data);
 }
 
-/** What the corrected counts would come to, priced from the order's own snapshot — for the desk's form. */
-export async function repriceOrder(orderId: string, items: RequoteItem[]): Promise<{ total: number; platform_fee: number; rounding: number } | null> {
-  const supabase = getSupabase();
-  if (!supabase) return null;
-  const { data, error } = await supabase.rpc("reprice_order", { p_order: orderId, p_items: items });
-  if (error) throw new Error(friendly(error.message));
-  const row = data?.[0] as { total: string | number; platform_fee: string | number; rounding: string | number } | undefined;
-  return row ? { total: Number(row.total), platform_fee: Number(row.platform_fee), rounding: Number(row.rounding) } : null;
-}
-
 /** The desk's housekeeping: unpaid orders past their window, ready ones nobody collected. */
 export async function sweepOrders(operatorId: string): Promise<number> {
   const supabase = getSupabase();
@@ -840,20 +816,6 @@ export async function operatorQueue(operatorId: string): Promise<OrderRow[]> {
     .in("status", ACTIVE_STATUSES)
     .order("created_at", { ascending: true });
   return (data ?? []) as OrderRow[];
-}
-
-export async function advanceOrder(
-  orderId: string,
-  to: OrderStatus,
-  note?: string,
-): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) return;
-  const { error } = await supabase
-    .from("orders")
-    .update({ status: to, note: note ?? null })
-    .eq("id", orderId);
-  if (error) throw new Error(friendly(error.message));
 }
 
 function friendly(message: string): string {

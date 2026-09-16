@@ -38,7 +38,7 @@ export function billFor(
       ? items.map((i) => ({
           pages: i.pages,
           colourPages: i.colour_pages,
-          config: { ...DEFAULT_CONFIG, ...order.config, ...(i.config ?? {}) } as PrintConfig,
+          config: { ...DEFAULT_CONFIG, ...order.config, ...i.config } as PrintConfig,
         }))
       : [{ pages: order.pages, colourPages: order.colour_pages, config: { ...DEFAULT_CONFIG, ...order.config } }];
 

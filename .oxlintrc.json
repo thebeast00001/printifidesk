@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "nextjs", "typescript", "unicorn", "oxc"],
+  "categories": { "correctness": "error", "suspicious": "warn", "perf": "warn" },
+  "rules": {
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "error",
+    "react/react-in-jsx-scope": "off",
+    "react/memo-dependencies": "off",
+    "react/exhaustive-effect-dependencies": "off",
+    "react/set-state-in-effect": "off",
+    "react/no-array-index-key": "off",
+    "react/jsx-no-constructed-context-values": "off",
+    "no-await-in-loop": "off",
+    "no-shadow": "off",
+    "no-new": "off",
+    "preserve-caught-error": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/prefer-add-event-listener": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/prefer-array-find": "off",
+    "oxc/no-map-spread": "off"
+  },
+  "ignorePatterns": ["public/**", "design/**", ".next/**", "node_modules/**"],
+  "env": { "browser": true, "node": true, "es2022": true }
+}

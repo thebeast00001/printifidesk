@@ -56,7 +56,7 @@ import { useApp } from "@/lib/store";
 import { AgeBadge, DueBadge, hourLabel, useNow } from "./operator/age";
 import { HandledBy } from "./operator/handled-by";
 import { MessageThread } from "./operator/messages";
-import { NextUpBar, primaryAction } from "./operator/next-up";
+import { NextUpBar } from "./operator/next-up";
 import { ScanSheet } from "./operator/scan-sheet";
 import { SlipDialog } from "./operator/slip";
 import { cn, easeIos, spring } from "@/lib/utils";
@@ -198,6 +198,7 @@ export function OperatorPortal({ operator, owner = true }: { operator: Operator;
       // must not be silent either — that is how "not showing" happens.
       setError(e instanceof Error ? e.message : "Couldn't load student reports.");
     }
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [operator.id, authKey, notePaid]);
 
   useEffect(() => {
@@ -1211,7 +1212,7 @@ function itemSettings(
   item: NonNullable<OrderRow["order_items"]>[number],
   order: PrintConfig,
 ): string {
-  const c = { ...order, ...(item.config ?? {}) };
+  const c = { ...order, ...item.config };
   return [
     c.colour === "bw" ? "black & white" : c.colour === "full" ? "full colour" : "colour where needed",
     c.sides === "double" ? "duplex" : "single-sided",

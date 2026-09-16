@@ -54,6 +54,7 @@ export function OperatorApplication({ onChanged }: { onChanged?: () => void }) {
       setExisting(null);
       setError(e instanceof Error ? e.message : "Couldn't check your application.");
     }
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {

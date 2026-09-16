@@ -83,6 +83,7 @@ export function useConnectionVerdict(): {
     }
 
     setVerdict({ kind: "ok" });
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {

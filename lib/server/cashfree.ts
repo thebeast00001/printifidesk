@@ -54,12 +54,9 @@ export class CashfreeError extends Error {
 
 async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
   if (!cashfreeConfigured()) throw new CashfreeError("Cashfree isn't configured on this deployment.", 503);
-  const res = await fetch(`${base()}${path}`, {
-    method,
-    headers: headers(),
-    body: body === undefined ? undefined : JSON.stringify(body),
-    cache: "no-store",
-  });
+  const init: RequestInit = { method, headers: headers(), cache: "no-store" };
+  if (method === "POST" && body !== undefined) init.body = JSON.stringify(body);
+  const res = await fetch(`${base()}${path}`, init);
   const text = await res.text();
   let json: unknown = null;
   try {

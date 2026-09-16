@@ -49,6 +49,7 @@ export function AdminDesks() {
       setError(e instanceof Error ? e.message : "Couldn't list desks.");
       setDesks([]);
     }
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
   useEffect(() => {
