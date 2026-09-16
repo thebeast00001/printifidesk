@@ -12,7 +12,6 @@ import {
   Printer,
   Receipt,
   Settings2,
-  ShieldCheck,
   Upload,
   Wallet,
 } from "lucide-react";
@@ -23,11 +22,8 @@ import { useTotals } from "@/hooks/use-tracking";
 import { useAuthKey } from "@/hooks/use-auth-key";
 import { ensureSession, getSupabase } from "@/lib/supabase/client";
 import { listDocuments, type DocumentRow } from "@/lib/upload";
-import { staffOperatorId } from "@/lib/orders";
-import { isAdmin } from "@/lib/operator";
 import { formatBytes } from "@/lib/analysis";
 import { useApp } from "@/lib/store";
-import { useSurface } from "./surface-provider";
 
 interface Profile {
   name: string | null;
@@ -43,13 +39,10 @@ export function ProfileView() {
   const { totals, ready } = useTotals();
   const { user } = useUser();
   const clerk = useClerk();
-  const { split } = useSurface();
   const openSheet = useApp((s) => s.openSheet);
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [docs, setDocs] = useState<DocumentRow[] | null>(null);
-  const [isStaff, setIsStaff] = useState(false);
-  const [admin, setAdmin] = useState(false);
 
   const load = useCallback(async () => {
     const state = await ensureSession();
@@ -60,20 +53,16 @@ export function ProfileView() {
     }
 
     const supabase = getSupabase();
-    const [{ data: row }, documents, operator] = await Promise.all([
+    const [{ data: row }, documents] = await Promise.all([
       supabase!
         .from("profiles")
         .select("name, email, roll_no, department, hostel, room")
         .maybeSingle(),
       listDocuments(),
-      staffOperatorId(),
     ]);
-
-    setAdmin(await isAdmin());
 
     setProfile((row as Profile) ?? null);
     setDocs(documents);
-    setIsStaff(Boolean(operator));
   // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
@@ -159,25 +148,9 @@ export function ProfileView() {
           onClick={() => openSheet("upload")}
         />
         <NavRow href="/orders" icon={Receipt} label="Your orders" hint="Tokens and live status" />
-        {/* Only where both sites share a host, and only for people already on a
-            desk. On its own host the desk is its own site; nothing here
-            points at it. */}
-        {!split && isStaff && (
-          <NavRow
-            href="/operator"
-            icon={Printer}
-            label="Printifi Operator"
-            hint="Your queue, prices and hours"
-          />
-        )}
-        {!split && admin && (
-          <NavRow
-            href="/admin"
-            icon={ShieldCheck}
-            label="Desks"
-            hint="Create one, hand its owner a code"
-          />
-        )}
+        {/* Nothing here points at the desk or the admin's tools: those are
+            the desk site's, reached by its own address, and a student's
+            profile is a student's. */}
       </SettingsGroup>
 
       <SettingsGroup
