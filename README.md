@@ -723,6 +723,39 @@ database enforces rather than a screen that suggests it:
   `allowed_mime_types` is PDF plus the image types — so every job at the
   desk opens, and every page count on a bill was measured.
 
+**The switch wins until the hours next change (`0041`).** 0039 made
+"open" the switch AND the schedule, so an owner who opened early and tapped
+Open was still shown closed until nine. Now the schedule is the default
+and a tap is a person's decision that holds until the schedule's next
+change: `open_set_at` is stamped on every flip (by the trigger, and by
+`setOperatorOpen()` explicitly, so tapping Close while "closed by the
+hours" still counts), `operator_last_boundary()` finds the most recent
+scheduled opening or closing, and `operator_open_at()` returns the switch
+if it was flipped after that boundary, else the schedule. Open at 8:30 →
+open now, closed by the hours at 6; close at 3 → closed now, open again by
+the hours at 9 tomorrow. `lib/hours.ts` reads the same way (`openState`,
+`nextChange`), and the switch's own caption says which is deciding.
+
+**Any file, printed as a PDF (`0041`).** Office files (Word, PowerPoint,
+Excel, OpenDocument, RTF, text) are taken when the deployment has a
+converter: they go up as they are, `/api/convert` reads the original with
+the service key, posts it to **Gotenberg** (LibreOffice behind an HTTP
+API) at `CONVERT_URL`, writes the PDF back under the same document id and
+folder, points the row at it and removes the original; the browser then
+fetches the PDF over a signed URL and measures it exactly as it would an
+uploaded PDF — pages, colour, thumbnails — and writes the counts with
+`set_document_analysis()` (its own row, before it's on an order). The desk
+still only ever opens PDFs and photos. If the converter is down the
+original stays and the note says the desk will open it. **To host the
+converter:** any container host will do — on Render, *New → Web Service →
+Deploy an existing image*, image `gotenberg/gotenberg:8`, port 3000, and
+two environment variables `GOTENBERG_API_BASIC_AUTH_USERNAME` /
+`GOTENBERG_API_BASIC_AUTH_PASSWORD` (pick anything long); a free instance
+sleeps when idle and the first conversion after that takes half a minute,
+so a paid instance (~₹600/month) is the difference between "converting…"
+and "why is it stuck". Then on Vercel: `CONVERT_URL=https://<that
+service>`, the same user/password, `NEXT_PUBLIC_CONVERTS_OFFICE=1`.
+
 **Trust, made visible (`0040`).** "Printify collects and pays me later"
 asks a desk to extend credit. Three things make that promise checkable
 and revocable: the **owner's switch** (`operators.gateway_paused` — pause
@@ -1265,7 +1298,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0040** in the SQL editor, pasted from the files, **in
+2. **Run 0022 → 0041** in the SQL editor, pasted from the files, **in
    number order** — a later migration can name a column an earlier one
    adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
    student update on an order failed and the X on /orders did nothing).
@@ -1284,6 +1317,13 @@ Things the code can't do on its own, in the order they bite:
    the admin's fee rows errors quietly; until 0034, a too-late cancel is
    refused by the policy alone (silently) rather than by the guard (in words);
    until 0035, online payment can't be turned on for a desk.
+   **Then 0041** — the Open switch wins until the hours next change, and
+   office files convert to PDF. The conversion needs a converter you host
+   (see *Any file, printed as a PDF* below): deploy Gotenberg, then set
+   `CONVERT_URL`, `CONVERT_USER`, `CONVERT_PASSWORD` and
+   `NEXT_PUBLIC_CONVERTS_OFFICE=1` on the **student** Vercel project. Until
+   those are set, Word/PowerPoint files are turned away with "save as PDF
+   first", exactly as before.
    **Then 0040** — the owner's pause switch, per-order payout statements
    and the payout day. After it runs, pick the day on `/admin` → *Payouts to
    desks* (it defaults to Monday); the desks' Takings and `/desk-terms`
@@ -1321,7 +1361,7 @@ Things the code can't do on its own, in the order they bite:
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
    project, so: create a new project in **Mumbai (`ap-south-1`)**, run
-   `0001 → 0040` in its SQL editor, create the private `documents` bucket,
+   `0001 → 0041` in its SQL editor, create the private `documents` bucket,
    add both Clerk domains under Authentication → Third-Party Auth, then
    swap `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    and `SUPABASE_SERVICE_ROLE_KEY` on both Vercel projects and in

@@ -112,6 +112,26 @@ export async function recordDocument(params: {
   if (error) throw new Error(tableError(error.message));
 }
 
+/** Asks the server to turn an office file into a PDF (0041). Returns the PDF's row fields. */
+export async function convertDocument(documentId: string): Promise<{ storage_path: string; name: string; size_bytes: number }> {
+  const res = await fetch("/api/convert", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ documentId }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; storage_path?: string; name?: string; size_bytes?: number };
+  if (!res.ok || !body.ok || !body.storage_path || !body.name) throw new Error(body.error ?? "The converter didn't answer.");
+  return { storage_path: body.storage_path, name: body.name, size_bytes: Number(body.size_bytes ?? 0) };
+}
+
+/** The exact counts, once the PDF has been measured here (0041). The student's own row, before it's on an order. */
+export async function setDocumentAnalysis(documentId: string, pages: number, colourIndex: number[]): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase.rpc("set_document_analysis", { p_document: documentId, p_pages: pages, p_colour_index: colourIndex });
+  if (error) throw new Error(error.message);
+}
+
 export async function listDocuments(): Promise<DocumentRow[]> {
   const supabase = getSupabase();
   if (!supabase) return [];

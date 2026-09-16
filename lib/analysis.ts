@@ -8,14 +8,18 @@ import type { PDFPageProxy } from "pdfjs-dist";
  * Page count and which pages actually carry colour are what the quote is built
  * from, so they are measured here rather than guessed — the whole smart-colour
  * pitch falls apart if the numbers are made up. PDFs and images are measured
- * exactly, and (0039) they are the only kinds taken: a Word or PowerPoint
- * file can't be counted here and can't be printed at the desk without the
- * program that made it, so the student exports it as a PDF first — one
- * step in Word, Google Docs and PowerPoint alike — and every job arrives
- * as a file the desk can open and a count the bill can stand on.
+ * exactly. Office files (Word, PowerPoint, Excel, text) are taken when the
+ * deployment has a converter (0041: NEXT_PUBLIC_CONVERTS_OFFICE, with
+ * CONVERT_URL on the server): they go up as they are, the server turns them
+ * into a PDF, and that PDF is measured here exactly like an uploaded one —
+ * so the desk still only ever opens PDFs and photos. Without a converter
+ * they're turned away with the one-step way out.
  */
 
-export type FileKind = "PDF" | "IMAGE" | "OTHER";
+export type FileKind = "PDF" | "IMAGE" | "OFFICE" | "OTHER";
+
+/** Whether this deployment can turn office files into PDFs (set alongside CONVERT_URL). */
+export const CONVERTS_OFFICE = process.env.NEXT_PUBLIC_CONVERTS_OFFICE === "1";
 
 /** The exact reason a file was turned away, so the message can say what to do instead. */
 export type Rejection = "office" | "text" | "other";
@@ -37,10 +41,13 @@ const COLOUR_PIXEL_RATIO = 0.004;
 /** Channel spread that counts a pixel as coloured rather than grey. */
 const COLOUR_CHANNEL_SPREAD = 24;
 
-export const ACCEPTED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif"] as const;
-
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif"];
-const OFFICE_EXTENSIONS = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".odt", ".odp", ".ods", ".pages", ".key"];
+/** What LibreOffice turns into a PDF for us. Apple's Pages/Keynote aren't among them. */
+export const OFFICE_EXTENSIONS = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".odt", ".odp", ".ods", ".rtf", ".txt"];
+
+export const ACCEPTED_EXTENSIONS: readonly string[] = CONVERTS_OFFICE
+  ? [".pdf", ...IMAGE_EXTENSIONS, ...OFFICE_EXTENSIONS]
+  : [".pdf", ...IMAGE_EXTENSIONS];
 
 export function extensionOf(name: string): string {
   const lower = name.toLowerCase();
@@ -52,13 +59,14 @@ export function kindOf(file: File): FileKind {
   const ext = extensionOf(file.name);
   if (ext === ".pdf" || file.type === "application/pdf") return "PDF";
   if (file.type.startsWith("image/") || IMAGE_EXTENSIONS.includes(ext)) return "IMAGE";
+  if (OFFICE_EXTENSIONS.includes(ext)) return "OFFICE";
   return "OTHER";
 }
 
 /** Why a file isn't one we take. */
 export function rejectionOf(file: File): Rejection {
   const ext = extensionOf(file.name);
-  if (OFFICE_EXTENSIONS.includes(ext)) return "office";
+  if ([".pages", ".key", ".numbers", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".odt", ".odp", ".ods"].includes(ext)) return "office";
   if (ext === ".txt" || ext === ".rtf" || ext === ".md") return "text";
   return "other";
 }
@@ -85,6 +93,28 @@ export function contentTypeOf(file: File): string {
       return "image/heic";
     case ".heif":
       return "image/heif";
+    case ".doc":
+      return "application/msword";
+    case ".docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case ".ppt":
+      return "application/vnd.ms-powerpoint";
+    case ".pptx":
+      return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    case ".xls":
+      return "application/vnd.ms-excel";
+    case ".xlsx":
+      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case ".odt":
+      return "application/vnd.oasis.opendocument.text";
+    case ".odp":
+      return "application/vnd.oasis.opendocument.presentation";
+    case ".ods":
+      return "application/vnd.oasis.opendocument.spreadsheet";
+    case ".rtf":
+      return "application/rtf";
+    case ".txt":
+      return "text/plain";
     default:
       return "application/octet-stream";
   }
@@ -95,7 +125,11 @@ export function validate(file: File): string | null {
   if (file.size > MAX_FILE_BYTES) {
     return `Too large — ${formatBytes(file.size)}. The limit is ${formatBytes(MAX_FILE_BYTES)}.`;
   }
-  if (kindOf(file) === "OTHER") {
+  const kind = kindOf(file);
+  if (kind === "OFFICE" && !CONVERTS_OFFICE) {
+    return "Save it as a PDF first — File → Save as PDF in Word, or File → Download → PDF in Google Docs — then add the PDF. The desk prints exactly what you see.";
+  }
+  if (kind === "OTHER") {
     switch (rejectionOf(file)) {
       case "office":
         return "Save it as a PDF first — File → Save as PDF in Word, or File → Download → PDF in Google Docs — then add the PDF. The desk prints exactly what you see.";
@@ -133,9 +167,18 @@ export async function analyse(
       note: "Took too long to scan here — we'll count the pages at the counter.",
     });
   }
-  // validate() turned everything else away; this is the image path.
-  return analyseImage(file);
+  if (kind === "IMAGE") return analyseImage(file);
+
+  // An office file: a rough count so the quote isn't blank while the server
+  // turns it into a PDF, which is then measured exactly (use-uploader).
+  return {
+    pages: estimatePages(file),
+    colourIndex: [],
+    exact: false,
+    note: "Converting to PDF — the page count is confirmed in a moment.",
+  };
 }
+
 
 function withTimeout(work: Promise<Analysis>, fallback: Analysis): Promise<Analysis> {
   return new Promise((resolve) => {
@@ -153,7 +196,7 @@ function withTimeout(work: Promise<Analysis>, fallback: Analysis): Promise<Analy
   });
 }
 
-/** A PDF that couldn't be scanned in time: a rough count so the quote isn't blank, marked as such. */
+/** A rough count — a PDF that couldn't be scanned in time, or an office file awaiting conversion — marked as such. */
 function estimatePages(file: File) {
   return Math.max(1, Math.round(file.size / 45_000));
 }

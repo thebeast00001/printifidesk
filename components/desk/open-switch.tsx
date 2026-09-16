@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion } from "motion/react";
 import { Loader2, Power } from "lucide-react";
 import { setOperatorOpen, type Operator } from "@/lib/orders";
+import { nextChange, openState } from "@/lib/hours";
 import { cn, spring } from "@/lib/utils";
 
 const CLOSE_PRESETS = ["Back in 30 min", "Out of toner", "Closed for today"];
@@ -11,9 +12,13 @@ const CLOSE_PRESETS = ["Back in 30 min", "Out of toner", "Closed for today"];
 /**
  * The switch students see as "Open now" / "Closed".
  *
- * It's a person's decision, not a clock's: a job can only be printed if
- * somebody is standing at the machine. Flipping it pushes over realtime, so
- * every open device changes immediately.
+ * The desk's hours are the default; this is a person's decision that wins
+ * until the hours next change (0041) — open early and you're open now, and
+ * still closed by the hours this evening; close early and you're closed
+ * now, and open again by the hours tomorrow. What's drawn here is what
+ * students see: the hours' answer, or the switch's if it was flipped since
+ * the hours last changed. Flipping it pushes over realtime, so every open
+ * device changes immediately.
  */
 export function OpenSwitch({
   operator,
@@ -44,6 +49,10 @@ export function OpenSwitch({
   // Shut by the admin: the database would refuse the flip with the reason;
   // the switch says so before anyone tries.
   const shut = operator.shut_at !== null;
+  // What students see right now, and why; the button always offers the other.
+  const state = openState(operator);
+  const open = state.open;
+  const next = nextChange(operator);
 
   if (compact) {
     return (
@@ -52,14 +61,14 @@ export function OpenSwitch({
         transition={spring}
         disabled={busy || shut}
         title={shut ? `Closed by Printify: ${operator.shut_reason ?? ""}` : undefined}
-        onClick={() => apply(!operator.is_open, null)}
+        onClick={() => apply(!open, null)}
         className={cn(
           "flex h-11 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold disabled:opacity-50",
-          operator.is_open ? "bg-sage text-sage-ink" : "bg-clay text-clay-ink",
+          open ? "bg-sage text-sage-ink" : "bg-clay text-clay-ink",
         )}
       >
         {busy ? <Loader2 size={14} className="animate-spin" /> : <Power size={14} strokeWidth={2.2} />}
-        {operator.is_open ? "Open" : "Closed"}
+        {open ? "Open" : "Closed"}
       </motion.button>
     );
   }
@@ -68,7 +77,7 @@ export function OpenSwitch({
     <div
       className={cn(
         "rounded-[20px] border p-4 lg:p-5",
-        operator.is_open ? "border-sage bg-sage/25" : "border-clay bg-clay/25",
+        open ? "border-sage bg-sage/25" : "border-clay bg-clay/25",
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -77,15 +86,21 @@ export function OpenSwitch({
             <span
               className={cn(
                 "inline-block size-2 rounded-full",
-                operator.is_open ? "bg-sage" : "bg-clay",
+                open ? "bg-sage" : "bg-clay",
               )}
             />
-            {operator.is_open ? "Printify is open" : "Printify is closed"}
+            {open ? "Printify is open" : "Printify is closed"}
           </p>
           <p className="m-0 mt-1 text-[12.5px] leading-relaxed text-muted">
-            {operator.is_open
-              ? "Students can place orders and see your live wait."
-              : "Students see Printify as closed and can't place orders."}
+            {open
+              ? state.by === "switch"
+                ? `You opened it${next ? ` · closes by your hours ${next.replace(/^till /, "at ")}` : ""}. Students can place orders and see your live wait.`
+                : `Open by your hours${next ? ` ${next}` : ""}. Students can place orders and see your live wait.`
+              : state.by === "shut"
+                ? "Closed by Printify."
+                : state.by === "switch"
+                  ? `You closed it${next ? ` · ${next} by your hours` : ""}. Students see Printify as closed.`
+                  : `Closed by your hours${next ? ` · ${next}` : ""}. Tap Open to open early — your hours close it again as usual.`}
           </p>
         </div>
 
@@ -93,18 +108,18 @@ export function OpenSwitch({
           whileTap={{ scale: 0.96 }}
           transition={spring}
           disabled={busy}
-          onClick={() => apply(!operator.is_open, operator.is_open ? note.trim() || null : null)}
+          onClick={() => apply(!open, open ? note.trim() || null : null)}
           className={cn(
             "flex shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-[13px] font-semibold disabled:opacity-50",
-            operator.is_open ? "border border-line bg-surface text-ink" : "bg-ink text-paper",
+            open ? "border border-line bg-surface text-ink" : "bg-ink text-paper",
           )}
         >
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Power size={14} strokeWidth={2.2} />}
-          {operator.is_open ? "Close Printify" : "Open Printify"}
+          {open ? "Close Printify" : "Open Printify"}
         </motion.button>
       </div>
 
-      {!operator.is_open && (
+      {!open && (
         <div className="mt-3.5 flex flex-wrap items-center gap-2">
           <input
             value={note}

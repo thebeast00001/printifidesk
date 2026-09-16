@@ -7,7 +7,7 @@ import { gatewayOrderId, vendorShare, vendorStatus, verifyWebhook, webhookSignat
 import { shelfLabel, shelfSlots } from "../lib/orders";
 import { pickBadges } from "../components/operator-picker";
 import { describe, paise, quoteOrder, rateCardOf, roundedTotal } from "../lib/pricing";
-import { isOpenAt, nextChange } from "../lib/hours";
+import { isOpenAt, nextChange, openState } from "../lib/hours";
 import { contentTypeOf, kindOf, validate } from "../lib/analysis";
 import type { Operator } from "../lib/orders";
 import { secretMatches } from "../lib/server/secret";
@@ -558,7 +558,8 @@ check("Sunday is a day off", isOpenAt(week, new Date("2026-09-20T05:30:00Z")), f
 check("Friday's hours run past midnight into Saturday 01:00", isOpenAt(week, new Date("2026-09-18T19:30:00Z")), true);
 check("Saturday 14:00 is closed", isOpenAt(week, new Date("2026-09-19T08:30:00Z")), false);
 check("a date marked closed is closed", isOpenAt(week, new Date("2026-10-02T05:30:00Z")), false);
-check("the switch off wins", isOpenAt({ ...week, is_open: false }, new Date("2026-09-14T04:30:00Z")), false);
+// 0041: the switch wins only when flipped since the hours last changed — here at 09:30, after the 09:00 opening.
+check("the switch off wins", isOpenAt({ ...week, is_open: false, open_set_at: "2026-09-14T04:00:00Z" }, new Date("2026-09-14T04:30:00Z")), false);
 check("while open the label says till when", nextChange(week, new Date("2026-09-14T04:30:00Z")), "till 6 PM");
 check("before opening it says when", nextChange(week, new Date("2026-09-14T02:00:00Z")), "opens 9 AM");
 check("on a day off it names the next day", nextChange(week, new Date("2026-09-20T05:30:00Z")), "opens tomorrow 9 AM");
@@ -570,6 +571,21 @@ check(
   ),
   true,
 );
+
+console.log("\n— the switch wins until the hours next change (0041) —");
+// Opened early: tapped Open at 08:30 Monday IST (03:00Z), hours from 9.
+const early = { ...week, is_open: true, open_set_at: "2026-09-14T03:00:00Z" };
+check("08:45, opened early → open", isOpenAt(early, new Date("2026-09-14T03:15:00Z")), true);
+check("…and the switch is what decides", openState(early, new Date("2026-09-14T03:15:00Z")).by, "switch");
+check("…with the honest 'till' — the hours' close", nextChange(early, new Date("2026-09-14T03:15:00Z")), "till 6 PM");
+check("18:30 the hours close it, tap or no tap", isOpenAt(early, new Date("2026-09-14T13:00:00Z")), false);
+check("…and it's the schedule that decides then", openState(early, new Date("2026-09-14T13:00:00Z")).by, "schedule");
+// Closed early: tapped Close at 15:00 Monday (09:30Z).
+const closedEarly = { ...week, is_open: false, open_set_at: "2026-09-14T09:30:00Z" };
+check("15:30, closed early → closed", isOpenAt(closedEarly, new Date("2026-09-14T10:00:00Z")), false);
+check("…says when the hours open it again", nextChange(closedEarly, new Date("2026-09-14T10:00:00Z")), "opens tomorrow 9 AM");
+check("Tuesday 09:30 the hours reopen it", isOpenAt(closedEarly, new Date("2026-09-15T04:00:00Z")), true);
+check("no hours at all: the switch alone", isOpenAt({ ...week, hours: null, opens_at: null, closes_at: null, is_open: true }, new Date("2026-09-20T05:30:00Z")), true);
 
 console.log("\n— extras (0039) —");
 const withExtras = rateCardOf({

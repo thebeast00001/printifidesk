@@ -186,6 +186,8 @@ export interface Operator {
   unclaimed_after_hours?: number;
   /** 0040: the owner's switch — payments through Printify paused; students pay the desk directly meanwhile. */
   gateway_paused?: boolean;
+  /** 0041: when the Open switch was last flipped — a flip since the schedule's last change wins over it. */
+  open_set_at?: string | null;
   accepts_cash: boolean;
   paper_stock: number | null;
   low_paper_at: number;
@@ -256,6 +258,7 @@ const OPERATOR_SELECT_LEGACY =
 // 42703 ("column does not exist") steps down one list at a time, so a
 // project on 0028 still gets 0027's columns rather than none of them.
 const OPERATOR_SELECTS = [
+  OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status, hours, closed_on, tz, extras, unpaid_expiry_minutes, unclaimed_after_hours, gateway_paused, open_set_at", // 0041
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status, hours, closed_on, tz, extras, unpaid_expiry_minutes, unclaimed_after_hours, gateway_paused", // 0040
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status, hours, closed_on, tz, extras, unpaid_expiry_minutes, unclaimed_after_hours", // 0039
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status", // 0032
@@ -503,10 +506,16 @@ export async function setOperatorOpen(
 ): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
-  const { error } = await supabase
+  // The tap is stamped even when the value doesn't change: "closed by the
+  // hours" with the switch already off, tapped Close, must now read as the
+  // person's decision (0041). A project before 0041 has no such column.
+  let { error } = await supabase
     .from("operators")
-    .update({ is_open: isOpen, status_note: statusNote ?? null })
+    .update({ is_open: isOpen, status_note: statusNote ?? null, open_set_at: new Date().toISOString() })
     .eq("id", operatorId);
+  if (error?.code === "42703" || /open_set_at/.test(error?.message ?? "")) {
+    ({ error } = await supabase.from("operators").update({ is_open: isOpen, status_note: statusNote ?? null }).eq("id", operatorId));
+  }
   if (error) throw new Error(friendly(error.message));
   forgetOperator(operatorId);
 }

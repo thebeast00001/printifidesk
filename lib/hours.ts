@@ -36,6 +36,8 @@ export interface HoursSource {
   hours?: WeeklyHours | null;
   closed_on?: string[] | null;
   tz?: string | null;
+  /** 0041: when the switch was last flipped. A flip since the schedule's last change wins over the schedule. */
+  open_set_at?: string | null;
 }
 
 const HHMM = /^([0-2]\d):([0-5]\d)/;
@@ -125,40 +127,104 @@ export function scheduleOpenAt(op: HoursSource, at: Date = new Date()): boolean 
   return false;
 }
 
-/** The same answer as operator_open_at(): switch, schedule, closed day, not shut. */
-export function isOpenAt(op: HoursSource, at: Date = new Date()): boolean {
-  if (!op.is_open || op.shut_at) return false;
-  return scheduleOpenAt(op, at);
+/**
+ * Every moment the schedule changes state in a window of days around `at`,
+ * as instants — each day's opening and closing (a close past midnight
+ * lands on the next day). Days marked closed contribute none. Sorted.
+ */
+function boundaries(op: HoursSource, at: Date, daysBack: number, daysAhead: number): { at: Date; opens: boolean }[] {
+  const out: { at: Date; opens: boolean }[] = [];
+  for (let d = -daysBack; d <= daysAhead; d++) {
+    const probe = new Date(at.getTime() + d * 86_400_000);
+    const parts = localParts(probe, op.tz);
+    if ((op.closed_on ?? []).includes(parts.date)) continue;
+    const h = hoursOn(op, parts.day);
+    if (!h) continue;
+    const open = toMinutes(h.open)!;
+    const close = toMinutes(h.close)!;
+    const dayStart = zonedMidnight(parts.date, op.tz);
+    if (!dayStart) continue;
+    out.push({ at: new Date(dayStart.getTime() + open * 60_000), opens: true });
+    out.push({ at: new Date(dayStart.getTime() + (close <= open ? close + 1440 : close) * 60_000), opens: false });
+  }
+  return out.sort((a, b) => a.at.getTime() - b.at.getTime());
+}
+
+/** The instant of local midnight on a calendar date in the desk's timezone. */
+function zonedMidnight(date: string, tz: string | null | undefined): Date | null {
+  const zone = tz && tz.trim() ? tz : "Asia/Kolkata";
+  // Start from the UTC midnight of that date and correct by the zone's offset at that moment.
+  const guess = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(guess.getTime())) return null;
+  const local = localParts(guess, zone);
+  // The zone's clock at the UTC midnight, in minutes since its own midnight of `local.date`.
+  const dayDiff = (new Date(`${local.date}T00:00:00Z`).getTime() - guess.getTime()) / 86_400_000;
+  const offsetMinutes = dayDiff * 1440 + local.minutes;
+  return new Date(guess.getTime() - offsetMinutes * 60_000);
+}
+
+/** The schedule's most recent change at or before `at`, or null with no hours at all. */
+export function lastBoundary(op: HoursSource, at: Date = new Date()): Date | null {
+  const past = boundaries(op, at, 8, 0).filter((b) => b.at.getTime() <= at.getTime());
+  return past.length ? past[past.length - 1].at : null;
+}
+
+/** Whether the switch, flipped since the schedule last changed, is what decides right now. */
+export function switchDecides(op: HoursSource, at: Date = new Date()): boolean {
+  if (!op.open_set_at) return false;
+  const boundary = lastBoundary(op, at);
+  if (!boundary) return true;
+  return new Date(op.open_set_at).getTime() > boundary.getTime();
 }
 
 /**
- * The next thing the schedule does, in words: "till 6 PM" while open;
- * "opens 9 AM", "opens Mon 9 AM", or nothing when no day in the coming
- * week has hours.
+ * The same answer as operator_open_at(): shut by the admin → no; else the
+ * switch if it was flipped since the schedule's last change; else the
+ * schedule. A desk with no hours at all is its switch alone.
+ */
+export function isOpenAt(op: HoursSource, at: Date = new Date()): boolean {
+  if (op.shut_at) return false;
+  if (lastBoundary(op, at) === null) return op.is_open;
+  if (switchDecides(op, at)) return op.is_open;
+  return scheduleOpenAt(op, at);
+}
+
+/** Why the desk reads open or closed right now — for the switch's own caption. */
+export function openState(op: HoursSource, at: Date = new Date()): { open: boolean; by: "shut" | "switch" | "schedule" } {
+  if (op.shut_at) return { open: false, by: "shut" };
+  if (lastBoundary(op, at) === null || switchDecides(op, at)) return { open: op.is_open, by: "switch" };
+  return { open: scheduleOpenAt(op, at), by: "schedule" };
+}
+
+/** "6 PM", or "tomorrow 9 AM", or "Mon 9 AM" — a boundary named relative to `at`. */
+function whenLabel(b: Date, at: Date, tz: string | null | undefined): string | null {
+  const here = localParts(at, tz);
+  const there = localParts(b, tz);
+  const clock = clockLabel(`${String(Math.floor(there.minutes / 60)).padStart(2, "0")}:${String(there.minutes % 60).padStart(2, "0")}`);
+  if (!clock) return null;
+  if (there.date === here.date) return clock;
+  const dayAfter = localParts(new Date(at.getTime() + 86_400_000), tz).date;
+  if (there.date === dayAfter) return `tomorrow ${clock}`;
+  return `${DAY_LABEL[there.day].slice(0, 3)} ${clock}`;
+}
+
+/**
+ * The next thing that happens, in words, given what decides right now:
+ * open → "till 6 PM" (the next scheduled close); closed → "opens 9 AM",
+ * "opens tomorrow 9 AM", "opens Mon 9 AM". Null with no hours, or when
+ * nothing changes in the coming week.
  */
 export function nextChange(op: HoursSource, at: Date = new Date()): string | null {
-  const { day, date } = localParts(at, op.tz);
-  const today = hoursOn(op, day);
-  if (scheduleOpenAt(op, at) && today) {
-    const till = clockLabel(today.close);
-    return till ? `till ${till}` : null;
+  const open = isOpenAt(op, at);
+  const ahead = boundaries(op, at, 1, 8).filter((b) => b.at.getTime() > at.getTime());
+  if (open) {
+    // Opened by the switch outside hours: the next close after the schedule
+    // next opens is the honest "till" — the switch holds until then anyway.
+    const next = ahead.find((b) => !b.opens);
+    const label = next ? whenLabel(next.at, at, op.tz) : null;
+    return label ? `till ${label}` : null;
   }
-  // Later today, if it opens later today.
-  const { minutes } = localParts(at, op.tz);
-  if (today && !(op.closed_on ?? []).includes(date) && toMinutes(today.open)! > minutes) {
-    const opens = clockLabel(today.open);
-    return opens ? `opens ${opens}` : null;
-  }
-  // Else the next day with hours, up to a week out.
-  for (let i = 1; i <= 7; i++) {
-    const next = new Date(at.getTime() + i * 86_400_000);
-    const p = localParts(next, op.tz);
-    if ((op.closed_on ?? []).includes(p.date)) continue;
-    const h = hoursOn(op, p.day);
-    if (!h) continue;
-    const opens = clockLabel(h.open);
-    const dayName = i === 1 ? "tomorrow" : DAY_LABEL[p.day].slice(0, 3);
-    return opens ? `opens ${dayName} ${opens}` : null;
-  }
-  return null;
+  const next = ahead.find((b) => b.opens);
+  const label = next ? whenLabel(next.at, at, op.tz) : null;
+  return label ? `opens ${label}` : null;
 }

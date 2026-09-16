@@ -53,6 +53,7 @@ export const MIGRATION_PROBES: MigrationProbe[] = [
   // 0038 is the enum value alone and can't be asked for from here; 0039 can't apply without it.
   { id: "0038+0039", without: "no owner/staff roles, weekly hours, extras, corrected bills or unclaimed orders; the pay sheet and desk settings error", check: column("operators", "extras") },
   { id: "0040", without: "the owner can't pause online payments; payouts have no statement; no payout day on Takings or the terms", check: column("operators", "gateway_paused") },
+  { id: "0041", without: "an early Open tap doesn't show as open; office files can't be uploaded or converted", check: column("operators", "open_set_at") },
 ];
 
 export interface MigrationReport {

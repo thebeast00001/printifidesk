@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { motion } from "motion/react";
 import { Clock, Images, ScanLine, Upload } from "lucide-react";
 import { useUploader } from "@/hooks/use-uploader";
-import { ACCEPTED_EXTENSIONS } from "@/lib/analysis";
+import { ACCEPTED_EXTENSIONS, CONVERTS_OFFICE } from "@/lib/analysis";
 import { useApp } from "@/lib/store";
 import { useOperatorWait } from "@/hooks/use-tracking";
 import { perPage, rateCardOf } from "@/lib/pricing";
@@ -85,7 +85,7 @@ export function UploadCard() {
                 </b>
               </li>
               <li>
-                PDF or photos — <b className="font-semibold text-ink-soft">pages counted here</b>, before you pay
+                {CONVERTS_OFFICE ? "PDF, Word, PowerPoint, photos" : "PDF or photos"} — <b className="font-semibold text-ink-soft">pages counted here</b>, before you pay
               </li>
             </ul>
           </div>

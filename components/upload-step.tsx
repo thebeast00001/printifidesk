@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AlertCircle, CloudOff, FileUp, LayoutGrid, Loader2, Check, X } from "lucide-react";
 import { useUploader } from "@/hooks/use-uploader";
-import { ACCEPTED_EXTENSIONS, formatBytes } from "@/lib/analysis";
+import { ACCEPTED_EXTENSIONS, CONVERTS_OFFICE, formatBytes } from "@/lib/analysis";
 import { selectedCount, selectedColourCount, useApp, type UploadFile } from "@/lib/store";
 import { cn, easeIos, spring } from "@/lib/utils";
 
@@ -95,7 +95,7 @@ function Dropzone({ onFiles, compact }: { onFiles: (f: FileList) => void; compac
         </span>
         {!compact && (
           <span className="mt-1 block text-[12.5px] text-muted">
-            PDF or photos (JPG, PNG, HEIC) · up to 50 MB each · Word? Save it as PDF first
+            {CONVERTS_OFFICE ? "PDF, Word, PowerPoint, Excel, photos · up to 50 MB each" : "PDF or photos (JPG, PNG, HEIC) · up to 50 MB each · Word? Save it as PDF first"}
           </span>
         )}
       </button>

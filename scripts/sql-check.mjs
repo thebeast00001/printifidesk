@@ -2168,6 +2168,9 @@ await scenario("open is the switch and the schedule and not a closed day", async
        closed_on = '{2026-10-02}' where id = $1;`,
     [OPERATOR],
   );
+  // 0041: a switch flipped since the schedule last changed wins; these cases
+  // are about the schedule, so the switch is left untouched (never flipped).
+  await db.query(`update public.operators set open_set_at = null where id = $1;`, [OPERATOR]);
   // 2026-09-14 is a Monday. 10:00 IST = 04:30Z.
   const cases = [
     ["2026-09-14T04:30:00Z", true, "Monday 10:00 IST"],
@@ -2182,11 +2185,12 @@ await scenario("open is the switch and the schedule and not a closed day", async
     const { rows } = await at(iso);
     if (rows[0].open !== want) throw new Error(`${label}: got ${rows[0].open}`);
   }
-  await db.query(`update public.operators set is_open = false where id = $1;`, [OPERATOR]);
+  // Closed by the switch at 09:30 Monday: the flip is after the 09:00 boundary, so it wins at 10:00.
+  await db.query(`update public.operators set is_open = false, open_set_at = '2026-09-14T04:00:00Z' where id = $1;`, [OPERATOR]);
   const { rows: off } = await at("2026-09-14T04:30:00Z");
   if (off[0].open) throw new Error("the switch off still reads open");
   // No weekly hours: opens_at/closes_at every day, as before 0039.
-  await db.query(`update public.operators set is_open = true, hours = null, opens_at = '08:00', closes_at = '20:00', closed_on = '{}' where id = $1;`, [OPERATOR]);
+  await db.query(`update public.operators set is_open = true, hours = null, opens_at = '08:00', closes_at = '20:00', closed_on = '{}', open_set_at = null where id = $1;`, [OPERATOR]);
   const { rows: legacy } = await at("2026-09-20T05:30:00Z");
   if (!legacy[0].open) throw new Error("legacy hours don't apply on a Sunday");
   const { rows: wait } = await db.query(`select open from public.operator_wait($1);`, [OPERATOR]);
@@ -2340,6 +2344,52 @@ await scenario("the sweep: unpaid orders expire, ready ones nobody collected are
   await db.query(`delete from public.orders where id in ($1, $2, $3, $4, $5);`, [stale, fresh, claimed, shelf, scheduled]);
   await db.query(`update public.operators set unpaid_expiry_minutes = 120, unclaimed_after_hours = 48 where id = $1;`, [OPERATOR]);
   return "stale unpaid → cancelled by the system; fresh, claimed and scheduled left; forgotten ready → unclaimed, slot freed, share kept; both told; stranger refused; a second sweep finds nothing";
+});
+
+/* ---------- 0041: the switch wins until the schedule's next change ---------- */
+
+await scenario("the Open switch wins until the hours next change, then the hours take over", async () => {
+  await actingAs(null);
+  const at = (iso) => db.query(`select public.operator_open_at(o, $2::timestamptz) as open from public.operators o where o.id = $1;`, [OPERATOR, iso]);
+  await db.query(
+    `update public.operators set is_open = true, tz = 'Asia/Kolkata', closed_on = '{}',
+       hours = '{"mon":{"open":"09:00","close":"18:00"},"tue":{"open":"09:00","close":"18:00"},"wed":{"open":"09:00","close":"18:00"},
+                 "thu":{"open":"09:00","close":"18:00"},"fri":{"open":"09:00","close":"18:00"},"sat":{"open":"09:00","close":"18:00"},"sun":null}'::jsonb
+     where id = $1;`,
+    [OPERATOR],
+  );
+  // Opened early: tapped Open at 08:30 Monday (03:00Z). Open at 08:45; still open at 10:00 by the hours;
+  // closed at 18:30 by the hours — the tap doesn't outlive the schedule's next change.
+  // (The flip stamps now(); the historical stamp is set after it, as a second write.)
+  await db.query(`update public.operators set is_open = true where id = $1;`, [OPERATOR]);
+  await db.query(`update public.operators set open_set_at = '2026-09-14T03:00:00Z' where id = $1;`, [OPERATOR]);
+  const cases1 = [["2026-09-14T03:15:00Z", true, "08:45 opened early"], ["2026-09-14T04:30:00Z", true, "10:00 by the hours"], ["2026-09-14T13:00:00Z", false, "18:30 closed by the hours"]];
+  for (const [iso, want, label] of cases1) {
+    const { rows } = await at(iso);
+    if (rows[0].open !== want) throw new Error(`${label}: got ${rows[0].open}`);
+  }
+  // Closed early: tapped Close at 15:00 Monday (09:30Z). Closed at 15:30; closed at 20:00; open Tuesday 09:30 by the hours.
+  await db.query(`update public.operators set is_open = false where id = $1;`, [OPERATOR]);
+  await db.query(`update public.operators set open_set_at = '2026-09-14T09:30:00Z' where id = $1;`, [OPERATOR]);
+  const cases2 = [["2026-09-14T10:00:00Z", false, "15:30 closed early"], ["2026-09-14T14:30:00Z", false, "20:00"], ["2026-09-15T04:00:00Z", true, "Tuesday 09:30 reopened by the hours"]];
+  for (const [iso, want, label] of cases2) {
+    const { rows } = await at(iso);
+    if (rows[0].open !== want) throw new Error(`${label}: got ${rows[0].open}`);
+  }
+  // A note edited at night doesn't count as a flip; a flip does.
+  await db.query(`update public.operators set is_open = true where id = $1;`, [OPERATOR]);
+  await db.query(`update public.operators set open_set_at = '2026-09-14T03:00:00Z' where id = $1;`, [OPERATOR]);
+  await db.query(`update public.operators set status_note = 'toner on the way' where id = $1;`, [OPERATOR]);
+  const { rows: stamp } = await db.query(`select open_set_at from public.operators where id = $1;`, [OPERATOR]);
+  if (new Date(stamp[0].open_set_at).toISOString() !== "2026-09-14T03:00:00.000Z") throw new Error("a note edit moved open_set_at");
+  await db.query(`update public.operators set is_open = false where id = $1;`, [OPERATOR]);
+  const { rows: stamp2 } = await db.query(`select open_set_at from public.operators where id = $1;`, [OPERATOR]);
+  if (Date.now() - new Date(stamp2[0].open_set_at).getTime() > 60_000) throw new Error("a flip didn't stamp open_set_at");
+  // The compact answer the students see.
+  const { rows: wait } = await db.query(`select open from public.operator_wait($1);`, [OPERATOR]);
+  if (wait[0].open !== false) throw new Error("operator_wait disagrees with the switch just flipped");
+  await db.query(`update public.operators set is_open = true, open_set_at = null, hours = null, opens_at = '08:00', closes_at = '20:00', status_note = null where id = $1;`, [OPERATOR]);
+  return "opened early → open now, closed by the hours at 6; closed early → closed now, reopened by the hours next morning; a note edit isn't a flip; a flip is stamped";
 });
 
 /* ---------- 0040: trust, made visible ---------- */
@@ -2515,6 +2565,7 @@ const GRANTS = {
   "accept_requote(uuid)": ["authenticated"],
   "reprice_order(uuid,jsonb)": ["authenticated"],
   "sweep_orders(uuid)": ["authenticated"],
+  "set_document_analysis(uuid,integer,integer[])": ["authenticated"],
   "remove_staff(uuid,text)": ["authenticated"],
   "close_desk(uuid,numeric,text)": ["authenticated"],
   "set_my_pin(uuid,text)": ["authenticated"],
@@ -2567,6 +2618,8 @@ const GRANTS = {
   "desk_share(orders)": [],
   "notify_student(text,uuid,text)": [],
   "operator_open_at(operators,timestamp with time zone)": [],
+  "operator_last_boundary(operators,timestamp with time zone)": [],
+  "operator_scheduled_at(operators,timestamp with time zone)": [],
 };
 
 await scenario("every function is granted to exactly who calls it, and nothing to PUBLIC", async () => {

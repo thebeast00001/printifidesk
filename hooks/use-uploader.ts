@@ -2,8 +2,8 @@
 
 import { useCallback } from "react";
 import { analyse, kindOf, validate } from "@/lib/analysis";
-import { ensureSession } from "@/lib/supabase/client";
-import { recordDocument, storagePathFor, uploadToStorage } from "@/lib/upload";
+import { ensureSession, getSupabase } from "@/lib/supabase/client";
+import { convertDocument, recordDocument, setDocumentAnalysis, storagePathFor, uploadToStorage } from "@/lib/upload";
 import { useApp, type UploadFile } from "@/lib/store";
 
 type Patch = (id: string, patch: Partial<UploadFile>) => void;
@@ -136,7 +136,48 @@ async function processFile({
     });
 
     await recordDocument({ id, userId: session.userId, file, kind, path, analysis });
-    updateFile(id, { status: "ready", storagePath: path, progress: 1 });
+
+    if (kind !== "OFFICE") {
+      updateFile(id, { status: "ready", storagePath: path, progress: 1 });
+      return;
+    }
+
+    // An office file: the server turns it into a PDF (0041), which is then
+    // measured here exactly as an uploaded PDF would be — pages, colour,
+    // thumbnails — and the counts written to the row. If any of that fails
+    // the original stays: the desk opens it as it always did, with the
+    // estimate marked as one.
+    updateFile(id, { status: "scanning", progress: 0, note: "Converting to PDF…" });
+    try {
+      const converted = await convertDocument(id);
+      const supabase = getSupabase();
+      const signed = supabase ? await supabase.storage.from("documents").createSignedUrl(converted.storage_path, 120) : null;
+      if (!signed?.data?.signedUrl) throw new Error("Converted, but the PDF couldn't be read back.");
+      const blob = await (await fetch(signed.data.signedUrl)).blob();
+      const pdf = new File([blob], converted.name, { type: "application/pdf" });
+      const measured = await analyse(pdf, (done, total) => updateFile(id, { progress: total ? done / total : 0 }));
+      if (measured.exact) await setDocumentAnalysis(id, measured.pages, measured.colourIndex);
+      updateFile(id, {
+        status: "ready",
+        storagePath: converted.storage_path,
+        name: converted.name,
+        kind: "PDF",
+        sizeBytes: converted.size_bytes,
+        file: pdf,
+        pages: measured.pages,
+        colourIndex: measured.colourIndex,
+        pagesExact: measured.exact,
+        note: measured.exact ? undefined : measured.note,
+        progress: 1,
+      });
+    } catch (error) {
+      updateFile(id, {
+        status: "ready",
+        storagePath: path,
+        progress: 1,
+        note: `Couldn't convert it to PDF (${error instanceof Error ? error.message : "no reply"}) — the desk opens the original, and confirms the page count.`,
+      });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Something went wrong.";
     // The file is measured and usable even if it never reached the server, so
