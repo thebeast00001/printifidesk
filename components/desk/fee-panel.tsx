@@ -153,7 +153,7 @@ export function FeePanel({ operator }: { operator: Operator }) {
         </p>
       ) : (
         <>
-          <dl className="m-0 grid gap-2 sm:grid-cols-3">
+          <dl className="m-0 grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-3">
             <Stat label={`Collected ${PERIODS.find((p) => p.id === period)?.label.toLowerCase()}`} value={String(window.orders)} sub="orders" />
             <Stat
               label="Fee on those"

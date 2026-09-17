@@ -181,7 +181,7 @@ export function OperatorDay({ operator }: { operator: Operator }) {
       ) : !stats ? (
         <p className="m-0 py-4 text-[13px] text-muted">No figures for this period.</p>
       ) : (
-        <dl className="m-0 grid gap-x-8 gap-y-2 sm:grid-cols-2">
+        <dl className="m-0 grid grid-cols-[minmax(0,1fr)] gap-x-8 gap-y-2 sm:grid-cols-2">
           {rows.map((row) => (
             <div
               key={row.label}

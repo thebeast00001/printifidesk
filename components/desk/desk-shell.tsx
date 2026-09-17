@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useClerk } from "@clerk/nextjs";
-import { AlertCircle, ChevronDown, Loader2, LogIn, UserRoundCheck } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronRight, Download, Loader2, LogIn, UserRoundCheck } from "lucide-react";
 import { useConnectionVerdict } from "../connection-banner";
 import { DeskSignIn } from "../operator/desk-sign-in";
 import { JoinDesk } from "../join-desk";
@@ -11,12 +11,36 @@ import { useDesk } from "./desk-provider";
 import { OpenSwitch } from "./open-switch";
 import { SupportLine } from "../support-line";
 import { cn } from "@/lib/utils";
+import { canInstall, useInstall } from "@/lib/install";
+import { useApp } from "@/lib/store";
 
 /**
  * Routes between the states someone can be in on the desk site: not signed
  * in, signed in but on no desk, or running one — and, for the last, draws
  * the header every desk page shares.
  */
+/** One line under the desk's name, until the app is on the home screen. */
+function InstallNudge() {
+  const state = useInstall();
+  const setOpen = useApp((s) => s.setInstallOpen);
+  if (!canInstall(state)) return null;
+  return (
+    <button
+      onClick={() => setOpen(true)}
+      className="flex w-full items-center gap-3 rounded-[16px] border border-line bg-surface px-4 py-3 text-left shadow-card transition-colors hover:bg-surface-sunk"
+    >
+      <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-surface-sunk">
+        <Download size={16} strokeWidth={2.2} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13.5px] font-semibold tracking-[-0.01em]">Install Printifi Desk on this phone</span>
+        <span className="mt-0.5 block text-[12px] text-muted">Full screen at the counter, and new orders buzz the phone in a pocket.</span>
+      </span>
+      <ChevronRight size={15} strokeWidth={2.2} className="shrink-0 text-faint" />
+    </button>
+  );
+}
+
 export function DeskShell({ children }: { children: React.ReactNode }) {
   const { backend, operatorId, operator, operatorIds, deskNames, reload, paired, chooseDesk } = useDesk();
   const { verdict } = useConnectionVerdict();
@@ -70,7 +94,7 @@ export function DeskShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex flex-col gap-4" data-anim="board">
+    <div className="flex min-w-0 flex-col gap-4" data-anim="board">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           {operatorIds.length > 1 ? (
@@ -114,6 +138,12 @@ export function DeskShell({ children }: { children: React.ReactNode }) {
           <OpenSwitch operator={operator} onChanged={reload} compact />
         </div>
       </div>
+
+      {/* The same offer the student site makes, the moment the desk is signed
+          in: only drawn when the browser can actually install (Chrome's
+          prompt in hand, or an iPhone's Share route); never on a device
+          that already has it. */}
+      <InstallNudge />
 
       {operator.shut_at && (
         <Notice

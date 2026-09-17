@@ -8,6 +8,7 @@ import { useAuthKey } from "@/hooks/use-auth-key";
 import { ensureSession, getSupabase } from "@/lib/supabase/client";
 import { disablePush, enablePush, pushState, type PushState } from "@/lib/push";
 import { useSurface } from "../surface-provider";
+import { InstallRow } from "../install-app";
 import { cn, spring } from "@/lib/utils";
 
 interface Me {
@@ -135,6 +136,9 @@ export function AccountPanel() {
       {error && <p className="m-0 mt-2 text-[12px] text-clay-ink dark:text-clay">{error}</p>}
 
       <DeskPushRow />
+      <div className="mt-3 -mx-4 border-t border-line lg:-mx-5">
+        <InstallRow />
+      </div>
 
       <button
         onClick={() => void clerk.signOut({ redirectUrl: surface === "desk" ? "/sign-in" : "/operator" })}

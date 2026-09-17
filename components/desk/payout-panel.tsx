@@ -123,7 +123,7 @@ export function PayoutPanel({ operator }: { operator: Operator }) {
         </p>
       ) : (
         <>
-          <dl className="m-0 mt-3.5 grid gap-2 sm:grid-cols-3">
+          <dl className="m-0 mt-3.5 grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-3">
             <Stat label={`Online ${PERIODS.find((p) => p.id === period)?.label.toLowerCase()}`} value={String(window.orders)} sub="orders" />
             <Stat label="Your share of those" value={money(window.share, currency)} sub={`of ${money(window.gross, currency)}, after the ${money(window.fee, currency)} fee`} />
             <Stat
@@ -174,7 +174,7 @@ export function PayoutPanel({ operator }: { operator: Operator }) {
 
 function OrderLines({ rows, currency }: { rows: PayoutOrderRow[]; currency: string }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="max-w-full overflow-x-auto">
       <table className="w-full min-w-[520px] border-collapse text-[12px]">
         <thead>
           <tr className="text-left text-[10.5px] tracking-[0.06em] text-muted uppercase">

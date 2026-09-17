@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 import { Bell, Check, Download, Loader2, PlusSquare, Share, Smartphone, Zap } from "lucide-react";
 import { canInstall, install, useInstall } from "@/lib/install";
 import { useApp } from "@/lib/store";
+import { useSurface } from "./surface-provider";
 import { cn, spring } from "@/lib/utils";
 
 /**
@@ -75,6 +76,10 @@ export function InstallDrawer() {
   const open = useApp((s) => s.installOpen);
   const setOpen = useApp((s) => s.setInstallOpen);
   const state = useInstall();
+  // The desk site installs as "Printifi Desk" (its own manifest and icon);
+  // the words here say what that one is for.
+  const { surface } = useSurface();
+  const desk = surface === "desk";
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<"dismissed" | "unavailable" | null>(null);
 
@@ -99,10 +104,10 @@ export function InstallDrawer() {
           <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-[18px] pt-4 pb-[max(24px,env(safe-area-inset-bottom))]">
             <div className="flex items-center gap-3.5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/icon-192.png" alt="" className="size-14 rounded-[16px] border border-line" />
+              <img src={desk ? "/desk-icon-192.png" : "/icon-192.png"} alt="" className="size-14 rounded-[16px] border border-line" />
               <div className="min-w-0">
                 <Drawer.Title className="font-figure m-0 text-[22px] leading-tight font-extrabold">
-                  Printifi on your home screen
+                  {desk ? "Printifi Desk on your home screen" : "Printifi on your home screen"}
                 </Drawer.Title>
                 <Drawer.Description className="m-0 mt-0.5 text-[12.5px] text-muted">
                   It&apos;s this site, installed — nothing from an app store.
@@ -114,21 +119,33 @@ export function InstallDrawer() {
               <div className="mt-5 flex gap-3 rounded-[16px] bg-sage px-4 py-3.5 text-[13px] leading-relaxed text-sage-ink">
                 <Check size={16} strokeWidth={2.4} className="mt-px shrink-0" />
                 <span>
-                  <b className="font-bold">You&apos;re set.</b> Open Printifi from your home screen like
-                  any other app.
+                  <b className="font-bold">You&apos;re set.</b> Open {desk ? "Printifi Desk" : "Printifi"} from your
+                  home screen like any other app.
                 </span>
               </div>
             ) : (
               <>
                 <ul className="m-0 mt-5 flex list-none flex-col gap-2.5 p-0">
                   <Benefit icon={Zap}>Opens in a second, full screen — no address bar in the way.</Benefit>
-                  <Benefit icon={Bell}>
-                    Turn on notifications and your token arrives as one the moment the desk marks it
-                    ready.
-                  </Benefit>
-                  <Benefit icon={Smartphone}>
-                    Your sign-in, files and orders, one tap from the home screen.
-                  </Benefit>
+                  {desk ? (
+                    <>
+                      <Benefit icon={Bell}>
+                        Turn on notifications and a new order buzzes the phone even in a pocket — no need
+                        to keep the page open.
+                      </Benefit>
+                      <Benefit icon={Smartphone}>The queue, the scanner and Takings, one tap from the home screen.</Benefit>
+                    </>
+                  ) : (
+                    <>
+                      <Benefit icon={Bell}>
+                        Turn on notifications and your token arrives as one the moment the desk marks it
+                        ready.
+                      </Benefit>
+                      <Benefit icon={Smartphone}>
+                        Your sign-in, files and orders, one tap from the home screen.
+                      </Benefit>
+                    </>
+                  )}
                 </ul>
 
                 {state.prompt ? (

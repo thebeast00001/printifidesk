@@ -78,9 +78,9 @@ export function CloseoutPanel({ operator, onClosed }: { operator: Operator; onCl
           Adding up today…
         </p>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
           {/* ---- cash ---- */}
-          <div className="rounded-[16px] border border-line bg-surface-sunk p-4">
+          <div className="min-w-0 rounded-[16px] border border-line bg-surface-sunk p-4">
             <p className="label-caps m-0">Cash</p>
             <p className="m-0 mt-1 text-[12.5px] text-muted">
               Expected from today&apos;s cash orders
@@ -94,7 +94,7 @@ export function CloseoutPanel({ operator, onClosed }: { operator: Operator; onCl
                 onChange={(e) => setCounted(e.target.value.replace(/[^\d.]/g, ""))}
                 inputMode="decimal"
                 placeholder={String(expected)}
-                className="rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[15px] outline-none focus:border-ink"
+                className="w-full min-w-0 rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[15px] outline-none focus:border-ink"
               />
             </label>
 
@@ -115,7 +115,7 @@ export function CloseoutPanel({ operator, onClosed }: { operator: Operator; onCl
           </div>
 
           {/* ---- upi ---- */}
-          <div className="rounded-[16px] border border-line bg-surface-sunk p-4">
+          <div className="min-w-0 rounded-[16px] border border-line bg-surface-sunk p-4">
             <p className="label-caps m-0">UPI</p>
             <p className="m-0 mt-1 text-[12.5px] text-muted">Should match your UPI app for today</p>
             <p className="font-figure m-0 text-[28px] font-extrabold">
@@ -134,7 +134,7 @@ export function CloseoutPanel({ operator, onClosed }: { operator: Operator; onCl
           </div>
 
           {/* ---- shelf ---- */}
-          <div className="rounded-[16px] border border-line bg-surface-sunk p-4 sm:col-span-2">
+          <div className="min-w-0 rounded-[16px] border border-line bg-surface-sunk p-4 sm:col-span-2">
             <p className="label-caps m-0">Still on the shelf</p>
             {shelf.length === 0 ? (
               <p className="m-0 mt-1 text-[12.5px] text-muted">Nothing. Everything printed today went home.</p>
@@ -158,7 +158,7 @@ export function CloseoutPanel({ operator, onClosed }: { operator: Operator; onCl
           onChange={(e) => setNote(e.target.value)}
           maxLength={500}
           placeholder="Toner changed, drawer float ₹500, whatever tomorrow should know"
-          className="rounded-lg border border-line bg-surface-sunk px-3 py-2 text-[12.5px] outline-none focus:border-ink"
+          className="w-full min-w-0 rounded-lg border border-line bg-surface-sunk px-3 py-2 text-[12.5px] outline-none focus:border-ink"
         />
       </label>
 

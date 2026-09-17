@@ -714,7 +714,9 @@ function OrderCard({
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-            <h3 className="m-0 text-[15px] font-semibold tracking-[-0.01em]">
+            {/* A phone's screenshot name has no break in it; without min-w-0
+                and a break-anywhere the flex line runs off the card. */}
+            <h3 className="m-0 min-w-0 max-w-full text-[15px] font-semibold tracking-[-0.01em] [overflow-wrap:anywhere]">
               {items.length
                 ? `${items[0].name}${items.length > 1 ? ` + ${items.length - 1} more` : ""}`
                 : `${order.pages} pages`}

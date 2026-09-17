@@ -18,7 +18,7 @@ export default function DeskLayout({ children }: { children: React.ReactNode }) 
         title="Printifi Desk"
         sub="Your queue, your prices, your hours. Every action here writes a timeline entry the student sees immediately."
       />
-      <Container className="pt-3">
+      <Container className="min-w-0 overflow-x-clip pt-3">
         <div className="mb-4">
           <ConnectionBanner />
         </div>
