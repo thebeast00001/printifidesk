@@ -56,9 +56,10 @@ export default async function DeskTermsPage() {
       <p>
         With the <b>cover sheet</b> on (it is by default), the file you open to print carries a labelled first
         page: the token, the student&apos;s first name, pages and settings, the shelf slot, and what&apos;s owed
-        in cash. Its price — yours to set, ₹1 by default — is a line on the student&apos;s bill and part of
-        what you&apos;re paid. Its QR names the token and your desk only; it never proves who is collecting.
-        Keep the sheet with the job; the student may discard it.
+        in cash. Its price — yours to set, ₹1 by default, up to ₹20 — is inside the student&apos;s price
+        (disclosed in the terms, not itemised on the bill) and is part of what you&apos;re paid, with the
+        platform fee applied to it like the rest. Its QR names the token and your desk only; it never proves
+        who is collecting. Keep the sheet with the job; the student may discard it.
       </p>
 
       <H2>Students&apos; files</H2>

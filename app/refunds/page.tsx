@@ -81,11 +81,12 @@ export default function RefundsPage() {
         an order from you. Dues are the bill as it was priced, nothing added.
       </p>
 
-      <H2>Fees and rounding</H2>
+      <H2>Fees, the cover sheet and rounding</H2>
       <p>
         Every bill shows the desk&apos;s price and Printifi&apos;s platform fee as separate lines, and — at
-        a desk that rounds — what lifting to the next rupee added. A refund of the whole bill returns the
-        whole bill, fee and rounding included.
+        a desk that rounds — what lifting to the next rupee added. The desk&apos;s charge for the cover sheet
+        (₹1 unless the desk sets otherwise) is inside the desk&apos;s price, not a line of its own. A refund
+        of the whole bill returns the whole bill — cover sheet, fee and rounding included.
       </p>
 
       <H2>Timing</H2>

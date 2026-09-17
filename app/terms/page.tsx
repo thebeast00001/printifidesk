@@ -23,7 +23,8 @@ export default function TermsPage() {
         Each print desk on Printifi is an independent business. It sets its own prices, its own hours and
         its own quality; it prints your documents and hands them to you. Printifi shows you the desk&apos;s
         prices, carries your files to it, tracks the job and records what happened. Printifi does not print
-        anything and does not take your money.
+        anything. Where a desk takes payment through Printifi, Printifi&apos;s payment partner takes the
+        money and Printifi passes the desk its share; everywhere else you pay the desk directly.
       </p>
 
       <H2>Prices and the platform fee</H2>
@@ -34,9 +35,20 @@ export default function TermsPage() {
         counts are worked out from your file in your browser. If a file turns out to have more pages, or
         more colour pages, than were counted, the desk may send you a corrected bill before accepting the
         order: you see the new price and the reason, and accept it or cancel. Nothing is charged until you
-        have. Where the desk uses one, a <b>cover sheet</b> — the labelled first page your job comes out
-        under, with your token, your name and the shelf — is a line on the bill at the desk&apos;s price for
-        it (typically ₹1), shown before you order like everything else.
+        have.
+      </p>
+      <p>
+        <b>Cover sheet.</b> Jobs come out of the printer under a labelled first page — your token, your
+        first name, the pages and settings, the shelf slot — so the desk hands you the right pile. The desk
+        charges for that sheet, ₹1 unless the desk sets a different price, and the charge is <b>included in
+        the price you see</b> rather than shown as a separate line on the bill. It is part of the total
+        before you order, is refunded with the order if the order is refunded in full, and goes to the desk
+        like the rest of the bill. A desk can turn the sheet off; then nothing is charged for it.
+      </p>
+      <p>
+        <b>Word, PowerPoint and Excel files</b> are turned into PDFs by a converter Printifi runs before the
+        desk sees them, so what the desk prints is what you saw; the original is discarded once converted.
+        Where the converter isn&apos;t available, the app asks for a PDF.
       </p>
 
       <H2>Paying</H2>
@@ -65,10 +77,13 @@ export default function TermsPage() {
       <H2>Collecting</H2>
       <p>
         Every order has a token and a QR code. Whoever shows the QR code collects the job — treat it like
-        the ticket it is; if you share it, you have handed the job to that person. A job left on the shelf
-        past the desk&apos;s window is cleared as not collected: you&apos;re told, the files are deleted,
-        and — because it was printed — what was paid for it isn&apos;t refunded by Printifi, and what
-        wasn&apos;t yet paid for it becomes dues.
+        the ticket it is; if you share it, you have handed the job to that person. Your token may be shown
+        on a screen at the counter so you can see when the job is ready; the screen shows tokens only. The
+        cover sheet on the pile carries the token and the desk&apos;s id in its own code, and never your
+        pickup code — a cover sheet proves nothing about who is collecting. A job left on the shelf past
+        the desk&apos;s window is cleared as not collected: you&apos;re told, the files are deleted, and —
+        because it was printed — what was paid for it isn&apos;t refunded by Printifi, and what wasn&apos;t
+        yet paid for it becomes dues.
       </p>
 
       <H2>Problems, refunds and reports</H2>

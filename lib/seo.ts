@@ -29,7 +29,7 @@ export const BRAND_ALT = "Printify";
 export const TAGLINE = "Upload from your phone, pay with UPI, collect a printed set. Campus printing without the queue.";
 
 /** The day the policy pages last changed (ISO). Bump it when their words do. */
-export const POLICIES_UPDATED = "2026-09-16";
+export const POLICIES_UPDATED = "2026-09-17";
 /** The same day as people read it. */
 export const POLICIES_UPDATED_LABEL = new Date(`${POLICIES_UPDATED}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 

@@ -50,15 +50,10 @@ export function Bill({
       ))}
 
       <div className={cn("mt-2 border-t pt-2", line)}>
-        {quote.lines.length > 1 && <Row label="Files" value={money(quote.subtotal, cur)} muted={muted} />}
-        {quote.cover > 0 && (
-          <Row
-            label="Cover sheet"
-            hint="the job comes out under a labelled sheet — your token, your name, the shelf"
-            value={`+${money(quote.cover, cur)}`}
-            muted={muted}
-          />
-        )}
+        {/* The cover sheet (0044) is inside the price and disclosed in the
+            terms, not itemised here — the owner's call. The "Files" row is
+            what the lines come to with it, so the arithmetic on screen adds up. */}
+        {quote.lines.length > 1 && <Row label="Files" value={money(quote.subtotal + quote.cover, cur)} muted={muted} />}
         {quote.topUp > 0 && (
           <Row
             label={`Small-order top-up`}
