@@ -50,17 +50,37 @@ function sameOriginPath(url, fallback) {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = sameOriginPath(event.notification.data && event.notification.data.url, "/orders");
+  let target = sameOriginPath(event.notification.data && event.notification.data.url, "/orders");
+  // On the desk's own host the queue is "/": "/operator" only redirects
+  // there, and a navigation that starts with a redirect is what Chrome's
+  // installed-app error page ("This page couldn't load") has been seen on.
+  // Land on the page itself.
+  const onDeskHost = self.location.hostname.startsWith("desk.");
+  if (onDeskHost && (target === "/operator" || target.startsWith("/operator/"))) {
+    target = target.slice("/operator".length) || "/";
+  }
 
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-      // Focus a tab that's already open rather than piling up new ones.
+      // Focus a window that's already open rather than piling up new ones.
       for (const client of clients) {
         if (client.url.includes(target) && "focus" in client) return client.focus();
       }
+      // The desk's pages are live — any open window of the app already shows
+      // the new order. Focusing it is enough, and never fails the way a
+      // navigation from the background can.
+      if (onDeskHost) {
+        for (const client of clients) {
+          if ("focus" in client) return client.focus();
+        }
+      }
       for (const client of clients) {
         if ("navigate" in client && "focus" in client) {
-          return client.navigate(target).then((c) => c && c.focus());
+          return client
+            .navigate(target)
+            .then((c) => c && c.focus())
+            // An uncontrolled or stale client refuses to navigate: focus it as it is.
+            .catch(() => ("focus" in client ? client.focus() : undefined));
         }
       }
       return self.clients.openWindow(target);

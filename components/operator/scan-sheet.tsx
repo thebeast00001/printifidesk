@@ -427,7 +427,7 @@ export function ScanSheet({
                 </p>
                 <p className="font-figure m-0 mt-1 text-[44px] leading-none font-extrabold">{filing.order.token}</p>
                 <p className="m-0 mt-1 text-[13px]">
-                  {filing.order.order_items?.[0]?.name ?? `${filing.order.pages} pages`} · {filing.order.pages} p · {filing.order.status}
+                  <span className="[overflow-wrap:anywhere]">{filing.order.order_items?.[0]?.name ?? `${filing.order.pages} pages`}</span> · {filing.order.pages} p · {filing.order.status}
                   {filing.order.shelf_slot ? ` · shelf ${filing.order.shelf_slot}` : ""}
                 </p>
                 {filing.done ? (
@@ -735,7 +735,7 @@ function MatchPanel({
         </p>
       )}
 
-      <p className="m-0 mt-2 text-[13px]">
+      <p className="m-0 mt-2 min-w-0 text-[13px] [overflow-wrap:anywhere]">
         {order.order_items?.[0]?.name ?? `${order.pages} pages`}
         {(order.order_items?.length ?? 0) > 1 ? ` + ${order.order_items!.length - 1} more` : ""}
         {" · "}

@@ -4,6 +4,28 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, BellOff, Volume2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/**
+ * A notification from the page itself, for a desk whose tab is open but not
+ * in front. Android Chrome only allows these through a service worker
+ * (`new Notification()` throws there), so the registration shows it when
+ * there is one, the constructor otherwise, and neither failing is an error
+ * — the chime and the badge have already done their job.
+ */
+async function showLocal(title: string, body: string, tag: string): Promise<void> {
+  try {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    const options = { body, tag, icon: "/desk-icon-192.png" };
+    const registration = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration() : undefined;
+    if (registration) {
+      await registration.showNotification(title, options);
+      return;
+    }
+    new Notification(title, options);
+  } catch {
+    /* no way to show one here; the sound and the badge still happened */
+  }
+}
+
 const STORAGE_KEY = "printify.operator.alert";
 
 /**
@@ -60,12 +82,7 @@ export function useNewOrderAlert(pendingCount: number | null, paid?: PaidSignal)
   }, []);
 
   const notify = useCallback((count: number) => {
-    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    new Notification("New print order", {
-      body: count === 1 ? "One order is waiting to be accepted." : `${count} orders are waiting.`,
-      tag: "printify-new-order",
-      icon: "/icon-192.png",
-    });
+    void showLocal("New print order", count === 1 ? "One order is waiting to be accepted." : `${count} orders are waiting.`, "printify-new-order");
   }, []);
 
   useEffect(() => {
@@ -91,12 +108,7 @@ export function useNewOrderAlert(pendingCount: number | null, paid?: PaidSignal)
     previousPaid.current = paid.count;
     if (before === null || paid.count <= before || !enabled) return;
     chime(PAID_NOTES);
-    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    new Notification("Paid online", {
-      body: paid.latest ? `${paid.latest} is paid and in the queue.` : "An order was paid and is in the queue.",
-      tag: "printify-paid-online",
-      icon: "/icon-192.png",
-    });
+    void showLocal("Paid online", paid.latest ? `${paid.latest} is paid and in the queue.` : "An order was paid and is in the queue.", "printify-paid-online");
   }, [paid, enabled, chime]);
 
   const toggle = useCallback(async () => {
