@@ -5,7 +5,7 @@ import { Drawer } from "vaul";
 import { motion } from "motion/react";
 import QRCode from "qrcode";
 import { AlertCircle, Banknote, Check, Copy, Loader2, Smartphone } from "lucide-react";
-import { getOperator, type Operator, type OrderRow } from "@/lib/orders";
+import { cashLegacy, cashStanding, chooseCash, getOperator, type CashStanding, type Operator, type OrderRow } from "@/lib/orders";
 import { getSupabase } from "@/lib/supabase/client";
 import { UPI_APPS, appLink, isQrOnlyMerchant, isValidVpa, upiLink, type UpiRequest } from "@/lib/upi";
 import { useInstall } from "@/lib/install";
@@ -46,6 +46,9 @@ export function PaySheet({
   const [operator, setOperator] = useState<Operator | null>(null);
   const [qr, setQr] = useState<string | null>(null);
   const [busy, setBusy] = useState<"upi" | "cash" | null>(null);
+  // 0043: cash is a credit line — the database says whether, and how much.
+  const [standing, setStanding] = useState<CashStanding | null>(null);
+  const [legacy, setLegacy] = useState(false);
   // What their app's success screen showed. Pre-filled with the bill; a
   // different number is a warning now instead of a surprise at the counter.
   const [sent, setSent] = useState("");
@@ -59,7 +62,12 @@ export function PaySheet({
     setError(null);
     setShowDirect(false);
     setSent(Number(order.total).toFixed(2));
+    setStanding(null);
     void getOperator(order.operator_id).then(setOperator);
+    void cashStanding().then((st) => {
+      setStanding(st);
+      setLegacy(cashLegacy());
+    });
   }, [open, order]);
 
   // The row is live. When the money is confirmed — Cashfree's webhook, or
@@ -118,9 +126,27 @@ export function PaySheet({
       .catch(() => setQr(null));
   }, [link, shopQr]);
 
+  // Cash: the platform checks the student's standing and decides whether
+  // the desk prints now (within the limit) or when they set off (above it).
+  const takeCash = useCallback(async () => {
+    if (!order) return;
+    setBusy("cash");
+    setError(null);
+    try {
+      await chooseCash(order.id);
+      onClaimed();
+      onOpenChange(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't choose cash.");
+    } finally {
+      setBusy(null);
+    }
+  }, [order, onClaimed, onOpenChange]);
+
   const claim = useCallback(
     async (method: "upi" | "cash") => {
       if (!order) return;
+      if (method === "cash") return takeCash();
       setBusy(method);
       setError(null);
       const supabase = getSupabase();
@@ -146,8 +172,26 @@ export function PaySheet({
       onClaimed();
       onOpenChange(false);
     },
-    [order, sent, onClaimed, onOpenChange],
+    [order, sent, onClaimed, onOpenChange, takeCash],
   );
+
+  // What the cash button says: the limit, or why not.
+  const total = order ? Number(order.total) : 0;
+  const cash = (() => {
+    if (operator?.accepts_cash === false) return null;
+    // A project without 0043: the button as it always was.
+    if (!standing && legacy) return { ok: true, label: "I'll pay cash at the desk", hint: "The desk confirms it at the counter before printing.", disabled: false };
+    if (!standing) return { ok: false, label: "Cash at the counter", hint: "Checking your cash limit…", disabled: true };
+    if (standing.reason === "dues")
+      return { ok: false, label: "Cash at the counter", hint: `₹${standing.dues.toFixed(0)} is due from an uncollected order — pay it first (it's on your home page).`, disabled: true };
+    if (standing.reason === "blocked")
+      return { ok: false, label: "Cash at the counter", hint: `Cash is off for your account until ${standing.blocked_until ? new Date(standing.blocked_until).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "later"} — two orders went uncollected. UPI works as usual.`, disabled: true };
+    if (standing.reason === "open")
+      return { ok: false, label: "Cash at the counter", hint: `Collect your other cash order${standing.open_cash_token ? ` (${standing.open_cash_token})` : ""} first — one at a time.`, disabled: true };
+    if (total <= standing.cash_limit)
+      return { ok: true, label: `Pay ${money(total, operator?.currency)} cash when I collect`, hint: `Printed now, paid at the counter. Your cash limit is ${money(standing.cash_limit, operator?.currency)} — it grows each time you collect.`, disabled: false };
+    return { ok: true, label: "Cash — printed when I set off", hint: `Above your ${money(standing.cash_limit, operator?.currency)} cash limit, so the desk prints when you tap "Leaving now" — it's ready by the time you arrive. Pay online to have it printed right away.`, disabled: false };
+  })();
 
   const sentValue = Number(sent);
   const sentDiff =
@@ -416,15 +460,20 @@ export function PaySheet({
                         primary
                       />
                     )}
-                    {operator?.accepts_cash !== false && (
+                    {cash && (
                       <ClaimButton
-                        busy={busy === "cash"}
+                        busy={busy === "cash" || cash.disabled}
                         onClick={() => claim("cash")}
                         icon={<Banknote size={15} strokeWidth={2.2} />}
-                        label="I'll pay cash at the desk"
+                        label={cash.label}
                       />
                     )}
                   </div>
+                  {cash && (
+                    <p className={cn("m-0 mt-2 text-[11.5px] leading-relaxed", cash.ok ? "text-muted" : "text-clay-ink dark:text-clay")}>
+                      {cash.hint}
+                    </p>
+                  )}
                 </>
               )}
 

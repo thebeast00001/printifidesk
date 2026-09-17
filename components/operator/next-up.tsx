@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { Check, Loader2 } from "lucide-react";
-import { NEXT_STATUS, type OrderRow, type OrderStatus } from "@/lib/orders";
+import { nextSteps, type OrderRow, type OrderStatus } from "@/lib/orders";
 import { spring } from "@/lib/utils";
 
 /**
@@ -16,9 +16,12 @@ import { spring } from "@/lib/utils";
  */
 export function primaryAction(order: OrderRow): { to: OrderStatus; label: string } | null {
   if (order.status === "placed") {
+    // An above-limit cash order waits on the student's "Leaving now" (0043):
+    // printing it blind is a deliberate reach on the card, never the bar.
+    if (order.print_on_signal && !order.signalled_at) return null;
     return { to: "queued", label: order.payment_claimed_at ? "Confirm payment" : "Payment taken" };
   }
-  const next = (NEXT_STATUS[order.status] ?? []).find((s) => s.to !== "failed" && s.to !== "cancelled");
+  const next = nextSteps(order).find((s) => s.to !== "failed" && s.to !== "cancelled");
   return next ?? null;
 }
 

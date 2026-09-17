@@ -119,6 +119,47 @@ export async function openSession(orderId: string): Promise<SessionOutcome> {
   return { kind: "session", session: { paymentSessionId: session.paymentSessionId, mode: session.mode ?? mode } };
 }
 
+/**
+ * Paying dues (0043) through Printifi: the same checkout, a different
+ * server route. The key the flight is filed under is "dues:<id>", so the
+ * capsule can tell it from an order's.
+ */
+export type DuesSessionOutcome = { kind: "session"; session: OnlineSession; duesId: string; amount: number } | OnlineOutcome;
+
+export async function openDuesSession(): Promise<DuesSessionOutcome> {
+  const mode = gatewayMode();
+  if (!mode) return { kind: "error", message: "Paying online isn't set up here — pay at any desk instead." };
+  const res = await fetch("/api/payments/dues", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+  const body = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    paid?: boolean;
+    duesId?: string;
+    amount?: number;
+    paymentSessionId?: string;
+    mode?: GatewayMode;
+    needsPhone?: boolean;
+    error?: string;
+  };
+  if (body.paid) return { kind: "paid" };
+  if (body.needsPhone) return { kind: "needs-phone" };
+  if (!res.ok || !body.paymentSessionId || !body.duesId) return { kind: "error", message: body.error ?? "Couldn't start the payment." };
+  return { kind: "session", session: { paymentSessionId: body.paymentSessionId, mode: body.mode ?? mode }, duesId: body.duesId, amount: Number(body.amount ?? 0) };
+}
+
+export async function awaitDuesPaid(duesId: string, tries = 8): Promise<OnlineOutcome> {
+  for (let i = 0; i < tries; i++) {
+    const check = await fetch(`/api/payments/dues?dues=${encodeURIComponent(duesId)}`, { cache: "no-store" });
+    const status = (await check.json().catch(() => ({}))) as { paid?: boolean; attempt?: string };
+    if (status.paid) return { kind: "paid" };
+    if (status.attempt === "dropped") return { kind: "cancelled" };
+    if (status.attempt === "failed") return { kind: "error", message: "The bank didn't approve it. Nothing was charged — try again or another app." };
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return { kind: "pending" };
+}
+
+export const duesKey = (duesId: string) => `dues:${duesId}`;
+
 const instances = new Map<GatewayMode, CashfreeSdk>();
 
 /**
@@ -200,7 +241,7 @@ function outcomeOf(result: CheckoutResult): OnlineOutcome | null {
  * amount filled in), cards, netbanking. Resolves when the modal closes,
  * then asks the server whether the money landed.
  */
-export async function payHosted(session: OnlineSession, orderId: string): Promise<OnlineOutcome> {
+export async function payHosted(session: OnlineSession, key: string): Promise<OnlineOutcome> {
   let cashfree: CashfreeSdk;
   try {
     cashfree = await sdk(session.mode);
@@ -210,7 +251,8 @@ export async function payHosted(session: OnlineSession, orderId: string): Promis
   const result = await cashfree.checkout({ paymentSessionId: session.paymentSessionId, redirectTarget: "_modal" });
   const early = outcomeOf(result);
   if (early) return early;
-  return awaitPaid(orderId);
+  // The key says what was paid for: an order by its id, or dues (0043).
+  return key.startsWith("dues:") ? awaitDuesPaid(key.slice("dues:".length)) : awaitPaid(key);
 }
 
 /* ---------- the checkout in flight ---------- */
@@ -253,7 +295,7 @@ export function useCheckoutFlight(): CheckoutFlight | null {
   );
 }
 
-/** Opens Cashfree's modal for this order; the outcome lands on the flight, not on the caller. */
+/** Opens Cashfree's modal for this order (or "dues:<id>"); the outcome lands on the flight, not on the caller. */
 export function launchHosted(session: OnlineSession, orderId: string): void {
   setFlight({ orderId, session, phase: "open", outcome: null });
   void payHosted(session, orderId).then((outcome) => {

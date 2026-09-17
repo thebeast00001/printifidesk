@@ -5,6 +5,7 @@ import { StaggerIn } from "@/components/stagger-in";
 import { StatusIsland } from "@/components/status-island";
 import { OrderList } from "@/components/order-list";
 import { PrivacyNote } from "@/components/privacy-note";
+import { DuesNotice } from "@/components/dues-notice";
 
 export const metadata = { title: "Orders", robots: NOINDEX };
 
@@ -23,7 +24,8 @@ export default function OrdersPage() {
             <OrderList />
           </div>
 
-          <aside className="order-1 min-w-0 lg:order-2 lg:sticky lg:top-6">
+          <aside className="order-1 flex min-w-0 flex-col gap-3.5 lg:order-2 lg:sticky lg:top-6">
+            <DuesNotice />
             <StatusIsland />
           </aside>
         </div>

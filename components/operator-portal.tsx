@@ -15,11 +15,13 @@ import {
   Download,
   ExternalLink,
   Flag,
+  Footprints,
   Loader2,
   Phone,
   Printer,
   ScanLine,
   Search,
+  ShieldCheck,
   Smartphone,
   Star,
   Ticket,
@@ -42,7 +44,7 @@ import {
   type Customer,
   type OperatorStats,
 } from "@/lib/operator";
-import { NEXT_STATUS, STATUS_LABEL, paymentBalance, type Operator, type OrderRow, type OrderStatus } from "@/lib/orders";
+import { STATUS_LABEL, nextSteps, paymentBalance, type Operator, type OrderRow, type OrderStatus } from "@/lib/orders";
 import { refundOnline } from "@/lib/gateway";
 import { money, paise, type PrintConfig } from "@/lib/pricing";
 import { summarisePages } from "@/lib/pages";
@@ -659,6 +661,10 @@ function OrderCard({
   // A correction the student hasn't answered: accepting waits on them.
   const correctionPending = order.requote_status === "proposed";
   const canCorrect = order.status === "placed" && !order.payment_taken_at && !order.gateway_paid_at && !correctionPending;
+  // 0043: printed on credit, paid at the handover; or above the limit and
+  // waiting for the student's "Leaving now".
+  const cashAtPickup = Boolean(order.pay_at_pickup) && !order.payment_taken_at && !order.gateway_paid_at && order.status !== "unclaimed" && order.status !== "cancelled";
+  const awaitingSignal = order.status === "placed" && Boolean(order.print_on_signal) && !order.signalled_at;
   // The confirm row: what arrived, pre-filled with the bill. Only a UPI
   // claim gets it — cash is counted in the hand.
   const [confirming, setConfirming] = useState(false);
@@ -757,7 +763,34 @@ function OrderCard({
                 corrected · accepted
               </span>
             )}
-            {order.payment_claimed_at && !order.payment_taken_at && (
+            {cashAtPickup && (
+              <span
+                className="flex items-center gap-1 rounded-full bg-bone px-2.5 py-1 text-[10.5px] font-semibold text-ink"
+                title={`Printed on the student's cash credit (within their limit). Take ${money(Number(order.total), currency)} in cash when they collect. If they never do, Printifi covers your price for the job.`}
+              >
+                <Banknote size={10} strokeWidth={2.4} />
+                {money(Number(order.total), currency)} cash at pickup
+              </span>
+            )}
+            {awaitingSignal && (
+              <span
+                className="flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[10.5px] font-semibold text-muted"
+                title="A cash order above the student's limit. It's printed when they tap 'Leaving now' — so nothing is printed for someone who never comes. You can print it anyway; then it's on you."
+              >
+                <Footprints size={10} strokeWidth={2.4} />
+                waiting for the student to set off
+              </span>
+            )}
+            {order.status === "unclaimed" && order.covered_at && (
+              <span
+                className="flex items-center gap-1 rounded-full bg-sage px-2.5 py-1 text-[10.5px] font-semibold text-sage-ink"
+                title="Not collected, not paid — Printifi credited you your price for this job (bill less fee). It's in your Takings."
+              >
+                <ShieldCheck size={10} strokeWidth={2.4} />
+                covered by Printifi · {money(Number(order.covered_amount ?? 0), currency)}
+              </span>
+            )}
+            {order.payment_claimed_at && !order.payment_taken_at && !cashAtPickup && (
               <span
                 className="flex items-center gap-1 rounded-full bg-bone px-2.5 py-1 text-[10.5px] font-semibold text-ink"
                 title="The student says they've paid. Check your own app before accepting."
@@ -860,6 +893,11 @@ function OrderCard({
                   <Undo2 size={14} strokeWidth={2.4} />
                   Withdraw correction
                 </ActionButton>
+              ) : awaitingSignal ? (
+                <ActionButton onClick={onAccept} busy={busy}>
+                  <Printer size={14} strokeWidth={2.2} />
+                  Print now anyway
+                </ActionButton>
               ) : (
                 <ActionButton
                   onClick={() => (order.payment_method === "upi" ? setConfirming((v) => !v) : onAccept())}
@@ -887,7 +925,7 @@ function OrderCard({
                 <Coins size={14} strokeWidth={2.4} />
                 Took {money(balance.short, currency)} cash
               </ActionButton>
-              {(NEXT_STATUS[order.status] ?? []).map(({ to, label }) => (
+              {nextSteps(order, currency).map(({ to, label }) => (
                 <ActionButton
                   key={to}
                   onClick={() => onAdvance(to, label)}
@@ -899,7 +937,7 @@ function OrderCard({
               ))}
             </>
           ) : (
-            (NEXT_STATUS[order.status] ?? []).map(({ to, label }) => (
+            nextSteps(order, currency).map(({ to, label }) => (
               <ActionButton
                 key={to}
                 onClick={() => onAdvance(to, label)}

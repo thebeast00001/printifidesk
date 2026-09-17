@@ -74,6 +74,12 @@ export default function RefundsPage() {
         Printifi, and you are told. Because the job was printed, what was paid for it is not refunded by
         Printifi; whether the desk keeps the pages or reprints is between you and the desk.
       </p>
+      <p>
+        If it was a <b>cash</b> order — printed on your cash credit, to be paid when collected — the bill
+        becomes dues on your account. Printifi pays the desk for the job and you settle the dues with
+        Printifi: online in the app, or in cash at any desk, which records it. Until then no desk takes
+        an order from you. Dues are the bill as it was priced, nothing added.
+      </p>
 
       <H2>Fees and rounding</H2>
       <p>

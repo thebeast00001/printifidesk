@@ -13,7 +13,7 @@
 --    `open_set_at` is when the switch was last flipped; `operator_open_at()`
 --    compares it with the most recent scheduled boundary.
 -- 2. Documents of any kind. Office files (Word, PowerPoint, Excel, text)
---    are uploaded as they are and converted to PDF by the server (see
+--    are uploaded as they are and converted to PDF by the server (seerxr
 --    /api/convert); the bucket takes them, and a student's own row can be
 --    given exact page and colour counts once the PDF has been measured.
 

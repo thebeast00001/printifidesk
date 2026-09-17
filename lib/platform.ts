@@ -20,6 +20,12 @@ export interface PlatformSettings {
   grace_days: number;
   /** 0040: the day Printifi pays desks their online share — 1 Monday … 7 Sunday. */
   payout_weekday: number;
+  /* 0043: cash as a credit line. */
+  cash_limit_start: number;
+  cash_limit_step: number;
+  cash_limit_cap: number;
+  cash_strikes_allowed: number;
+  cash_lockout_days: number;
   updated_at: string;
 }
 
@@ -31,6 +37,11 @@ const EMPTY: PlatformSettings = {
   payee_kind: "personal",
   grace_days: 15,
   payout_weekday: 1,
+  cash_limit_start: 50,
+  cash_limit_step: 25,
+  cash_limit_cap: 300,
+  cash_strikes_allowed: 2,
+  cash_lockout_days: 120,
   updated_at: "",
 };
 
@@ -71,6 +82,11 @@ async function fetchSettings(): Promise<PlatformSettings> {
         payee_kind: data.payee_kind === "merchant" ? "merchant" : "personal",
         grace_days: Number(data.grace_days ?? 15),
         payout_weekday: Number(data.payout_weekday ?? 1),
+        cash_limit_start: Number(data.cash_limit_start ?? 50),
+        cash_limit_step: Number(data.cash_limit_step ?? 25),
+        cash_limit_cap: Number(data.cash_limit_cap ?? 300),
+        cash_strikes_allowed: Number(data.cash_strikes_allowed ?? 2),
+        cash_lockout_days: Number(data.cash_lockout_days ?? 120),
         updated_at: data.updated_at,
       };
   cache = { at: Date.now(), value };
@@ -210,9 +226,11 @@ export interface Payout {
 
 /** One online-paid order as the desk's statement shows it (0040). */
 export interface PayoutOrderRow {
-  id: string;
+  /** Null on a dues line (0043): cash the desk took for a student's dues, with no order behind it. */
+  id: string | null;
   token: string | null;
   paid_at: string;
+  /** The order's status; or "covered" / "dues taken" for a credit line (0043). */
   status: string;
   total: number;
   platform_fee: number;
@@ -322,6 +340,57 @@ export async function setPayoutDay(weekday: number): Promise<void> {
   const { error } = await supabase.rpc("set_payout_day", { p_weekday: weekday });
   if (error) throw new Error(explain(error.message));
   cache = null;
+}
+
+/* ---------- 0043: cash as a credit line — the admin's knobs and numbers ---------- */
+
+export interface CashPolicy {
+  start: number;
+  step: number;
+  cap: number;
+  strikes: number;
+  lockoutDays: number;
+}
+
+export async function setCashPolicy(policy: CashPolicy): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { error } = await supabase.rpc("set_cash_policy", {
+    p_start: policy.start,
+    p_step: policy.step,
+    p_cap: policy.cap,
+    p_strikes: policy.strikes,
+    p_lockout_days: policy.lockoutDays,
+  });
+  if (error) throw new Error(explain(error.message));
+  cache = null;
+}
+
+export interface CashReport {
+  dues_outstanding: number;
+  students_with_dues: number;
+  students_blocked: number;
+  covered_orders: number;
+  covered: number;
+  recovered_online: number;
+  recovered_cash: number;
+}
+
+export async function adminCashReport(): Promise<CashReport | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("admin_cash_report");
+  if (error || !data?.[0]) return null;
+  const r = data[0] as Record<string, number | string>;
+  return {
+    dues_outstanding: Number(r.dues_outstanding ?? 0),
+    students_with_dues: Number(r.students_with_dues ?? 0),
+    students_blocked: Number(r.students_blocked ?? 0),
+    covered_orders: Number(r.covered_orders ?? 0),
+    covered: Number(r.covered ?? 0),
+    recovered_online: Number(r.recovered_online ?? 0),
+    recovered_cash: Number(r.recovered_cash ?? 0),
+  };
 }
 
 export async function adminPayoutDesks(from: Date, to: Date = new Date()): Promise<DeskPayoutRow[]> {

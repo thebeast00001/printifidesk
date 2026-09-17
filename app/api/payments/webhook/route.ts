@@ -1,6 +1,6 @@
 import { serviceClient } from "@/lib/server/db";
 import { verifyWebhook, type PaymentWebhook } from "@/lib/server/cashfree";
-import { markPaid } from "../reconcile";
+import { markDuesPaid, markPaid } from "../reconcile";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,6 +47,24 @@ export async function POST(request: Request) {
     .eq("gateway_order_id", gatewayOrderId)
     .maybeSingle();
   if (!order) {
+    // Not an order: a student's dues (0043), paid to Printifi itself?
+    const { data: dues } = await supabase
+      .from("dues_payments")
+      .select("id")
+      .eq("gateway_order_id", gatewayOrderId)
+      .maybeSingle();
+    if (dues) {
+      try {
+        const fresh = await markDuesPaid(supabase, dues.id, {
+          id: String(payment.cf_payment_id),
+          amount: Number(payment.payment_amount),
+          time: payment.payment_time ?? event.event_time ?? null,
+        });
+        return Response.json({ ok: true, marked: fresh, dues: true });
+      } catch (e) {
+        return Response.json({ ok: true, refused: e instanceof Error ? e.message : String(e) });
+      }
+    }
     // Not ours (another app on the same Cashfree account, or a test event).
     return Response.json({ ok: true, ignored: "unknown order" });
   }

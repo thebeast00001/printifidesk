@@ -7,6 +7,7 @@ import { Feed } from "@/components/feed";
 import { StaggerIn } from "@/components/stagger-in";
 import { PrivacyNote } from "@/components/privacy-note";
 import { HowItWorks } from "@/components/how-it-works";
+import { DuesNotice } from "@/components/dues-notice";
 import { SiteFooter } from "@/components/site-footer";
 import { canonical } from "@/lib/seo";
 
@@ -35,6 +36,7 @@ export default function Home() {
           </div>
 
           <aside className="order-1 flex min-w-0 flex-col gap-3.5 lg:order-2 lg:sticky lg:top-6 lg:gap-4">
+            <DuesNotice />
             <StatusIsland />
             <WidgetsRow />
           </aside>

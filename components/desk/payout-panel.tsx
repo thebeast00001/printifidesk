@@ -138,7 +138,8 @@ export function PayoutPanel({ operator }: { operator: Operator }) {
             />
           </dl>
           <p className="m-0 mt-2.5 font-mono text-[11px] text-muted">
-            your share = bill − Printifi fee · a refund comes off in proportion · a cancelled order counts for nothing
+            your share = bill − Printifi fee · a refund comes off in proportion · a cancelled order counts for nothing ·
+            an uncollected cash order is covered by Printifi and paid out like the rest
           </p>
           {next && (
             <p className="m-0 mt-2 flex items-center gap-1.5 text-[12px] text-ink-soft">
@@ -187,12 +188,17 @@ function OrderLines({ rows, currency }: { rows: PayoutOrderRow[]; currency: stri
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} className="border-t border-line">
+          {rows.map((r, i) => (
+            // A dues line (0043) has no order behind it, so the key falls back to its place.
+            <tr key={r.id ?? `line-${i}`} className="border-t border-line">
               <td className="py-1.5 pr-2 whitespace-nowrap text-muted">
                 {new Date(r.paid_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
               </td>
-              <td className="py-1.5 pr-2 font-mono">{r.token ?? "—"}</td>
+              <td className="py-1.5 pr-2 font-mono">
+                {r.token ?? "—"}
+                {r.status === "covered" && <span className="ml-1.5 rounded-full bg-sage px-1.5 py-px font-sans text-[9.5px] font-semibold text-sage-ink">covered</span>}
+                {r.status === "dues taken" && <span className="ml-1.5 rounded-full bg-bone px-1.5 py-px font-sans text-[9.5px] font-semibold text-ink">dues taken</span>}
+              </td>
               <td className="py-1.5 pr-2 text-right font-mono tabular-nums">{money(r.total, currency)}</td>
               <td className="py-1.5 pr-2 text-right font-mono tabular-nums text-muted">−{money(r.platform_fee, currency)}</td>
               <td className="py-1.5 pr-2 text-right font-mono tabular-nums text-muted">{r.refund_amount ? `−${money(r.refund_amount, currency)}` : ""}</td>

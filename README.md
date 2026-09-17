@@ -657,6 +657,56 @@ So the number of hops is what the code controls:
 The database's own region is the remaining lever, and it's yours — see
 *Marked for you*.
 
+### Cash is a credit line, and the desk is covered (`0043`)
+
+The desks' objection, before a single order: most students pay cash, and
+with WhatsApp four in ten never come for what was printed. The shop was
+extending credit to strangers one job at a time. `0043` makes that credit
+explicit, bounded and earned, and moves the loss off the desk — without
+ever making a student wait at the counter.
+
+- **Every order prints at once.** A cash order within the student's limit
+  goes straight into the queue (`choose_cash()` → `queued`, `pay_at_pickup`),
+  and the handover stamps the payment — the guard sets `payment_taken_at`
+  on `collected`, not on `queued`, for these.
+- **The limit is earned.** `cash_limit_of()`: the platform's start (₹50)
+  plus a step (₹25) per cash order collected, capped (₹300). One open
+  cash order at a time. Above the limit, cash still — but `print_on_signal`:
+  the desk prints when the student taps *Leaving now* (`signal_leaving()`),
+  so a "just in case" order is never printed. The desk can print it anyway
+  from the card; then it's on them.
+- **Not collected → dues, a strike, a credit.** The sweep marks it
+  `unclaimed` as before; the `orders_cash_ending` trigger (platform-flagged
+  writes only) adds the bill to `profiles.dues`, a strike (the second sets
+  `cash_blocked_until`, 120 days), and a `desk_credits` row for the desk's
+  price (bill less fee), applied to its payout (collect mode) or its fee
+  ledger (direct). `guard_order_dues` refuses every `place_order` while dues
+  are owed. No platform fee accrues on an order nobody paid for
+  (`order_paid()` in every fee function).
+- **Dues are settled** online (`/api/payments/dues` → `dues_begin()` /
+  `dues_paid()`, Cashfree order ids `PD…`, the webhook knows them) or in
+  cash at any desk: the student's home page shows a `printify:dues:<id>`
+  QR, the desk's scan sheet reads it, `settle_dues_cash()` records it as a
+  negative credit the desk owes on.
+- **Everyone sees the same numbers.** The student: the pay sheet's cash
+  button says the limit or the reason; a dues notice sits at the top of
+  home and orders until paid; the profile shows the limit. The desk: *cash
+  at pickup* / *waiting to set off* / *covered by Printifi* badges, the
+  handover button says the cash it takes, Takings shows what was covered
+  and where it landed, the payout statement carries `covered` lines. The
+  admin: `/admin` → *Cash on credit* — the policy knobs
+  (`set_cash_policy()`) and `admin_cash_report()`.
+- Half-way to the unclaimed window the sweep sends one reminder that
+  names what missing it costs (`reminded_at`).
+
+`npm run check:sql` drives all of it: the limit and its growth, one-at-a-time,
+the hand-written claim refused, over-limit → signal → queued, the reminder
+once, unclaimed → dues/strike/credit/no-fee, the door shut, the student
+unable to clear it, cash at the counter, strike two → cash off, dues paid
+through Printifi (server-only, short amount refused, idempotent), the
+collect-mode credit in the payout and its statement line, the admin-only
+policy.
+
 ### What a shop asks for in its first week (`0038`, `0039`)
 
 Six things, built for the pitch to stationery shops, each a fact the
@@ -1250,7 +1300,7 @@ lib/
   seo.ts                the site's name, address and public pages, once
   surface.ts            the two-site routing table
   supabase/client.ts    browser client, tokens bridged from Clerk
-supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0042)
+supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0043)
 scripts/                the checks: pricing parity, features, the SQL harness, RLS
 ```
 
@@ -1312,7 +1362,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0042** in the SQL editor, pasted from the files, **in
+2. **Run 0022 → 0043** in the SQL editor, pasted from the files, **in
    number order** — a later migration can name a column an earlier one
    adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
    student update on an order failed and the X on /orders did nothing).
@@ -1331,6 +1381,11 @@ Things the code can't do on its own, in the order they bite:
    the admin's fee rows errors quietly; until 0034, a too-late cancel is
    refused by the policy alone (silently) rather than by the guard (in words);
    until 0035, online payment can't be turned on for a desk.
+   **Then 0043** — cash as a credit line (see *Cash is a credit line*
+   above). Until it runs, choosing cash on the pay sheet errors (the
+   function isn't there), and nothing is covered. After it, check the
+   policy on `/admin` → *Cash on credit* (₹50 / +₹25 / ₹300 / 2 strikes /
+   120 days by default).
    **Then 0042** — the name. The product is Printifi (the domain's
    spelling); 0042 re-makes the twelve database functions whose messages
    — pushes, refusals, the "closed by" note — said Printify, with the one
@@ -1380,7 +1435,7 @@ Things the code can't do on its own, in the order they bite:
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
    project, so: create a new project in **Mumbai (`ap-south-1`)**, run
-   `0001 → 0042` in its SQL editor, create the private `documents` bucket,
+   `0001 → 0043` in its SQL editor, create the private `documents` bucket,
    add both Clerk domains under Authentication → Third-Party Auth, then
    swap `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    and `SUPABASE_SERVICE_ROLE_KEY` on both Vercel projects and in
@@ -1421,7 +1476,7 @@ Being specific about this matters more than a green badge:
   column list, the two-site routing table, the fee's calendar windows, the
   desk's hours and switch, the payout day, and the SQL below. **Passes.**
 - `npm run build` — **passes.**
-- `npm run check:sql` — all forty-one migrations applied, re-applied, and their
+- `npm run check:sql` — all forty-three migrations applied, re-applied, and their
   triggers driven through a real order under a real JWT: tokens, the timeline,
   the write guard, per-file settings, the report constraint, the upload
   ceiling, the order rate limit, document ownership, push endpoint sanity, and

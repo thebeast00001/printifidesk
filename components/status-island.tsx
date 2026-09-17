@@ -6,9 +6,9 @@ import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { useGoogleSignIn } from "./sign-in/google-button";
 import { useSurface } from "./surface-provider";
-import { AlertCircle, Flag, Loader2, LogIn, RotateCcw } from "lucide-react";
+import { AlertCircle, Flag, Footprints, Loader2, LogIn, RotateCcw } from "lucide-react";
 import { useActiveOrder } from "@/hooks/use-tracking";
-import { STATUS_LABEL, type OrderEventRow, type OrderRow, type QueueStatus } from "@/lib/orders";
+import { STATUS_LABEL, signalLeaving, type OrderEventRow, type OrderRow, type QueueStatus } from "@/lib/orders";
 import { money } from "@/lib/pricing";
 import { useApp } from "@/lib/store";
 import type { ConnectionState } from "@/lib/realtime";
@@ -128,6 +128,22 @@ function LiveOrder({
   const barRef = useRef<HTMLSpanElement>(null);
   const [, tick] = useState(0);
   const progress = progressFor(order, queue);
+  // 0043: an above-limit cash order waits for this tap before the desk prints.
+  const awaitingSignal = order.status === "placed" && order.print_on_signal === true && !order.signalled_at;
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  async function leaveNow() {
+    setLeaving(true);
+    setLeaveError(null);
+    try {
+      await signalLeaving(order.id);
+      onChanged();
+    } catch (e) {
+      setLeaveError(e instanceof Error ? e.message : "Couldn't send that.");
+    } finally {
+      setLeaving(false);
+    }
+  }
 
   // The estimate is derived from elapsed time, so it needs a heartbeat.
   useEffect(() => {
@@ -272,6 +288,28 @@ function LiveOrder({
         </motion.button>
       )}
 
+      {/* Cash above the limit: the desk prints on this word, so it's ready
+          by the time the student walks in — and a "just in case" order is
+          never printed at all. */}
+      {awaitingSignal && (
+        <>
+          <motion.button
+            layout="position"
+            whileTap={{ scale: 0.98 }}
+            disabled={leaving}
+            onClick={() => void leaveNow()}
+            className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-shell-ink text-[14px] font-semibold text-shell disabled:opacity-60"
+          >
+            {leaving ? <Loader2 size={15} className="animate-spin" /> : <Footprints size={15} strokeWidth={2.2} />}
+            Leaving now — start printing
+          </motion.button>
+          <p className="m-0 mt-2 text-[11.5px] leading-relaxed text-shell-faint">
+            Tap when you set off. The desk prints it then, and you pay {money(Number(order.total))} in cash when you collect.
+          </p>
+          {leaveError && <p className="m-0 mt-1.5 text-[12px] text-clay">{leaveError}</p>}
+        </>
+      )}
+
       <StageTrack order={order} fillRef={barRef} done={done} failed={failed} />
 
       <AnimatePresence initial={false}>
@@ -302,12 +340,17 @@ function headline(order: OrderRow, queue: QueueStatus | null): string {
 function detail(order: OrderRow, queue: QueueStatus | null): string {
   const sheets = `${order.pages} ${order.pages === 1 ? "page" : "pages"}`;
   // Confirmed by the desk or by Cashfree — a fact on the row, so it leads.
-  const paid = order.payment_taken_at && !order.refunded_at ? (order.payment_method === "gateway" ? "Paid online" : "Paid") : null;
+  // A cash-at-pickup order (0043) isn't paid yet; it says what's owed instead.
+  const cashDue = order.pay_at_pickup && !order.payment_taken_at && !order.gateway_paid_at;
+  const paid = order.payment_taken_at && !order.refunded_at
+    ? (order.payment_method === "gateway" ? "Paid online" : "Paid")
+    : cashDue ? `${money(Number(order.total))} cash at the counter` : null;
   const lead = (rest: string) => (paid ? `${paid} · ${rest}` : rest);
 
   switch (order.status) {
     case "placed":
       if (order.requote_status === "proposed") return `${sheets} · the desk corrected the bill — accept or cancel`;
+      if (order.print_on_signal && !order.signalled_at) return `${sheets} · cash at the counter — tap Leaving now when you set off`;
       return order.payment_claimed_at
         ? `${sheets} · waiting for the operator to confirm`
         : `${sheets} · pay to join the queue`;
@@ -327,6 +370,7 @@ function detail(order: OrderRow, queue: QueueStatus | null): string {
       return [
         order.shelf_slot ? `Shelf ${order.shelf_slot}` : null,
         order.token ? `show token ${order.token} to collect` : "waiting for you to collect",
+        cashDue ? `pay ${money(Number(order.total))} in cash` : null,
       ]
         .filter(Boolean)
         .join(" · ")
@@ -334,6 +378,10 @@ function detail(order: OrderRow, queue: QueueStatus | null): string {
         .replace(/^waiting/, "Waiting");
     case "collected":
       return `${sheets} · collected`;
+    case "unclaimed":
+      return order.covered_at
+        ? `${money(Number(order.total))} is due on your account — pay it to order again`
+        : (order.note ?? "Not collected in time — ask at the counter if you still need it");
     case "failed":
       return order.note ?? "Something went wrong while printing";
     case "cancelled":

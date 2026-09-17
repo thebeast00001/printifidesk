@@ -71,3 +71,25 @@ export async function reconcileDetailed(
   });
   return { paid: true, attempt: "success" };
 }
+
+/**
+ * Marks a dues payment (0043) paid from a Cashfree payment — for the webhook
+ * and the poll alike. `dues_paid` refuses a short amount and is a no-op the
+ * second time. Returns whether this call was the one that marked it.
+ */
+export async function markDuesPaid(
+  supabase: SupabaseClient,
+  duesId: string,
+  payment: { id: string; amount: number; time?: string | null },
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("dues_paid", {
+    p_id: duesId,
+    p_payment_id: String(payment.id),
+    p_amount: payment.amount,
+    p_paid_at: payment.time ?? new Date().toISOString(),
+  });
+  if (error) throw new Error(error.message);
+  const fresh = data === true;
+  if (fresh) void drain().catch(() => undefined);
+  return fresh;
+}

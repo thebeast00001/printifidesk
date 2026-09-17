@@ -41,6 +41,8 @@ truncate table
   public.invite_attempts,
   public.platform_settlements,
   public.platform_payouts,
+  public.desk_credits,
+  public.dues_payments,
   public.operator_applications,
   public.staff,
   public.operators,

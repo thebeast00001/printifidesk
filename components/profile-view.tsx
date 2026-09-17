@@ -22,6 +22,7 @@ import { useTotals } from "@/hooks/use-tracking";
 import { useAuthKey } from "@/hooks/use-auth-key";
 import { ensureSession, getSupabase } from "@/lib/supabase/client";
 import { listDocuments, type DocumentRow } from "@/lib/upload";
+import { cashStanding, type CashStanding } from "@/lib/orders";
 import { formatBytes } from "@/lib/analysis";
 import { useApp } from "@/lib/store";
 
@@ -43,6 +44,8 @@ export function ProfileView() {
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [docs, setDocs] = useState<DocumentRow[] | null>(null);
+  // 0043: the cash limit they've earned, and anything owed.
+  const [standing, setStanding] = useState<CashStanding | null>(null);
 
   const load = useCallback(async () => {
     const state = await ensureSession();
@@ -63,6 +66,7 @@ export function ProfileView() {
 
     setProfile((row as Profile) ?? null);
     setDocs(documents);
+    setStanding(await cashStanding());
   // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
   }, [authKey]);
 
@@ -148,6 +152,25 @@ export function ProfileView() {
           onClick={() => openSheet("upload")}
         />
         <NavRow href="/orders" icon={Receipt} label="Your orders" hint="Tokens and live status" />
+        {standing && (
+          <div className="flex items-center gap-3.5 px-4 py-3.5 lg:px-5">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-surface-sunk text-ink-soft">
+              <Wallet size={16} strokeWidth={2} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="m-0 text-[14px] font-semibold tracking-[-0.01em]">
+                {standing.dues > 0 ? `₹${standing.dues.toFixed(0)} due` : `Cash limit ₹${standing.cash_limit.toFixed(0)}`}
+              </p>
+              <p className="m-0 mt-0.5 text-[12px] text-muted">
+                {standing.dues > 0
+                  ? "From an uncollected cash order — pay it on the home page to order again"
+                  : standing.blocked_until && new Date(standing.blocked_until) > new Date()
+                    ? `Cash is off until ${new Date(standing.blocked_until).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} — UPI works as usual`
+                    : `Per cash order, paid when you collect · grows each time you collect (${standing.collected} so far)`}
+              </p>
+            </div>
+          </div>
+        )}
         {/* Nothing here points at the desk or the admin's tools: those are
             the desk site's, reached by its own address, and a student's
             profile is a student's. */}

@@ -47,12 +47,26 @@ export default function TermsPage() {
         order left unpaid past the desk&apos;s window is cancelled for you, and you&apos;re told.
       </p>
 
+      <H2>Cash at the counter</H2>
+      <p>
+        Cash is a credit line. Within your cash limit, a cash order is printed straight away and you pay
+        the desk when you collect; the limit starts at a small amount for a new account and grows each
+        time you collect a cash order on time. One cash order can be open at a time. Above your limit
+        you can still choose cash, but the desk prints when you tap <b>Leaving now</b> rather than
+        before. If a cash order isn&apos;t collected within the desk&apos;s window, the bill becomes
+        <b> dues</b> on your account: Printifi pays the desk for the job, and you can&apos;t place an order
+        at any desk until the dues are paid — online through Printifi, or in cash at any desk. A second
+        uncollected cash order switches cash off for your account for a season; online payment keeps
+        working. The limits and windows are shown in the app at the moment you choose cash.
+      </p>
+
       <H2>Collecting</H2>
       <p>
         Every order has a token and a QR code. Whoever shows the QR code collects the job — treat it like
         the ticket it is; if you share it, you have handed the job to that person. A job left on the shelf
         past the desk&apos;s window is cleared as not collected: you&apos;re told, the files are deleted,
-        and — because it was printed — what was paid for it isn&apos;t refunded by Printifi.
+        and — because it was printed — what was paid for it isn&apos;t refunded by Printifi, and what
+        wasn&apos;t yet paid for it becomes dues.
       </p>
 
       <H2>Problems, refunds and reports</H2>

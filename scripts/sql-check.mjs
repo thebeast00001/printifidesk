@@ -2536,6 +2536,282 @@ await scenario("a gateway payment pushes 'paid online' to the desk and 'paid ₹
  * migration without a line here fails below, which is the point: the
  * decision of who calls it is made on purpose, once, and checked forever.
  */
+/* ---------- 0043: cash is a credit line, the desk is covered, the student settles ---------- */
+
+await scenario("cash within a limit prints at once and is paid at the handover; above it, the desk waits for 'leaving now'", async () => {
+  await actingAs(null);
+  const S = "student_cash";
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`insert into public.profiles (id, name) values ($1, 'Cash Student') on conflict (id) do update set dues = 0, cash_collected = 0, cash_strikes = 0, cash_blocked_until = null;`, [S]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+  await db.query(`update public.operators set gateway_status = 'off', accepts_cash = true where id = $1;`, [OPERATOR]);
+  await actingAs("admin_test");
+  await db.query(`select public.set_cash_policy(50, 25, 300, 2, 120);`);
+
+  // A fresh student: nothing due, ₹50 of cash, nothing open.
+  await actingAs(S);
+  const { rows: st0 } = await db.query(`select * from public.cash_standing();`);
+  if (Number(st0[0].dues) !== 0 || Number(st0[0].cash_limit) !== 50 || !st0[0].can_cash) throw new Error(`fresh standing: ${JSON.stringify(st0[0])}`);
+  // Another student's standing is not theirs to read.
+  const { rows: peek } = await db.query(`select * from public.cash_standing('student_trust');`);
+  if (peek.length !== 0) throw new Error("a student read another's standing");
+
+  const mk = async (name, pages) => (await db.query(`select public.place_order($1, $2::jsonb) as id;`, [OPERATOR, JSON.stringify([{ name, pages, colour_pages: 0, config: { copies: 1 } }])])).rows[0].id;
+  const A = await mk("small.pdf", 3);
+  const totalA = Number((await db.query(`select total from public.orders where id = $1;`, [A])).rows[0].total);
+  if (totalA > 50) throw new Error(`the test needs a small order; ${totalA}`);
+
+  // Cash isn't a column the student writes; it's a choice the platform checks.
+  const direct = await refused("authenticated", S, `update public.orders set payment_method = 'cash', payment_claimed_at = now() where id = $1;`, [A]);
+  if (!/chosen from the pay sheet/.test(direct ?? "")) throw new Error(`direct cash claim: ${direct ?? "allowed"}`);
+  await actingAs(S);
+  const { rows: c1 } = await db.query(`select public.choose_cash($1) as how;`, [A]);
+  if (c1[0].how !== "queued") throw new Error(`in-limit cash → ${c1[0].how}`);
+  const { rows: a1 } = await db.query(`select status, pay_at_pickup, print_on_signal, payment_method, payment_taken_at, queued_at from public.orders where id = $1;`, [A]);
+  if (a1[0].status !== "queued" || !a1[0].pay_at_pickup || a1[0].print_on_signal || a1[0].payment_method !== "cash" || a1[0].payment_taken_at || !a1[0].queued_at) throw new Error(`after choose_cash: ${JSON.stringify(a1[0])}`);
+  const { rows: told } = await db.query(`select body from public.notifications where order_id = $1 and channel = 'push' order by id desc limit 1;`, [A]);
+  if (!/in cash when you collect/.test(told[0]?.body ?? "")) throw new Error(`queued message: ${told[0]?.body}`);
+
+  // One open cash order at a time.
+  const B = await mk("second.pdf", 2);
+  let one = "";
+  try { await db.query(`select public.choose_cash($1);`, [B]); } catch (error) { one = String(error?.message ?? error); }
+  if (!/one at a time/.test(one)) throw new Error(`a second cash order was allowed: ${one || "no error"}`);
+  await db.query(`update public.orders set status = 'cancelled' where id = $1;`, [B]);
+
+  // The desk prints and hands over; the cash is stamped at the handover, and the limit grows.
+  await actingAs("op_test");
+  for (const to of ["printing", "ready"]) await db.query(`update public.orders set status = $2 where id = $1;`, [A, to]);
+  const { rows: mid } = await db.query(`select payment_taken_at from public.orders where id = $1;`, [A]);
+  if (mid[0].payment_taken_at) throw new Error("a cash-at-pickup order was marked paid before the handover");
+  await db.query(`update public.orders set status = 'collected' where id = $1;`, [A]);
+  const { rows: done } = await db.query(`select payment_taken_at, payment_received from public.orders where id = $1;`, [A]);
+  if (!done[0].payment_taken_at || Math.abs(Number(done[0].payment_received) - totalA) > 0.005) throw new Error(`handover stamp: ${JSON.stringify(done[0])}`);
+  await actingAs(S);
+  const { rows: st1 } = await db.query(`select cash_limit, collected, can_cash from public.cash_standing();`);
+  if (Number(st1[0].cash_limit) !== 75 || st1[0].collected !== 1 || !st1[0].can_cash) throw new Error(`after one collection: ${JSON.stringify(st1[0])}`);
+
+  // Above the limit: cash still, but the desk prints on the student's word.
+  const C = await mk("thesis.pdf", 400);
+  const totalC = Number((await db.query(`select total from public.orders where id = $1;`, [C])).rows[0].total);
+  if (totalC <= 75) throw new Error(`the test needs a big order; ${totalC}`);
+  const { rows: c2 } = await db.query(`select public.choose_cash($1) as how;`, [C]);
+  if (c2[0].how !== "signal") throw new Error(`over-limit cash → ${c2[0].how}`);
+  const { rows: c2row } = await db.query(`select status, print_on_signal, signalled_at from public.orders where id = $1;`, [C]);
+  if (c2row[0].status !== "placed" || !c2row[0].print_on_signal || c2row[0].signalled_at) throw new Error(`over-limit row: ${JSON.stringify(c2row[0])}`);
+  // The student can't fake the signal by hand; the function is the way.
+  const fake = await refused("authenticated", S, `update public.orders set signalled_at = now(), status = 'queued' where id = $1;`, [C]);
+  if (!/only cancel/.test(fake ?? "")) throw new Error(`hand-queued: ${fake ?? "allowed"}`);
+  await actingAs(S);
+  await db.query(`select public.signal_leaving($1);`, [C]);
+  const { rows: c3 } = await db.query(`select status, signalled_at, payment_taken_at from public.orders where id = $1;`, [C]);
+  if (c3[0].status !== "queued" || !c3[0].signalled_at || c3[0].payment_taken_at) throw new Error(`after leaving: ${JSON.stringify(c3[0])}`);
+  await actingAs("op_test");
+  for (const to of ["printing", "ready", "collected"]) await db.query(`update public.orders set status = $2 where id = $1;`, [C, to]);
+  await actingAs(S);
+  const { rows: st2 } = await db.query(`select cash_limit, collected from public.cash_standing();`);
+  if (Number(st2[0].cash_limit) !== 100 || st2[0].collected !== 2) throw new Error(`after two: ${JSON.stringify(st2[0])}`);
+
+  await actingAs(null);
+  await db.query(`delete from public.orders where id in ($1, $2, $3);`, [A, B, C]);
+  return "₹50 to start; in-limit cash queues at once, unpaid until handed over, then stamped and the limit steps to ₹75; a second open cash order is refused; the student can't write 'cash' or a signal by hand; over the limit the desk waits for 'leaving now', then prints; two collections → ₹100";
+});
+
+await scenario("an uncollected cash order becomes dues and a strike, the desk is credited, and the fee isn't charged on it", async () => {
+  await actingAs(null);
+  const S = "student_cash";
+  await db.query(`update public.operators set unclaimed_after_hours = 6, gateway_status = 'off' where id = $1;`, [OPERATOR]);
+  const feeBefore = (await db.query(`select accrued, outstanding from public.fee_balance($1);`, [OPERATOR])).rows[0];
+  const coveredBefore = Number((await db.query(`select via_fee from public.desk_credit_summary($1);`, [OPERATOR])).rows[0].via_fee);
+
+  await actingAs(S);
+  const mk = async (name, pages) => (await db.query(`select public.place_order($1, $2::jsonb) as id;`, [OPERATOR, JSON.stringify([{ name, pages, colour_pages: 0, config: { copies: 1 } }])])).rows[0].id;
+  const D = await mk("forgot.pdf", 4);
+  const { rows: drow } = await db.query(`select total, platform_fee from public.orders where id = $1;`, [D]);
+  const totalD = Number(drow[0].total), feeD = Number(drow[0].platform_fee);
+  await db.query(`select public.choose_cash($1);`, [D]);
+  await actingAs("op_test");
+  for (const to of ["printing", "ready"]) await db.query(`update public.orders set status = $2 where id = $1;`, [D, to]);
+
+  // Halfway to the deadline: one reminder, naming the cost.
+  await actingAs(null);
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`update public.orders set ready_at = now() - interval '4 hours' where id = $1;`, [D]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+  await db.query(`select public.sweep_orders($1);`, [OPERATOR]);
+  const { rows: nudged } = await db.query(`select reminded_at, status from public.orders where id = $1;`, [D]);
+  if (!nudged[0].reminded_at || nudged[0].status !== "ready") throw new Error(`reminder: ${JSON.stringify(nudged[0])}`);
+  const { rows: nudge } = await db.query(`select body from public.notifications where order_id = $1 and channel = 'push' and body like 'Still waiting%';`, [D]);
+  if (nudge.length !== 1 || !/becomes due/.test(nudge[0].body)) throw new Error(`nudge: ${JSON.stringify(nudge)}`);
+  await db.query(`select public.sweep_orders($1);`, [OPERATOR]);
+  const { rows: once } = await db.query(`select count(*)::int as n from public.notifications where order_id = $1 and channel = 'push' and body like 'Still waiting%';`, [D]);
+  if (once[0].n !== 1) throw new Error("the reminder went twice");
+
+  // Past the deadline: unclaimed → dues, a strike, a credit, no fee.
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`update public.orders set ready_at = now() - interval '10 hours' where id = $1;`, [D]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+  await db.query(`select public.sweep_orders($1);`, [OPERATOR]);
+  const { rows: ended } = await db.query(`select status, covered_at, covered_amount from public.orders where id = $1;`, [D]);
+  if (ended[0].status !== "unclaimed" || !ended[0].covered_at) throw new Error(`unclaimed: ${JSON.stringify(ended[0])}`);
+  if (Math.abs(Number(ended[0].covered_amount) - (totalD - feeD)) > 0.005) throw new Error(`covered ${ended[0].covered_amount}, want ${totalD - feeD}`);
+  const { rows: prof } = await db.query(`select dues, cash_strikes, cash_blocked_until from public.profiles where id = $1;`, [S]);
+  if (Math.abs(Number(prof[0].dues) - totalD) > 0.005 || prof[0].cash_strikes !== 1 || prof[0].cash_blocked_until) throw new Error(`profile: ${JSON.stringify(prof[0])}`);
+  const { rows: credit } = await db.query(`select amount, kind, applied_to from public.desk_credits where order_id = $1;`, [D]);
+  if (credit.length !== 1 || credit[0].kind !== "unclaimed" || credit[0].applied_to !== "fee" || Math.abs(Number(credit[0].amount) - (totalD - feeD)) > 0.005) throw new Error(`credit: ${JSON.stringify(credit)}`);
+  const { rows: said } = await db.query(`select body from public.notifications where order_id = $1 and channel = 'push' and body like '%wasn''t collected%';`, [D]);
+  if (!/is now due on your account/.test(said[0]?.body ?? "")) throw new Error(`unclaimed message: ${said[0]?.body}`);
+  // The fee ledger: nothing accrued for it, the credit shown, the outstanding down by it.
+  await actingAs("op_test");
+  const feeAfter = (await db.query(`select accrued, outstanding from public.fee_balance($1);`, [OPERATOR])).rows[0];
+  if (Math.abs(Number(feeAfter.accrued) - Number(feeBefore.accrued)) > 0.005) throw new Error(`fee accrued on an unpaid order: ${feeBefore.accrued} → ${feeAfter.accrued}`);
+  if (Math.abs(Number(feeBefore.outstanding) - Number(feeAfter.outstanding) - (totalD - feeD)) > 0.005) throw new Error(`outstanding ${feeBefore.outstanding} → ${feeAfter.outstanding}, want down by ${totalD - feeD}`);
+  const coveredAfter = Number((await db.query(`select via_fee from public.desk_credit_summary($1);`, [OPERATOR])).rows[0].via_fee);
+  if (Math.abs(coveredAfter - coveredBefore - (totalD - feeD)) > 0.005) throw new Error(`covered ${coveredBefore} → ${coveredAfter}`);
+  const { rows: win } = await db.query(`select orders from public.fee_window($1, now() - interval '1 day');`, [OPERATOR]);
+  const { rows: winAll } = await db.query(`select count(*)::int as n from public.orders where operator_id = $1 and status in ('collected','unclaimed') and coalesce(collected_at, ready_at) >= now() - interval '1 day' and (payment_taken_at is not null or gateway_paid_at is not null) and (refund_amount is null or refund_amount < total);`, [OPERATOR]);
+  if (win[0].orders !== winAll[0].n) throw new Error(`fee_window counted ${win[0].orders}, paid orders ${winAll[0].n}`);
+  const { rows: summary } = await db.query(`select * from public.desk_credit_summary($1);`, [OPERATOR]);
+  if (summary[0].covered_orders < 1 || Number(summary[0].via_fee) <= 0) throw new Error(`summary: ${JSON.stringify(summary[0])}`);
+
+  // The door is shut at every desk until the dues are paid; the student can't open it by hand.
+  await actingAs(S);
+  let shut = "";
+  try { await mk("again.pdf", 1); } catch (error) { shut = String(error?.message ?? error); }
+  if (!/due from an uncollected order/.test(shut)) throw new Error(`ordered with dues: ${shut || "allowed"}`);
+  await db.query(`update public.profiles set dues = 0, cash_strikes = 0 where id = $1;`, [S]);
+  const { rows: still } = await db.query(`select dues, cash_strikes from public.profiles where id = $1;`, [S]);
+  if (Number(still[0].dues) === 0 || still[0].cash_strikes !== 1) throw new Error("a student cleared their own dues");
+
+  // Cash at the counter, at any desk: the dues fall, the desk owes Printifi what it took.
+  await actingAs("op_test");
+  const { rows: owed } = await db.query(`select name, dues from public.dues_of($1);`, [S]);
+  if (Math.abs(Number(owed[0].dues) - totalD) > 0.005) throw new Error(`dues_of: ${JSON.stringify(owed)}`);
+  let over = "";
+  try { await db.query(`select public.settle_dues_cash($1, $2, $3);`, [OPERATOR, S, totalD + 1]); } catch (error) { over = String(error?.message ?? error); }
+  if (!/more than the/.test(over)) throw new Error(`overpaid dues: ${over || "allowed"}`);
+  const { rows: left } = await db.query(`select public.settle_dues_cash($1, $2, $3) as left;`, [OPERATOR, S, totalD]);
+  if (Number(left[0].left) !== 0) throw new Error(`left ${left[0].left}`);
+  const { rows: took } = await db.query(`select amount, kind, applied_to from public.desk_credits where user_id = $1 and kind = 'dues_cash';`, [S]);
+  if (took.length !== 1 || Math.abs(Number(took[0].amount) + totalD) > 0.005 || took[0].applied_to !== "fee") throw new Error(`dues credit: ${JSON.stringify(took)}`);
+  const feeNet = Number((await db.query(`select via_fee from public.desk_credit_summary($1);`, [OPERATOR])).rows[0].via_fee);
+  if (Math.abs(feeNet - coveredBefore - (totalD - feeD) + totalD) > 0.005) throw new Error(`net covered after cash taken: ${feeNet}`);
+  await actingAs(S);
+  const { rows: open } = await db.query(`select dues, can_cash from public.cash_standing();`);
+  if (Number(open[0].dues) !== 0 || !open[0].can_cash) throw new Error(`after settling: ${JSON.stringify(open[0])}`);
+  const { rows: unlocked } = await db.query(`select body from public.notifications where user_id = $1 and order_id is null and channel = 'push' order by id desc limit 1;`, [S]);
+  if (!/You can order again/.test(unlocked[0]?.body ?? "")) throw new Error(`settled message: ${unlocked[0]?.body}`);
+
+  await actingAs(null);
+  await db.query(`delete from public.desk_credits where user_id = $1;`, [S]);
+  await db.query(`delete from public.orders where id = $1;`, [D]);
+  await db.query(`update public.operators set unclaimed_after_hours = 48 where id = $1;`, [OPERATOR]);
+  return "half-time nudge names the cost, once; unclaimed → ₹ due, strike 1, the desk credited bill-less-fee against its fee, no fee accrued; ordering refused at every desk; the student can't clear it; cash at the counter clears it and the desk owes it on";
+});
+
+await scenario("the second strike locks cash for a season; dues paid through Printifi reopen the door; a collect-mode desk is credited in its payout", async () => {
+  await actingAs(null);
+  const S = "student_cash";
+  await db.query(`update public.operators set unclaimed_after_hours = 6, gateway_status = 'off' where id = $1;`, [OPERATOR]);
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`update public.profiles set dues = 0, cash_strikes = 1, cash_blocked_until = null where id = $1;`, [S]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+
+  await actingAs(S);
+  const mk = async (name, pages) => (await db.query(`select public.place_order($1, $2::jsonb) as id;`, [OPERATOR, JSON.stringify([{ name, pages, colour_pages: 0, config: { copies: 1 } }])])).rows[0].id;
+  const E = await mk("forgot2.pdf", 2);
+  const totalE = Number((await db.query(`select total from public.orders where id = $1;`, [E])).rows[0].total);
+  await db.query(`select public.choose_cash($1);`, [E]);
+  await actingAs("op_test");
+  for (const to of ["printing", "ready"]) await db.query(`update public.orders set status = $2 where id = $1;`, [E, to]);
+  await actingAs(null);
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`update public.orders set ready_at = now() - interval '10 hours' where id = $1;`, [E]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+  await db.query(`select public.sweep_orders($1);`, [OPERATOR]);
+  const { rows: prof } = await db.query(`select dues, cash_strikes, cash_blocked_until from public.profiles where id = $1;`, [S]);
+  if (prof[0].cash_strikes !== 2 || !prof[0].cash_blocked_until) throw new Error(`second strike: ${JSON.stringify(prof[0])}`);
+  const days = (new Date(prof[0].cash_blocked_until).getTime() - Date.now()) / 86_400_000;
+  if (days < 119 || days > 121) throw new Error(`lockout ${days} days`);
+
+  // Paying through Printifi: the server begins it, Cashfree's word ends it, once.
+  let student = "";
+  try { await (async () => { await asRole("authenticated", S); try { await db.query(`select * from public.dues_begin($1);`, [S]); } finally { await asRoot(); } })(); } catch (error) { student = String(error?.message ?? error); }
+  if (!/permission denied|Only Printifi/.test(student)) throw new Error(`a student began a dues payment: ${student || "allowed"}`);
+  await actingAs(null);
+  const { rows: begun } = await db.query(`select * from public.dues_begin($1);`, [S]);
+  if (!/^PD[0-9a-f]{32}$/.test(begun[0].gateway_order_id) || Math.abs(Number(begun[0].amount) - totalE) > 0.005) throw new Error(`dues_begin: ${JSON.stringify(begun[0])}`);
+  let short = "";
+  try { await db.query(`select public.dues_paid($1, 'cf_short', $2);`, [begun[0].id, totalE - 1]); } catch (error) { short = String(error?.message ?? error); }
+  if (!/Paid/.test(short)) throw new Error(`a short payment was taken: ${short || "no error"}`);
+  const { rows: paid } = await db.query(`select public.dues_paid($1, 'cf_dues', $2) as fresh;`, [begun[0].id, totalE]);
+  if (paid[0].fresh !== true) throw new Error("dues_paid didn't mark it");
+  const { rows: twice } = await db.query(`select public.dues_paid($1, 'cf_dues', $2) as fresh;`, [begun[0].id, totalE]);
+  if (twice[0].fresh !== false) throw new Error("dues_paid marked it twice");
+  const { rows: cleared } = await db.query(`select dues from public.profiles where id = $1;`, [S]);
+  if (Number(cleared[0].dues) !== 0) throw new Error(`dues after paying online: ${cleared[0].dues}`);
+  const { rows: report } = await (async () => { await actingAs("admin_test"); try { return await db.query(`select * from public.admin_cash_report();`); } finally { await actingAs(null); } })();
+  if (Number(report[0].recovered_online) < totalE || report[0].students_blocked < 1) throw new Error(`report: ${JSON.stringify(report[0])}`);
+
+  // Ordering is open again; cash is not.
+  await actingAs(S);
+  const F = await mk("after.pdf", 1);
+  let locked = "";
+  try { await db.query(`select public.choose_cash($1);`, [F]); } catch (error) { locked = String(error?.message ?? error); }
+  if (!/Cash is off for your account/.test(locked)) throw new Error(`cash after two strikes: ${locked || "allowed"}`);
+  const { rows: st } = await db.query(`select can_cash, reason from public.cash_standing();`);
+  if (st[0].can_cash || st[0].reason !== "blocked") throw new Error(`standing: ${JSON.stringify(st[0])}`);
+
+  // A desk Printifi collects for is credited in its payout, and the statement says so.
+  await actingAs(null);
+  await db.query(`update public.operators set gateway_status = 'collect' where id = $1;`, [OPERATOR]);
+  const S2 = "student_cash_two";
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`insert into public.profiles (id, name) values ($1, 'Second') on conflict (id) do update set dues = 0, cash_collected = 0, cash_strikes = 0, cash_blocked_until = null;`, [S2]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+  await actingAs("admin_test");
+  const before = Number((await db.query(`select owed from public.payout_balance($1);`, [OPERATOR])).rows[0].owed);
+  await actingAs(S2);
+  const G = (await db.query(`select public.place_order($1, $2::jsonb) as id;`, [OPERATOR, JSON.stringify([{ name: "g.pdf", pages: 2, colour_pages: 0, config: { copies: 1 } }])])).rows[0].id;
+  const { rows: grow } = await db.query(`select total, platform_fee from public.orders where id = $1;`, [G]);
+  await db.query(`select public.choose_cash($1);`, [G]);
+  await actingAs("op_test");
+  for (const to of ["printing", "ready"]) await db.query(`update public.orders set status = $2 where id = $1;`, [G, to]);
+  await actingAs(null);
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`update public.orders set ready_at = now() - interval '10 hours' where id = $1;`, [G]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+  await db.query(`select public.sweep_orders($1);`, [OPERATOR]);
+  await actingAs("admin_test");
+  const after = Number((await db.query(`select owed from public.payout_balance($1);`, [OPERATOR])).rows[0].owed);
+  const share = Number(grow[0].total) - Number(grow[0].platform_fee);
+  if (Math.abs(after - before - share) > 0.005) throw new Error(`payout owed ${before} → ${after}, want +${share}`);
+  const { rows: lines } = await db.query(`select id, status, share, payment_id from public.payout_orders($1, now() - interval '1 hour', now() + interval '1 minute');`, [OPERATOR]);
+  const line = lines.find((r) => r.id === G);
+  if (!line || line.status !== "covered" || Math.abs(Number(line.share) - share) > 0.005 || !/Covered by Printifi/.test(line.payment_id)) throw new Error(`statement line: ${JSON.stringify(line)}`);
+
+  // The policy is the admin's.
+  await actingAs("op_test");
+  let notAdmin = "";
+  try { await db.query(`select public.set_cash_policy(10, 10, 100, 1, 30);`); } catch (error) { notAdmin = String(error?.message ?? error); }
+  if (!/Only the admin/.test(notAdmin)) throw new Error(`an owner set the cash policy: ${notAdmin || "no error"}`);
+  await actingAs("admin_test");
+  await db.query(`select public.set_cash_policy(100, 50, 500, 3, 60);`);
+  const { rows: lim } = await db.query(`select public.cash_limit_of($1) as l;`, [S2]);
+  if (Number(lim[0].l) !== 100) throw new Error(`limit under the new policy: ${lim[0].l}`);
+  await db.query(`select public.set_cash_policy(50, 25, 300, 2, 120);`);
+
+  await actingAs(null);
+  await db.query(`update public.operators set gateway_status = 'off', unclaimed_after_hours = 48 where id = $1;`, [OPERATOR]);
+  await db.query(`delete from public.desk_credits where user_id in ($1, $2);`, [S, S2]);
+  await db.query(`delete from public.dues_payments where user_id = $1;`, [S]);
+  await db.query(`delete from public.orders where id in ($1, $2, $3);`, [E, F, G]);
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`update public.profiles set dues = 0, cash_strikes = 0, cash_blocked_until = null, cash_collected = 0 where id in ($1, $2);`, [S, S2]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+  return "strike two → cash off for 120 days; dues_begin is the server's, dues_paid refuses a short amount and is idempotent, the admin's report counts it; ordering reopens, cash stays off; a collect-mode desk's payout carries the credit and its statement names the order; the policy is admin-only";
+});
+
 const GRANTS = {
   // Policies evaluate these as the asking role.
   "clerk_id()": ["anon", "authenticated"],
@@ -2599,6 +2875,15 @@ const GRANTS = {
   "set_payout_day(integer)": ["authenticated"],
   "admin_payout_desks(timestamp with time zone,timestamp with time zone)": ["authenticated"],
   "set_gateway_collect(uuid,boolean)": ["authenticated"],
+  // 0043: cash as a credit line.
+  "cash_standing(text)": ["authenticated"],
+  "choose_cash(uuid)": ["authenticated"],
+  "signal_leaving(uuid)": ["authenticated"],
+  "dues_of(text)": ["authenticated"],
+  "settle_dues_cash(uuid,text,numeric)": ["authenticated"],
+  "desk_credit_summary(uuid)": ["authenticated"],
+  "admin_cash_report()": ["authenticated"],
+  "set_cash_policy(numeric,numeric,numeric,integer,integer)": ["authenticated"],
   // The server's.
   "sweep_all_orders()": [],
   "claim_notifications(integer)": [],
@@ -2606,6 +2891,8 @@ const GRANTS = {
   "gateway_begin(uuid,text,boolean)": [],
   "gateway_paid(uuid,text,numeric,text,timestamp with time zone)": [],
   "gateway_refunded(uuid,text,numeric,text)": [],
+  "dues_begin(text)": [],
+  "dues_paid(uuid,text,numeric,timestamp with time zone)": [],
   // Internal: called from definer bodies, which run as their owner.
   "assert_server()": [],
   "is_server()": [],
@@ -2616,6 +2903,8 @@ const GRANTS = {
   "price_line(integer,integer,jsonb,operators,double precision)": [],
   "to_paise(double precision)": [],
   "desk_share(orders)": [],
+  "order_paid(orders)": [],
+  "cash_limit_of(text)": [],
   "notify_student(text,uuid,text)": [],
   "operator_open_at(operators,timestamp with time zone)": [],
   "operator_last_boundary(operators,timestamp with time zone)": [],

@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Drawer } from "vaul";
 import { motion } from "motion/react";
 import jsQR from "jsqr";
-import { Camera, Check, ImageUp, Keyboard, Loader2, ScanLine, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Banknote, Camera, Check, ImageUp, Keyboard, Loader2, ScanLine, ShieldAlert, ShieldCheck } from "lucide-react";
 import { orderCustomer, type Customer } from "@/lib/operator";
-import { listOperators, paymentBalance, type OrderRow } from "@/lib/orders";
+import { duesOf, listOperators, paymentBalance, settleDuesCash, type OrderRow } from "@/lib/orders";
 import { money } from "@/lib/pricing";
 import { cn, spring } from "@/lib/utils";
 
@@ -39,6 +39,12 @@ import { cn, spring } from "@/lib/utils";
  * A typed token is the same as a slip. Codes from before the desk segment
  * existed still parse; they just can't name their desk.
  */
+/** A student's dues code (0043): who owes, so the desk can look up how much. */
+export function parseDuesScan(raw: string): string | null {
+  const m = /^printify:dues:([A-Za-z0-9_-]{4,64})$/.exec(raw.trim());
+  return m ? m[1] : null;
+}
+
 export function parseScan(
   raw: string,
 ): { token: string; code: string | null; desk: string | null } | null {
@@ -143,6 +149,10 @@ export function ScanSheet({
   const [photoBusy, setPhotoBusy] = useState(false);
   const [typed, setTyped] = useState("");
   const [match, setMatch] = useState<{ order: OrderRow; proof: Proof } | null>(null);
+  /** A dues code (0043): the student, what they owe, and the settling. */
+  const [dues, setDues] = useState<{ user_id: string; name: string | null; dues: number } | null>(null);
+  const [duesBusy, setDuesBusy] = useState(false);
+  const [duesDone, setDuesDone] = useState<string | null>(null);
   /** Two ready orders with the same token — yesterday's and today's. */
   const [choices, setChoices] = useState<OrderRow[]>([]);
   const [miss, setMiss] = useState<string | null>(null);
@@ -155,6 +165,20 @@ export function ScanSheet({
 
   const resolve = useCallback(
     (raw: string) => {
+      // A dues code first: it isn't a token and never matches one.
+      const owing = parseDuesScan(raw);
+      if (owing) {
+        setMiss(null);
+        setMatch(null);
+        setChoices([]);
+        setDuesDone(null);
+        void duesOf(owing).then((d) => {
+          if (!d) return setMiss("Couldn't read that student's dues — are you signed in to a desk?");
+          if (d.dues <= 0) return setMiss(`${d.name ?? "This student"} has nothing due.`);
+          setDues(d);
+        });
+        return;
+      }
       const parsed = parseScan(raw);
       if (!parsed) {
         setMiss("That doesn't look like a Printifi token.");
@@ -219,7 +243,7 @@ export function ScanSheet({
   // Camera loop. Runs only while the sheet is open and no order has been
   // matched — once one is, the picture is noise and the tap is what matters.
   useEffect(() => {
-    if (!open || !supported || match) {
+    if (!open || !supported || match || dues) {
       stop();
       return;
     }
@@ -286,7 +310,7 @@ export function ScanSheet({
       cancelAnimationFrame(raf);
       stop();
     };
-  }, [open, supported, match, resolve, stop]);
+  }, [open, supported, match, dues, resolve, stop]);
 
   useEffect(() => {
     if (!open) {
@@ -294,6 +318,8 @@ export function ScanSheet({
       setChoices([]);
       setMiss(null);
       setTyped("");
+      setDues(null);
+      setDuesDone(null);
     }
   }, [open]);
 
@@ -312,7 +338,7 @@ export function ScanSheet({
         });
         const scratch = (scratchRef.current ??= document.createElement("canvas"));
         const text = decodePixels(img, scratch);
-        if (text && tokenFromScan(text)) resolve(text);
+        if (text && (tokenFromScan(text) || parseDuesScan(text))) resolve(text);
         else setMiss("No Printifi code in that photo. Get the whole square in frame and try again.");
       } finally {
         URL.revokeObjectURL(url);
@@ -345,7 +371,52 @@ export function ScanSheet({
                 : "Take a photo of the student's code, or type the token."}
             </Drawer.Description>
 
-            {match ? (
+            {dues ? (
+              <div className="rounded-[20px] border border-line bg-surface p-4">
+                <p className="label-caps m-0 flex items-center gap-1.5">
+                  <Banknote size={12} strokeWidth={2.4} />
+                  Dues
+                </p>
+                <p className="font-figure m-0 mt-1 text-[24px] font-extrabold">{money(dues.dues)}</p>
+                <p className="m-0 mt-1 text-[12.5px] leading-relaxed text-muted">
+                  {dues.name ?? "This student"} owes Printifi for a cash order they didn&apos;t collect. Take it in cash
+                  here: it comes off what Printifi owes you (or goes on your fee), and their account opens again.
+                </p>
+                {duesDone ? (
+                  <p className="m-0 mt-3 flex items-center gap-1.5 text-[13px] font-semibold text-sage-ink">
+                    <Check size={14} strokeWidth={2.6} />
+                    {duesDone}
+                  </p>
+                ) : (
+                  <div className="mt-3 flex gap-2">
+                    <motion.button
+                      whileTap={{ scale: 0.98 }}
+                      transition={spring}
+                      disabled={duesBusy}
+                      onClick={async () => {
+                        setDuesBusy(true);
+                        try {
+                          const left = await settleDuesCash(operatorId, dues.user_id, dues.dues);
+                          setDuesDone(left > 0 ? `Took ${money(dues.dues)} · ${money(left)} still due` : `Took ${money(dues.dues)} · settled`);
+                        } catch (e) {
+                          setMiss(e instanceof Error ? e.message : "Couldn't record that.");
+                          setDues(null);
+                        } finally {
+                          setDuesBusy(false);
+                        }
+                      }}
+                      className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-ink text-[13.5px] font-semibold text-paper disabled:opacity-60"
+                    >
+                      {duesBusy ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} strokeWidth={2.2} />}
+                      Took {money(dues.dues)} cash
+                    </motion.button>
+                    <button onClick={() => setDues(null)} className="h-11 rounded-xl border border-line px-4 text-[13px] font-semibold text-ink-soft">
+                      Back
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : match ? (
               <MatchPanel
                 order={match.order}
                 proof={match.proof}

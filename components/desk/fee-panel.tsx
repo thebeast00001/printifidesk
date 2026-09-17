@@ -20,7 +20,7 @@ import {
 } from "@/lib/platform";
 import { money } from "@/lib/pricing";
 import { isValidVpa, upiLink } from "@/lib/upi";
-import type { Operator } from "@/lib/orders";
+import { deskCreditSummary, type DeskCreditSummary, type Operator } from "@/lib/orders";
 import { cn, spring } from "@/lib/utils";
 
 const PERIODS: { id: FeePeriod; label: string }[] = [
@@ -46,6 +46,8 @@ export function FeePanel({ operator }: { operator: Operator }) {
   const [balance, setBalance] = useState<FeeBalance | null>(null);
   const [status, setStatus] = useState<FeeStatus | null>(null);
   const [paid, setPaid] = useState<Settlement[]>([]);
+  // 0043: uncollected cash orders Printifi covered, and dues taken here in cash.
+  const [credits, setCredits] = useState<DeskCreditSummary | null>(null);
   const [qr, setQr] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,6 +69,8 @@ export function FeePanel({ operator }: { operator: Operator }) {
       setBalance(b);
       setPaid(s);
       setStatus(st);
+      // Before 0043 there's nothing to show; the rest of the panel stands.
+      setCredits(await deskCreditSummary(operator.id).catch(() => null));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't read the fee ledger.");
     }
@@ -160,9 +164,26 @@ export function FeePanel({ operator }: { operator: Operator }) {
           </dl>
 
           <p className="m-0 mt-2.5 font-mono text-[11px] text-muted">
-            accrued {money(balance.accrued, currency)} · settled {money(balance.settled, currency)} · fees count on
-            collected orders that weren&apos;t fully refunded
+            accrued {money(balance.accrued, currency)} · settled {money(balance.settled, currency)}
+            {credits && credits.via_fee !== 0 ? ` · ${credits.via_fee > 0 ? "covered by Printifi" : "dues you took"} ${money(Math.abs(credits.via_fee), currency)}` : ""}
+            {" "}· fees count on collected orders that were paid and weren&apos;t fully refunded
           </p>
+          {credits && (credits.covered_orders > 0 || credits.dues_taken > 0) && (
+            <p className="m-0 mt-2 rounded-xl bg-surface-sunk px-3 py-2 text-[12px] leading-relaxed text-ink-soft">
+              {credits.covered_orders > 0 && (
+                <>
+                  <b className="font-semibold text-ink">{credits.covered_orders} uncollected cash {credits.covered_orders === 1 ? "order" : "orders"}</b> —
+                  Printifi covered your price for {credits.covered_orders === 1 ? "it" : "them"}, {money(credits.covered, currency)}
+                  {credits.via_fee > 0 ? ", credited against your fee" : ""}{credits.via_payout > 0 ? ", in your payout" : ""}.{" "}
+                </>
+              )}
+              {credits.dues_taken > 0 && (
+                <>
+                  You took {money(credits.dues_taken, currency)} in cash for students&apos; dues; that&apos;s owed on to Printifi the same way.
+                </>
+              )}
+            </p>
+          )}
 
           {status && status.due > 0 && (
             // What's due from earlier months, and the day it starts to matter.

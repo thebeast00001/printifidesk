@@ -98,6 +98,20 @@ export default async function DeskTermsPage() {
         share. The student-facing refund policy says the same from their side.
       </p>
 
+      <H2>Cash orders, and the guarantee</H2>
+      <p>
+        Students may pay cash within a credit limit Printifi sets per student (it starts small and grows
+        as they collect). A cash order within the limit goes into your queue at once, marked <b>cash at
+        pickup</b>; you print it and take the cash at the handover — the handover records it. A cash order
+        above the student&apos;s limit waits until they tap <b>Leaving now</b>; you may print it earlier,
+        and then it is on you. If a cash order is cleared as unclaimed unpaid, <b>Printifi credits you your
+        price for the job</b> — the bill less the platform fee — against your fee ledger, or in your next
+        payout where Printifi collects for you; no fee is charged on it. Printifi recovers the amount from
+        the student, whose account is closed at every desk until they do. When a student pays their dues
+        to you in cash, you record it in the app by scanning their code; that amount is then owed on to
+        Printifi the same way.
+      </p>
+
       <H2>Jobs that go nowhere</H2>
       <p>
         You set two windows. An unpaid order past the first is cancelled and the student told. A ready job

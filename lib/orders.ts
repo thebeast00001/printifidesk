@@ -4,7 +4,7 @@ import { ensureSession, getSupabase } from "./supabase/client";
 import { changed } from "./changed";
 import { platformSettings } from "./platform";
 import { pokeDispatch } from "./push";
-import type { Extra, PrintConfig, RateSource } from "./pricing";
+import { money, type Extra, type PrintConfig, type RateSource } from "./pricing";
 import type { WeeklyHours } from "./hours";
 import type { UpiKind } from "./upi";
 
@@ -93,6 +93,15 @@ export interface OrderRow {
   gateway_refund_id?: string | null;
   /** 0035: the Cashfree order carried a split to the desk's vendor. False: Printifi collected; the desk's share is a payout. */
   gateway_split?: boolean;
+  /* 0043: cash as a credit line. */
+  /** Printed on the student's credit; the cash is taken when they collect. */
+  pay_at_pickup?: boolean;
+  /** Above the student's limit: the desk prints when they tap "Leaving now". */
+  print_on_signal?: boolean;
+  signalled_at?: string | null;
+  /** Unclaimed and unpaid: Printifi credited the desk this much, then. */
+  covered_at?: string | null;
+  covered_amount?: number | string | null;
   refunded_at: string | null;
   refund_amount: number | null;
   refund_note: string | null;
@@ -323,6 +332,22 @@ export const STATUS_LABEL: Record<OrderStatus, string> = {
 };
 
 /** What the counter does next. Drives the operator console's buttons. */
+/**
+ * The desk's next steps for one order — NEXT_STATUS, with the handover of a
+ * cash-at-pickup order (0043) saying what it takes, and an above-limit
+ * cash order that hasn't been set off for offering "print anyway" rather
+ * than "payment taken".
+ */
+export function nextSteps(order: OrderRow, currency = "₹"): { to: OrderStatus; label: string }[] {
+  const cashDue = order.pay_at_pickup && !order.payment_taken_at && !order.gateway_paid_at;
+  const steps = NEXT_STATUS[order.status] ?? [];
+  return steps.map((s) => {
+    if (s.to === "collected" && cashDue) return { to: s.to, label: `Took ${money(Number(order.total), currency)} cash · handed over` };
+    if (s.to === "queued" && order.print_on_signal && !order.signalled_at) return { to: s.to, label: "Print now anyway" };
+    return s;
+  });
+}
+
 export const NEXT_STATUS: Partial<Record<OrderStatus, { to: OrderStatus; label: string }[]>> = {
   placed: [
     { to: "queued", label: "Payment taken" },
@@ -797,6 +822,138 @@ export async function acceptRequote(orderId: string): Promise<number> {
   return Number(data);
 }
 
+/* ---------- 0043: cash as a credit line ---------- */
+
+/** Where a student stands with cash, from the database's own rules. */
+export interface CashStanding {
+  dues: number;
+  cash_limit: number;
+  strikes: number;
+  collected: number;
+  blocked_until: string | null;
+  open_cash_order: string | null;
+  open_cash_token: string | null;
+  can_cash: boolean;
+  reason: "dues" | "blocked" | "open" | null;
+}
+
+/**
+ * A project that hasn't run 0043 has no cash_standing(); the pay sheet then
+ * works as it did — cash claimed on the row, checked by nobody — rather
+ * than offering a button that can never be pressed. Remembered once seen.
+ */
+let cashLegacyMode = false;
+export const cashLegacy = () => cashLegacyMode;
+
+export async function cashStanding(userId?: string): Promise<CashStanding | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("cash_standing", userId ? { p_user: userId } : {});
+  if (error) {
+    if (/could not find|does not exist|schema cache/i.test(error.message)) cashLegacyMode = true;
+    return null;
+  }
+  const row = data?.[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return {
+    dues: Number(row.dues ?? 0),
+    cash_limit: Number(row.cash_limit ?? 0),
+    strikes: Number(row.strikes ?? 0),
+    collected: Number(row.collected ?? 0),
+    blocked_until: (row.blocked_until as string | null) ?? null,
+    open_cash_order: (row.open_cash_order as string | null) ?? null,
+    open_cash_token: (row.open_cash_token as string | null) ?? null,
+    can_cash: row.can_cash === true,
+    reason: (row.reason as CashStanding["reason"]) ?? null,
+  };
+}
+
+/**
+ * Cash for this order. Within the limit it goes straight into the queue,
+ * paid when collected ("queued"); above it, the desk prints when the
+ * student taps "Leaving now" ("signal"). The database says which.
+ */
+export async function chooseCash(orderId: string): Promise<"queued" | "signal" | "claimed"> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase isn't configured.");
+  if (cashLegacyMode) return claimCashLegacy(orderId);
+  const { data, error } = await supabase.rpc("choose_cash", { p_order: orderId });
+  if (error) {
+    if (/could not find|does not exist|schema cache/i.test(error.message)) {
+      cashLegacyMode = true;
+      return claimCashLegacy(orderId);
+    }
+    throw new Error(friendly(error.message));
+  }
+  changed("orders");
+  return data === "signal" ? "signal" : "queued";
+}
+
+/** Before 0043: the student says they'll pay cash; the desk decides when to print. */
+async function claimCashLegacy(orderId: string): Promise<"claimed"> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase isn't configured.");
+  const { error } = await supabase
+    .from("orders")
+    .update({ payment_method: "cash", payment_claimed_at: new Date().toISOString(), payment_reference: null, payment_claimed_amount: null })
+    .eq("id", orderId);
+  if (error) throw new Error(friendly(error.message));
+  changed("orders");
+  return "claimed";
+}
+
+/** "Leaving now" — the desk prints from here. */
+export async function signalLeaving(orderId: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase isn't configured.");
+  const { error } = await supabase.rpc("signal_leaving", { p_order: orderId });
+  if (error) throw new Error(friendly(error.message));
+  changed("orders");
+}
+
+/** The desk about to take someone's dues in cash: who, and how much. */
+export async function duesOf(userId: string): Promise<{ user_id: string; name: string | null; dues: number } | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("dues_of", { p_user: userId });
+  if (error || !data?.[0]) return null;
+  const row = data[0] as { user_id: string; name: string | null; dues: number | string };
+  return { user_id: row.user_id, name: row.name, dues: Number(row.dues) };
+}
+
+/** Cash taken at this desk for someone's dues. Returns what's still due. */
+export async function settleDuesCash(operatorId: string, userId: string, amount: number): Promise<number> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase isn't configured.");
+  const { data, error } = await supabase.rpc("settle_dues_cash", { p_operator: operatorId, p_user: userId, p_amount: amount });
+  if (error) throw new Error(error.message);
+  return Number(data ?? 0);
+}
+
+/** Covered orders and cash taken for dues, and which ledger each landed in — the desk's own line in Takings. */
+export interface DeskCreditSummary {
+  covered_orders: number;
+  covered: number;
+  dues_taken: number;
+  via_payout: number;
+  via_fee: number;
+}
+
+export async function deskCreditSummary(operatorId: string): Promise<DeskCreditSummary | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("desk_credit_summary", { p_operator: operatorId });
+  if (error || !data?.[0]) return null;
+  const r = data[0] as Record<string, number | string>;
+  return {
+    covered_orders: Number(r.covered_orders ?? 0),
+    covered: Number(r.covered ?? 0),
+    dues_taken: Number(r.dues_taken ?? 0),
+    via_payout: Number(r.via_payout ?? 0),
+    via_fee: Number(r.via_fee ?? 0),
+  };
+}
+
 /** The desk's housekeeping: unpaid orders past their window, ready ones nobody collected. */
 export async function sweepOrders(operatorId: string): Promise<number> {
   const supabase = getSupabase();
@@ -829,7 +986,7 @@ function friendly(message: string): string {
     return "The database refused that change. Check the RLS policies in 0001_init.sql.";
   }
   // The RPC's own messages are written for the student; pass them through.
-  if (/not yours|out of range|lot of orders|not taking orders|at least one file|split it in two/.test(message)) {
+  if (/not yours|out of range|lot of orders|not taking orders|at least one file|split it in two|due from an uncollected|Cash is off|one at a time|doesn't take cash|accept the new price|already paid|isn't waiting|doesn't need a signal|already started/.test(message)) {
     return message;
   }
   if (message.includes("orders_pickup_at_matches_mode")) {
