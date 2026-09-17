@@ -278,6 +278,11 @@ await scenario("an order gets a token", async () => {
     insert into public.staff (user_id, operator_id, role)
     values ('op_test', '${OPERATOR}', 'owner')
     on conflict do nothing;
+
+    -- 0044 puts a ₹1 cover sheet on every job by default. The scenarios below
+    -- work their sums by hand without it; the test desk keeps it off, and the
+    -- parity grid and the 0044 scenario turn it on for themselves.
+    update public.operators set cover_sheet = false where id = '${OPERATOR}';
   `);
   await actingAs("student_test");
   // Through the RPC, the way the app does it since 0014: a direct insert is
@@ -455,7 +460,7 @@ async function rateCardFromDb() {
   const { rows } = await db.query(
     `select o.currency, o.bw_per_page::text, o.colour_per_page::text, o.duplex_discount::text,
             o.staple_price::text, o.bulk_threshold, o.bulk_multiplier::text, o.min_order::text, o.paper_gsm,
-            o.round_to_rupee, o.extras,
+            o.round_to_rupee, o.extras, o.cover_sheet, o.cover_price::text,
             ps.fee_percent::text as platform_fee_percent, ps.fee_min::text as platform_fee_min
        from public.operators o, public.platform_settings ps
       where o.id = $1;`,
@@ -480,8 +485,11 @@ await scenario("place_order prices exactly what the browser showed", async () =>
   // A fee with a decimal of its own, so the fee's rounding is exercised too.
   await actingAs(null);
   await db.exec(`update public.platform_settings set fee_percent = 3.25, fee_min = 0 where id;`);
+  // 0044: the cover sheet on, so the grid compares that line too.
+  await db.exec(`update public.operators set cover_sheet = true, cover_price = 1.00 where id = '${OPERATOR}';`);
   const card = await rateCardFromDb();
   if (card.platformFeePercent !== 3.25) throw new Error("the card didn't pick up the platform fee");
+  if (card.coverPrice !== 1) throw new Error("the card didn't pick up the cover sheet");
 
   const colours = ["smart", "bw", "full"];
   const sidesOpts = ["single", "double"];
@@ -572,7 +580,9 @@ await scenario("place_order prices exactly what the browser showed", async () =>
     refusedExtra = /doesn't offer that extra/.test(String(error?.message ?? error));
   }
   if (!refusedExtra) throw new Error("an unknown extra was accepted");
-  return `${compared} jobs — every total and every line price identical to the paisa, extras included, rate card snapshotted; an unknown extra refused`;
+  await actingAs(null);
+  await db.exec(`update public.operators set cover_sheet = false where id = '${OPERATOR}';`);
+  return `${compared} jobs — every total and every line price identical to the paisa, extras and the cover sheet included, rate card snapshotted; an unknown extra refused`;
 });
 
 await scenario("a file that isn't yours can't go on your order", async () => {
@@ -2810,6 +2820,68 @@ await scenario("the second strike locks cash for a season; dues paid through Pri
   await db.query(`update public.profiles set dues = 0, cash_strikes = 0, cash_blocked_until = null, cash_collected = 0 where id in ($1, $2);`, [S, S2]);
   await db.query(`select set_config('printify.gateway', '', false);`);
   return "strike two → cash off for 120 days; dues_begin is the server's, dues_paid refuses a short amount and is idempotent, the admin's report counts it; ordering reopens, cash stays off; a collect-mode desk's payout carries the credit and its statement names the order; the policy is admin-only";
+});
+
+/* ---------- 0044: every job comes out labelled ---------- */
+
+await scenario("the cover sheet is a line on the bill, the desk's to switch and price; the slot is taken at queue time", async () => {
+  await actingAs(null);
+  await db.query(`update public.operators set cover_sheet = true, cover_price = 1.00, shelf_rows = 1, shelf_cols = 2 where id = $1;`, [OPERATOR]);
+  await db.exec(`insert into public.staff (user_id, operator_id, role) values ('hand_cover', '${OPERATOR}', 'staff') on conflict do nothing;`);
+  await db.exec(`insert into public.profiles (id, name) values ('student_cover', 'Cover Student') on conflict (id) do nothing;`);
+  const card = await rateCardFromDb();
+  if (card.coverPrice !== 1) throw new Error(`the card's cover price: ${card.coverPrice}`);
+
+  // Priced with the lines: the browser and the database agree, and the line is on the row and in the snapshot.
+  await actingAs("student_cover");
+  const lines = [{ pages: 3, colourPages: 0, config: { copies: 1, sides: "single", colour: "bw", binding: "none" } }];
+  const q = quoteOrder(lines, card);
+  if (q.cover !== 1) throw new Error(`quote cover ${q.cover}`);
+  const { rows: placed } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [OPERATOR, JSON.stringify([{ name: "c.pdf", pages: 3, colour_pages: 0, config: lines[0].config }])]);
+  const id = placed[0].id;
+  const row = (await db.query(`select total, cover_charge, rate_card, shelf_slot, status from public.orders where id = $1;`, [id])).rows[0];
+  if (Number(row.total) !== q.total) throw new Error(`SQL ${row.total} vs TS ${q.total} with the cover`);
+  if (Number(row.cover_charge) !== 1) throw new Error(`cover_charge ${row.cover_charge}`);
+  if (String(row.rate_card.cover_price) !== "1.00" && Number(row.rate_card.cover_price) !== 1) throw new Error(`snapshot cover: ${JSON.stringify(row.rate_card.cover_price)}`);
+  if (row.shelf_slot !== null) throw new Error("a placed order took a slot");
+  // The student can't drop the line.
+  await db.query(`update public.orders set cover_charge = 0 where id = $1;`, [id]);
+  if (Number((await db.query(`select cover_charge from public.orders where id = $1;`, [id])).rows[0].cover_charge) !== 1) throw new Error("the student removed the cover charge");
+
+  // Into the queue: the slot comes with it, so the cover can say where the pile goes.
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'queued' where id = $1;`, [id]);
+  const queued = (await db.query(`select shelf_slot from public.orders where id = $1;`, [id])).rows[0];
+  if (queued.shelf_slot !== "A1") throw new Error(`slot at queue time: ${queued.shelf_slot}`);
+  // A correction keeps the cover.
+  const { rows: items } = await db.query(`select id from public.order_items where order_id = $1;`, [id]);
+  const { rows: rep } = await db.query(`select total from public.reprice_order($1, $2::jsonb);`, [id, JSON.stringify([{ item_id: items[0].id, pages: 5, colour_pages: 0 }])]);
+  const expected = quoteOrder([{ pages: 5, colourPages: 0, config: lines[0].config }], rateCardOf(row.rate_card)).total;
+  if (Number(rep[0].total) !== expected) throw new Error(`reprice ${rep[0].total} vs ${expected} — the cover moved`);
+
+  // Staff can't switch it or price it; the owner can. Off means no line.
+  const byStaff = await refused("authenticated", "hand_cover", `update public.operators set cover_sheet = false where id = $1;`, [OPERATOR]);
+  if (!/Only the desk's owner/.test(byStaff ?? "")) throw new Error(`staff switched the cover: ${byStaff ?? "allowed"}`);
+  const priced = await refused("authenticated", "hand_cover", `update public.operators set cover_price = 5 where id = $1;`, [OPERATOR]);
+  if (!/Only the desk's owner/.test(priced ?? "")) throw new Error(`staff priced the cover: ${priced ?? "allowed"}`);
+  await actingAs("op_test");
+  await db.query(`update public.operators set cover_sheet = false where id = $1;`, [OPERATOR]);
+  const off = await rateCardFromDb();
+  if (off.coverPrice !== 0) throw new Error(`card with the sheet off: ${off.coverPrice}`);
+  await actingAs("student_cover");
+  const { rows: placed2 } = await db.query(`select public.place_order($1, $2::jsonb) as id;`, [OPERATOR, JSON.stringify([{ name: "d.pdf", pages: 3, colour_pages: 0, config: lines[0].config }])]);
+  const row2 = (await db.query(`select total, cover_charge from public.orders where id = $1;`, [placed2[0].id])).rows[0];
+  if (Number(row2.cover_charge) !== 0 || Number(row2.total) !== quoteOrder(lines, off).total) throw new Error(`with the sheet off: ${JSON.stringify(row2)}`);
+  let tooMuch = "";
+  await actingAs("op_test");
+  try { await db.query(`update public.operators set cover_price = 50 where id = $1;`, [OPERATOR]); } catch (error) { tooMuch = String(error?.message ?? error); }
+  if (!/cover_price/.test(tooMuch)) throw new Error(`a ₹50 cover sheet was accepted: ${tooMuch || "no error"}`);
+
+  await actingAs(null);
+  await db.query(`update public.operators set cover_sheet = true, cover_price = 1.00, shelf_rows = 0 where id = $1;`, [OPERATOR]);
+  await db.query(`delete from public.orders where id in ($1, $2);`, [id, placed2[0].id]);
+  await db.query(`delete from public.staff where user_id = 'hand_cover';`);
+  return "₹1 line on the bill, the same in the browser and the database, snapshotted, pinned against the student; a correction keeps it; the slot is taken when the job joins the queue; owner-only, off means no line, capped at ₹20";
 });
 
 const GRANTS = {

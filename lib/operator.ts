@@ -367,6 +367,8 @@ export interface SignedFile {
 export async function openOrderFile(
   orderItemId: string,
   purpose: "print" | "preview" = "print",
+  /** 0044: the file under its cover sheet, from the server. Falls back to the bare file when it can't. */
+  withCover = false,
 ): Promise<SignedFile> {
   const supabase = getSupabase();
   if (!supabase) throw new Error("No database connection.");
@@ -379,6 +381,23 @@ export async function openOrderFile(
 
   const row = data?.[0] as { document_id: string; storage_path: string; name: string } | undefined;
   if (!row) throw new Error("That item has no stored file.");
+
+  if (withCover && purpose === "print") {
+    // The access is logged above; the server checks the desk again and
+    // draws the cover from the order's own facts. Whatever goes wrong with
+    // the cover — a photo format it can't wrap, a PDF it can't read, a
+    // project without 0044, a slow server — the bare file opens instead:
+    // the sheet is a convenience, the print never waits on it. Only a
+    // refusal (not this desk's order) is an error.
+    try {
+      const res = await fetch("/api/print", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ itemId: orderItemId }) });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; name?: string; error?: string };
+      if (res.ok && body.ok && body.url) return { documentId: row.document_id, name: body.name ?? row.name, url: body.url };
+      if (res.status === 403) throw new Error(body.error ?? "Not your desk.");
+    } catch (e) {
+      if (e instanceof Error && /Not your desk/.test(e.message)) throw e;
+    }
+  }
 
   const { data: signed, error: signError } = await supabase.storage
     .from("documents")

@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Drawer } from "vaul";
 import { motion } from "motion/react";
 import jsQR from "jsqr";
-import { Banknote, Camera, Check, ImageUp, Keyboard, Loader2, ScanLine, ShieldAlert, ShieldCheck } from "lucide-react";
-import { orderCustomer, type Customer } from "@/lib/operator";
+import { Banknote, Camera, Check, FileCheck, ImageUp, Keyboard, Loader2, ScanLine, ShieldAlert, ShieldCheck } from "lucide-react";
+import { advance, orderCustomer, type Customer } from "@/lib/operator";
 import { duesOf, listOperators, paymentBalance, settleDuesCash, type OrderRow } from "@/lib/orders";
 import { money } from "@/lib/pricing";
 import { cn, spring } from "@/lib/utils";
@@ -39,6 +39,16 @@ import { cn, spring } from "@/lib/utils";
  * A typed token is the same as a slip. Codes from before the desk segment
  * existed still parse; they just can't name their desk.
  */
+/**
+ * The cover sheet's code (0044): the token and the desk, nothing else. Used
+ * to file a job (mark it ready) or to find one — never to prove who's
+ * collecting; that stays with the phone.
+ */
+export function parseCoverScan(raw: string): { token: string; desk: string } | null {
+  const m = /^printify:cover:([A-Z]{1,2}\d{1,4}):([A-F0-9]{8})$/i.exec(raw.trim());
+  return m ? { token: m[1].toUpperCase(), desk: m[2].toUpperCase() } : null;
+}
+
 /** A student's dues code (0043): who owes, so the desk can look up how much. */
 export function parseDuesScan(raw: string): string | null {
   const m = /^printify:dues:([A-Za-z0-9_-]{4,64})$/.exec(raw.trim());
@@ -127,8 +137,10 @@ export function ScanSheet({
   onOpenChange,
   operatorId,
   ready,
+  live,
   busy,
   onHandOver,
+  onFiled,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -136,8 +148,12 @@ export function ScanSheet({
   operatorId: string;
   /** Orders currently waiting to be collected here. */
   ready: OrderRow[];
+  /** 0044: every live order here, so a cover sheet's code can file one (mark it ready). */
+  live?: OrderRow[];
   busy: boolean;
   onHandOver: (order: OrderRow) => void;
+  /** 0044: a cover was scanned and the job marked ready; the list should reload. */
+  onFiled?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -151,6 +167,8 @@ export function ScanSheet({
   const [match, setMatch] = useState<{ order: OrderRow; proof: Proof } | null>(null);
   /** A dues code (0043): the student, what they owe, and the settling. */
   const [dues, setDues] = useState<{ user_id: string; name: string | null; dues: number } | null>(null);
+  /** A cover code (0044) for a job not yet ready: filing it. */
+  const [filing, setFiling] = useState<{ order: OrderRow; done: boolean; error: string | null } | null>(null);
   const [duesBusy, setDuesBusy] = useState(false);
   const [duesDone, setDuesDone] = useState<string | null>(null);
   /** Two ready orders with the same token — yesterday's and today's. */
@@ -177,6 +195,35 @@ export function ScanSheet({
           if (d.dues <= 0) return setMiss(`${d.name ?? "This student"} has nothing due.`);
           setDues(d);
         });
+        return;
+      }
+      // A cover sheet: this desk's? Then either find the pile (ready) or file it.
+      const cover = parseCoverScan(raw);
+      if (cover) {
+        if (cover.desk !== deskPrefix(operatorId)) {
+          setMiss("That cover sheet is from another desk.");
+          return;
+        }
+        const onShelf = ready.filter((o) => o.token?.toUpperCase() === cover.token);
+        if (onShelf.length === 1) {
+          setMiss(null);
+          setChoices([]);
+          // The paper found; who's collecting is still to be checked.
+          setMatch({ order: onShelf[0], proof: "unverified" });
+          return;
+        }
+        if (onShelf.length > 1) {
+          setMiss(null);
+          setChoices(onShelf);
+          return;
+        }
+        const toFile = (live ?? []).find((o) => o.token?.toUpperCase() === cover.token && ["queued", "printing", "finishing"].includes(o.status));
+        if (toFile) {
+          setMiss(null);
+          setFiling({ order: toFile, done: false, error: null });
+          return;
+        }
+        setMiss(`${cover.token} isn't a live job here.`);
         return;
       }
       const parsed = parseScan(raw);
@@ -237,13 +284,13 @@ export function ScanSheet({
       setMatch({ order: candidates[0], proof: "unverified" });
       setChoices([]);
     },
-    [ready, operatorId],
+    [ready, live, operatorId],
   );
 
   // Camera loop. Runs only while the sheet is open and no order has been
   // matched — once one is, the picture is noise and the tap is what matters.
   useEffect(() => {
-    if (!open || !supported || match || dues) {
+    if (!open || !supported || match || dues || filing) {
       stop();
       return;
     }
@@ -310,7 +357,7 @@ export function ScanSheet({
       cancelAnimationFrame(raf);
       stop();
     };
-  }, [open, supported, match, dues, resolve, stop]);
+  }, [open, supported, match, dues, filing, resolve, stop]);
 
   useEffect(() => {
     if (!open) {
@@ -320,6 +367,7 @@ export function ScanSheet({
       setTyped("");
       setDues(null);
       setDuesDone(null);
+      setFiling(null);
     }
   }, [open]);
 
@@ -338,7 +386,7 @@ export function ScanSheet({
         });
         const scratch = (scratchRef.current ??= document.createElement("canvas"));
         const text = decodePixels(img, scratch);
-        if (text && (tokenFromScan(text) || parseDuesScan(text))) resolve(text);
+        if (text && (tokenFromScan(text) || parseDuesScan(text) || parseCoverScan(text))) resolve(text);
         else setMiss("No Printifi code in that photo. Get the whole square in frame and try again.");
       } finally {
         URL.revokeObjectURL(url);
@@ -367,11 +415,64 @@ export function ScanSheet({
             </Drawer.Title>
             <Drawer.Description className="m-0 mb-4 text-[13px] text-muted">
               {supported
-                ? "Point the camera at the student's code, or type the token."
-                : "Take a photo of the student's code, or type the token."}
+                ? "Point the camera at the student's code or the cover sheet, or type the token."
+                : "Take a photo of the student's code or the cover sheet, or type the token."}
             </Drawer.Description>
 
-            {dues ? (
+            {filing ? (
+              <div className="rounded-[20px] border border-line bg-surface p-4">
+                <p className="label-caps m-0 flex items-center gap-1.5">
+                  <FileCheck size={12} strokeWidth={2.4} />
+                  File this job
+                </p>
+                <p className="font-figure m-0 mt-1 text-[44px] leading-none font-extrabold">{filing.order.token}</p>
+                <p className="m-0 mt-1 text-[13px]">
+                  {filing.order.order_items?.[0]?.name ?? `${filing.order.pages} pages`} · {filing.order.pages} p · {filing.order.status}
+                  {filing.order.shelf_slot ? ` · shelf ${filing.order.shelf_slot}` : ""}
+                </p>
+                {filing.done ? (
+                  <p className="m-0 mt-3 flex items-center gap-1.5 text-[13px] font-semibold text-sage-ink">
+                    <Check size={14} strokeWidth={2.6} />
+                    Ready{filing.order.shelf_slot ? ` on shelf ${filing.order.shelf_slot}` : ""} — the student&apos;s been told.
+                  </p>
+                ) : (
+                  <>
+                    <p className="m-0 mt-1 text-[12px] leading-relaxed text-muted">
+                      Put the pile where the cover says and tap: the job is marked ready and the student gets the push.
+                    </p>
+                    {filing.error && <p className="m-0 mt-2 text-[12px] text-clay-ink dark:text-clay">{filing.error}</p>}
+                    <div className="mt-3 flex gap-2">
+                      <motion.button
+                        whileTap={{ scale: 0.98 }}
+                        transition={spring}
+                        disabled={busy}
+                        onClick={async () => {
+                          try {
+                            await advance(filing.order.id, "ready", "Ready for pickup");
+                            setFiling({ ...filing, done: true });
+                            onFiled?.();
+                          } catch (e) {
+                            setFiling({ ...filing, error: e instanceof Error ? e.message : "Couldn't file it." });
+                          }
+                        }}
+                        className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-ink text-[13.5px] font-semibold text-paper disabled:opacity-60"
+                      >
+                        <Check size={14} strokeWidth={2.6} />
+                        Filed — mark ready
+                      </motion.button>
+                      <button onClick={() => setFiling(null)} className="h-11 rounded-xl border border-line px-4 text-[13px] font-semibold text-ink-soft">
+                        Back
+                      </button>
+                    </div>
+                  </>
+                )}
+                {filing.done && (
+                  <button onClick={() => setFiling(null)} className="mt-3 h-11 w-full rounded-xl border border-line text-[13.5px] font-semibold text-ink-soft">
+                    Next
+                  </button>
+                )}
+              </div>
+            ) : dues ? (
               <div className="rounded-[20px] border border-line bg-surface p-4">
                 <p className="label-caps m-0 flex items-center gap-1.5">
                   <Banknote size={12} strokeWidth={2.4} />
@@ -646,13 +747,18 @@ function MatchPanel({
           <span className="ml-2 font-mono text-[11.5px] text-muted">{customer.roll_no}</span>
         )}
       </p>
-      {paymentBalance(order).short > 0 && (
+      {order.pay_at_pickup && !order.payment_taken_at && !order.gateway_paid_at ? (
+        // 0043: printed on credit — the cash changes hands now.
+        <p className="m-0 mt-2.5 rounded-xl bg-bone px-3 py-2 text-[13px] font-semibold text-ink">
+          Take {money(Number(order.total))} in cash — cash at pickup.
+        </p>
+      ) : paymentBalance(order).short > 0 ? (
         // The one moment the desk can still take it: before the paper leaves.
         <p className="m-0 mt-2.5 rounded-xl bg-clay px-3 py-2 text-[13px] font-semibold text-clay-ink">
           Take {money(paymentBalance(order).short)} in cash — they paid{" "}
           {money(paymentBalance(order).received ?? 0)} of {money(Number(order.total))}.
         </p>
-      )}
+      ) : null}
 
       {proof === "wrong" ? (
         <p className="m-0 mt-3 text-[12px] leading-relaxed text-clay-ink">
@@ -670,7 +776,7 @@ function MatchPanel({
             className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-ink text-[14px] font-semibold text-paper disabled:opacity-60"
           >
             {busy ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} strokeWidth={2.6} />}
-            Handed over
+            {order.pay_at_pickup && !order.payment_taken_at && !order.gateway_paid_at ? `Took ${money(Number(order.total))} · handed over` : "Handed over"}
           </motion.button>
           <button
             onClick={onDismiss}

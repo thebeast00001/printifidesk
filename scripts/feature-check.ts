@@ -15,7 +15,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { jwtMsRemaining } from "../lib/jwt";
 import { clockLabel } from "../lib/utils";
-import { deskPrefix, parseScan } from "../components/operator/scan-sheet";
+import { deskPrefix, parseCoverScan, parseScan } from "../components/operator/scan-sheet";
 import QRCode from "qrcode";
 import jsQR from "jsqr";
 import { deskPath, hostsFrom, isSingleHost, onDesk, routeFor, sameOriginPath, surfaceFor } from "../lib/surface";
@@ -370,6 +370,16 @@ check("desk prefix from a uuid", deskPrefix("5e9a1c2b-1234-4abc-9def-00000000000
 check("code is upper-cased", parseScan("printify:order:a03:7f3a9c21")?.code, "7F3A9C21");
 check("a short code is not a code", parseScan("printify:order:A03:7F3")?.code ?? "rejected", "rejected");
 check("garbage rejected", parseScan("https://evil.example/A03"), null);
+
+// 0044: the cover sheet's code names the token and the desk, and can never
+// carry the handover secret — so a found sheet is a finder, not a proof.
+console.log("\n— the cover sheet's code (0044) —");
+check("cover code parses", parseCoverScan("printify:cover:C14:5E9A1C2B"), { token: "C14", desk: "5E9A1C2B" });
+check("cover code is upper-cased", parseCoverScan("printify:cover:c14:5e9a1c2b"), { token: "C14", desk: "5E9A1C2B" });
+check("a cover code with a secret bolted on is refused", parseCoverScan("printify:cover:C14:5E9A1C2B:7F3A9C21"), null);
+check("a cover code without a desk is refused", parseCoverScan("printify:cover:C14"), null);
+check("a cover code isn't an order code", parseScan("printify:cover:C14:5E9A1C2B"), null);
+check("an order code isn't a cover code", parseCoverScan("printify:order:C14:7F3A9C21:5E9A1C2B"), null);
 check("a bare number is not a token", parseScan("12345"), null);
 
 console.log("\n— the QR round trip (what the island draws, the desk's decoder must read) —");

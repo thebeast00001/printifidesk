@@ -657,6 +657,44 @@ So the number of hops is what the code controls:
 The database's own region is the remaining lever, and it's yours — see
 *Marked for you*.
 
+### Every job comes out labelled (`0044`)
+
+The desks' other objection: fifty printed piles look alike, and the
+identifier lived on a phone screen. Now the file the desk opens to print
+is a **bundle** — a cover sheet first, then the document — so the pile
+labels itself in ink. Nothing about what's printed changes; only what
+comes out first.
+
+- **`/api/print`** builds it: staff-only for a live order at their desk
+  (the browser has just called `claim_document_access`, which writes the
+  audit row), `pdf-lib` draws an A4 cover — the token in 128 pt, the
+  student's first name and initial, pages/colour/sides/binding/copies, the
+  file name, a boxed money line (*CASH Rs 18 AT PICKUP* / *PAID ONLINE* /
+  *UNPAID*), the shelf slot, the desk, when it was ordered — then copies
+  the PDF's pages after it (a JPG/PNG photo goes on a page of its own;
+  HEIC/WebP open bare). Stored beside the document as `….print.pdf`,
+  handed back as a five-minute signed link (a route body is capped at a
+  few MB; a bundle isn't). Purged with the document.
+- **The cover's QR** is `printify:cover:<token>:<desk>` — never the
+  handover secret; `check:features` proves a secret can't ride on it.
+  The scan sheet reads it two ways: a **ready** job → the locator (found,
+  not verified — the phone still proves); a **queued/printing** job →
+  *File this job*: put the pile where the cover says, tap, it's marked
+  ready and the student is told. Ten piles, ten scans.
+- **The slot is taken at queue time** (`assign_shelf_slot`, 0030 amended)
+  so the cover can carry it; a job that finds every slot held gets one at
+  'ready' as before. Held slots now count every live status.
+- **Priced honestly.** `operators.cover_sheet` / `cover_price` (owner-only,
+  ₹1 default, ≤ ₹20): `orders.cover_charge` is one line inside the
+  subtotal — under the minimum and the fee like every other line — in
+  `place_order`, in `reprice_order`, in the rate-card snapshot, in the
+  browser's `quoteOrder` (`Quote.cover`) and on the bill as *Cover sheet*.
+  The parity grid runs with it on; the test desk keeps it off for the
+  hand-worked sums.
+- The student's pickup screen shows the token in 40 pt under the QR: say
+  it across the counter, the pile is labelled the same; show the code to
+  prove it's yours.
+
 ### Cash is a credit line, and the desk is covered (`0043`)
 
 The desks' objection, before a single order: most students pay cash, and
@@ -1300,7 +1338,7 @@ lib/
   seo.ts                the site's name, address and public pages, once
   surface.ts            the two-site routing table
   supabase/client.ts    browser client, tokens bridged from Clerk
-supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0043)
+supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0044)
 scripts/                the checks: pricing parity, features, the SQL harness, RLS
 ```
 
@@ -1362,7 +1400,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0043** in the SQL editor, pasted from the files, **in
+2. **Run 0022 → 0044** in the SQL editor, pasted from the files, **in
    number order** — a later migration can name a column an earlier one
    adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
    student update on an order failed and the X on /orders did nothing).
@@ -1381,6 +1419,10 @@ Things the code can't do on its own, in the order they bite:
    the admin's fee rows errors quietly; until 0034, a too-late cancel is
    refused by the policy alone (silently) rather than by the guard (in words);
    until 0035, online payment can't be turned on for a desk.
+   **Then 0044** — the cover sheet (see *Every job comes out labelled*).
+   Until it runs, the desk opens bare files and bills carry no cover line.
+   After it, every desk has the sheet on at ₹1; the owner changes that
+   under Settings → *Cover sheet*.
    **Then 0043** — cash as a credit line (see *Cash is a credit line*
    above). Until it runs, choosing cash on the pay sheet errors (the
    function isn't there), and nothing is covered. After it, check the
@@ -1435,7 +1477,7 @@ Things the code can't do on its own, in the order they bite:
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
    project, so: create a new project in **Mumbai (`ap-south-1`)**, run
-   `0001 → 0043` in its SQL editor, create the private `documents` bucket,
+   `0001 → 0044` in its SQL editor, create the private `documents` bucket,
    add both Clerk domains under Authentication → Third-Party Auth, then
    swap `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    and `SUPABASE_SERVICE_ROLE_KEY` on both Vercel projects and in
@@ -1476,7 +1518,7 @@ Being specific about this matters more than a green badge:
   column list, the two-site routing table, the fee's calendar windows, the
   desk's hours and switch, the payout day, and the SQL below. **Passes.**
 - `npm run build` — **passes.**
-- `npm run check:sql` — all forty-three migrations applied, re-applied, and their
+- `npm run check:sql` — all forty-four migrations applied, re-applied, and their
   triggers driven through a real order under a real JWT: tokens, the timeline,
   the write guard, per-file settings, the report constraint, the upload
   ceiling, the order rate limit, document ownership, push endpoint sanity, and

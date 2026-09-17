@@ -554,12 +554,14 @@ export function OperatorPortal({ operator, owner = true }: { operator: Operator;
         onOpenChange={setScanning}
         operatorId={operator.id}
         ready={readyOrders}
+        live={orders ?? []}
         busy={busy !== null}
         onHandOver={(order) => {
           void run(order.id, () => advance(order.id, "collected", "Handed over")).then(() =>
             setScanning(false),
           );
         }}
+        onFiled={() => void load()}
       />
 
       <SlipDialog
@@ -958,7 +960,7 @@ function OrderCard({
                   // One at a time: browsers block a burst of popups, and a
                   // print dialog per file is what the operator wants anyway.
                   for (const item of items) {
-                    const file = await openOrderFile(item.id);
+                    const file = await openOrderFile(item.id, "print", operator.cover_sheet !== false);
                     window.open(file.url, "_blank", "noopener,noreferrer");
                   }
                 } catch (e) {
@@ -1096,7 +1098,7 @@ function OrderCard({
             className="overflow-hidden"
           >
             <div className="mt-3.5 border-t border-line pt-3.5">
-              <FileList items={items} order={config} currency={currency} />
+              <FileList items={items} order={config} currency={currency} cover={operator.cover_sheet !== false} />
 
               <CustomerLine userId={order.user_id} />
 
@@ -1265,10 +1267,13 @@ function FileList({
   items,
   order,
   currency,
+  cover,
 }: {
   items: OrderRow["order_items"];
   order: PrintConfig;
   currency: string;
+  /** 0044: open each file under its cover sheet. */
+  cover: boolean;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1315,7 +1320,7 @@ function FileList({
                 setBusy(item.id);
                 setError(null);
                 try {
-                  const file = await openOrderFile(item.id);
+                  const file = await openOrderFile(item.id, "print", cover);
                   window.open(file.url, "_blank", "noopener,noreferrer");
                 } catch (e) {
                   setError(e instanceof Error ? e.message : "Couldn't open it.");

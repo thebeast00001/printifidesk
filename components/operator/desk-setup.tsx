@@ -412,6 +412,74 @@ export function WindowsSettings({ operator, onSaved }: { operator: Operator; onS
   );
 }
 
+/* ---------- the cover sheet: on, and its price ---------- */
+
+/**
+ * The cover sheet (0044): every job the desk opens to print comes out
+ * under a labelled page — token, name, pages, shelf slot, what's owed —
+ * so the pile is its own label. Priced as one line on the student's bill;
+ * the owner sets the price (₹1 by default) or turns the sheet off.
+ */
+export function CoverSheetSettings({ operator, onSaved }: { operator: Operator; onSaved: () => void }) {
+  const [on, setOn] = useState(operator.cover_sheet !== false);
+  const [price, setPrice] = useState(String(Number(operator.cover_price ?? 1)));
+  const { saving, saved, error, run } = useSave(onSaved);
+
+  useEffect(() => {
+    setOn(operator.cover_sheet !== false);
+    setPrice(String(Number(operator.cover_price ?? 1)));
+  }, [operator.cover_sheet, operator.cover_price]);
+
+  const priceNum = Number(price);
+  const valid = Number.isFinite(priceNum) && priceNum >= 0 && priceNum <= 20;
+  const dirty = on !== (operator.cover_sheet !== false) || priceNum !== Number(operator.cover_price ?? 1);
+
+  return (
+    <div className="mt-5 border-t border-line pt-5">
+      <p className="label-caps m-0 mb-2">Cover sheet</p>
+      <p className="m-0 mb-3 max-w-[60ch] text-[11.5px] leading-relaxed text-muted">
+        When you open a file to print, it comes with a first page: the token in big type, the student&apos;s name, the
+        pages and settings, the shelf slot, and what&apos;s owed in cash. The pile labels itself. Scan its code to file
+        the job or to find it. Charged to the student as one line on the bill, shown before they order.
+      </p>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex items-center gap-2 text-[12.5px] font-semibold tracking-[-0.01em]">
+          <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} className="size-4 accent-ink" />
+          Cover sheet on every job
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[12.5px] font-semibold tracking-[-0.01em]">Price</span>
+          <span className="flex items-center gap-1 rounded-lg border border-line bg-surface-sunk px-2.5 py-1.5 font-mono text-[13px] focus-within:border-ink">
+            <span className="text-muted">{operator.currency ?? "₹"}</span>
+            <input
+              value={price}
+              onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))}
+              inputMode="decimal"
+              disabled={!on}
+              className="w-14 bg-transparent outline-none disabled:opacity-50"
+            />
+          </span>
+        </label>
+        <SaveButton
+          dirty={dirty}
+          valid={valid}
+          saving={saving}
+          saved={saved}
+          onClick={() =>
+            void run(
+              () => updateOperator(operator.id, { cover_sheet: on, cover_price: Math.round(priceNum * 100) / 100 } as OperatorSettings),
+              "Couldn't save.",
+            )
+          }
+          label="Save"
+        />
+      </div>
+      {!valid && <p className="m-0 mt-2 text-[12px] text-clay-ink dark:text-clay">A price from 0 to 20.</p>}
+      {error && <p className="m-0 mt-2 text-[12px] text-clay-ink dark:text-clay">{error}</p>}
+    </div>
+  );
+}
+
 /* ---------- payments through Printifi: the owner's switch ---------- */
 
 /**

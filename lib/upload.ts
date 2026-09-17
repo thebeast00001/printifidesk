@@ -149,7 +149,9 @@ export async function listDocuments(): Promise<DocumentRow[]> {
 export async function deleteDocument(id: string, storagePath: string): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
-  await supabase.storage.from(DOCUMENTS_BUCKET).remove([storagePath]);
+  // The print bundle (0044) lives beside the file, in the same folder the
+  // student owns; it goes too. A missing sibling isn't an error.
+  await supabase.storage.from(DOCUMENTS_BUCKET).remove([storagePath, `${storagePath}.print.pdf`]);
   await supabase.from("documents").delete().eq("id", id);
 }
 

@@ -56,6 +56,7 @@ export const MIGRATION_PROBES: MigrationProbe[] = [
   { id: "0041", without: "an early Open tap doesn't show as open; office files can't be uploaded or converted", check: column("operators", "open_set_at") },
   // 0042 changes only the words in messages and can't be told apart from here.
   { id: "0043", without: "choosing cash fails on the pay sheet; no cash limits, dues, or cover for a desk's uncollected orders", check: column("orders", "pay_at_pickup") },
+  { id: "0044", without: "no cover sheet on printed jobs; the desk opens bare files; no cover line on bills", check: column("orders", "cover_charge") },
 ];
 
 export interface MigrationReport {

@@ -57,9 +57,11 @@ export async function POST(request: Request) {
 
   // Storage first: a deleted row with a surviving object is an orphan nothing
   // will ever clean up, whereas a surviving row with no object is self-healing.
+  // The print bundle (0044) sits beside the document under the same name
+  // plus ".print.pdf"; it goes with it. A missing sibling isn't an error.
   const { error: storageError } = await supabase.storage
     .from("documents")
-    .remove(expired.map((d) => d.storage_path));
+    .remove(expired.flatMap((d) => [d.storage_path, `${d.storage_path}.print.pdf`]));
 
   if (storageError) {
     return Response.json(

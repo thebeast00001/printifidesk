@@ -80,6 +80,12 @@ export interface RateCard {
   roundToRupee: boolean;
   /** The desk's named add-ons (0039); empty for a desk that sells none. */
   extras: Extra[];
+  /**
+   * The cover sheet every job comes out under (0044): the desk's price for
+   * it, one line on the bill. Zero when the desk has turned the sheet off,
+   * and on a snapshot from before it existed.
+   */
+  coverPrice: number;
 }
 
 /** Shape of the operator row the rate card is read from. */
@@ -97,6 +103,8 @@ export interface RateSource {
   platform_fee_min?: number | string | null;
   round_to_rupee?: boolean | null;
   extras?: unknown;
+  cover_sheet?: boolean | null;
+  cover_price?: number | string | null;
 }
 
 const num = (v: number | string | null | undefined, fallback: number) => {
@@ -126,6 +134,7 @@ export function rateCardOf(operator: RateSource | null | undefined): RateCard {
     platformFeeMin: num(operator?.platform_fee_min, 0),
     roundToRupee: operator?.round_to_rupee === true,
     extras: extrasOf(operator?.extras),
+    coverPrice: operator?.cover_sheet === false ? 0 : Math.max(0, num(operator?.cover_price, 0)),
   };
 }
 
@@ -185,6 +194,8 @@ export interface Quote {
   binding: number;
   /** Extras across every file. */
   extras: number;
+  /** The cover sheet (0044): one line for the job, inside the subtotal's reach of the minimum. */
+  cover: number;
   duplexSaving: number;
   bulkSaving: number;
   /** The files, each with its own arithmetic laid out. */
@@ -354,8 +365,11 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
   // of the unrounded lines — so a bill always adds up. The database does the
   // same, in the same order; the harness compares them line by line.
   const subtotal = paise(bills.reduce((n, b) => n + b.price, 0));
-  const base = Math.max(subtotal, minOrder);
-  const topUp = paise(base - subtotal);
+  // The cover sheet (0044) is one more line of the job — under the minimum
+  // and the fee like the rest. place_order() adds it in the same place.
+  const cover = paise(card.coverPrice);
+  const base = Math.max(subtotal + cover, minOrder);
+  const topUp = paise(base - subtotal - cover);
   // The minimum lifts the lines; the fee sits on top of that.
   const platformFee = platformFeeOn(base, card);
   const { total, rounding } = roundedTotal(base + platformFee, card);
@@ -367,7 +381,7 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
       .map((l) => paise(lineCost(l.pages, l.pages, { ...l.config, colour: "full" }, card, bulk).raw))
       .reduce((n, v) => n + v, 0),
   );
-  const fullColourBase = Math.max(fullColourSum, minOrder);
+  const fullColourBase = Math.max(fullColourSum + cover, minOrder);
   const fullColourTotal = roundedTotal(fullColourBase + platformFeeOn(fullColourBase, card), card).total;
 
   // The smart-colour claim only counts lines actually set to smart. A line the
@@ -384,7 +398,7 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
       )
       .reduce((n, v) => n + v, 0),
   );
-  const smartBase = Math.max(smartSum, minOrder);
+  const smartBase = Math.max(smartSum + cover, minOrder);
   const smartTotal = roundedTotal(smartBase + platformFeeOn(smartBase, card), card).total;
 
   return {
@@ -393,6 +407,7 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
     paper: paise(sum((c) => c.paper)),
     binding: paise(sum((c) => c.binding)),
     extras: paise(sum((c) => c.extras)),
+    cover,
     duplexSaving: paise(sum((c) => c.duplexSaving)),
     bulkSaving: paise(sum((c) => c.bulkSaving)),
     lines: bills,
@@ -403,7 +418,7 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
     total,
     fullColourTotal,
     smartSaving: Math.max(0, paise(smartTotal - total)),
-    minApplied: subtotal < minOrder,
+    minApplied: subtotal + cover < minOrder,
     bulkApplied,
     bulkPercent: Math.round((1 - card.bulkMultiplier) * 100),
   };

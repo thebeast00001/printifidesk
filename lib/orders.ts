@@ -102,6 +102,8 @@ export interface OrderRow {
   /** Unclaimed and unpaid: Printifi credited the desk this much, then. */
   covered_at?: string | null;
   covered_amount?: number | string | null;
+  /** 0044: the cover sheet's line on the bill, as priced. */
+  cover_charge?: number | string | null;
   refunded_at: string | null;
   refund_amount: number | null;
   refund_note: string | null;
@@ -197,6 +199,10 @@ export interface Operator {
   gateway_paused?: boolean;
   /** 0041: when the Open switch was last flipped — a flip since the schedule's last change wins over it. */
   open_set_at?: string | null;
+  /** 0044: every job comes out under a labelled cover sheet, priced as one line on the bill. */
+  cover_sheet?: boolean;
+  cover_price?: number | string;
+  /** 0044: the cover sheet's line on this order, as it was priced. */
   accepts_cash: boolean;
   paper_stock: number | null;
   low_paper_at: number;
@@ -254,6 +260,8 @@ export type OperatorSettings = Partial<
     | "unpaid_expiry_minutes"
     | "unclaimed_after_hours"
     | "gateway_paused"
+    | "cover_sheet"
+    | "cover_price"
   >
 >;
 
@@ -267,6 +275,7 @@ const OPERATOR_SELECT_LEGACY =
 // 42703 ("column does not exist") steps down one list at a time, so a
 // project on 0028 still gets 0027's columns rather than none of them.
 const OPERATOR_SELECTS = [
+  OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status, hours, closed_on, tz, extras, unpaid_expiry_minutes, unclaimed_after_hours, gateway_paused, open_set_at, cover_sheet, cover_price", // 0044
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status, hours, closed_on, tz, extras, unpaid_expiry_minutes, unclaimed_after_hours, gateway_paused, open_set_at", // 0041
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status, hours, closed_on, tz, extras, unpaid_expiry_minutes, unclaimed_after_hours, gateway_paused", // 0040
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status, hours, closed_on, tz, extras, unpaid_expiry_minutes, unclaimed_after_hours", // 0039

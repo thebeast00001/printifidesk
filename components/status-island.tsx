@@ -799,9 +799,13 @@ function HandoverCode({
                   <Loader2 size={18} className="animate-spin text-[#17171a]" />
                 </span>
               )}
-              <span className="font-mono text-[15px] font-medium tracking-widest text-[#17171a]">
+              {/* The token, big enough to read across a counter (0044): the
+                  cover sheet on the pile says the same, so saying it aloud
+                  finds the paper; the code proves it's yours. */}
+              <span className="font-figure text-[40px] leading-none font-extrabold tracking-[-0.01em] text-[#17171a]">
                 {token}
               </span>
+              <span className="text-[11px] text-[#6b6b70]">Say it, or show the code — the pile is labelled {token}</span>
             </div>
           </motion.div>
         )}

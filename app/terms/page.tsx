@@ -34,7 +34,9 @@ export default function TermsPage() {
         counts are worked out from your file in your browser. If a file turns out to have more pages, or
         more colour pages, than were counted, the desk may send you a corrected bill before accepting the
         order: you see the new price and the reason, and accept it or cancel. Nothing is charged until you
-        have.
+        have. Where the desk uses one, a <b>cover sheet</b> — the labelled first page your job comes out
+        under, with your token, your name and the shelf — is a line on the bill at the desk&apos;s price for
+        it (typically ₹1), shown before you order like everything else.
       </p>
 
       <H2>Paying</H2>
