@@ -100,6 +100,13 @@ function SignInPane({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A device Clerk hasn't seen this account on (Device Trust), or an account
+  // with two-step verification on: the password is right, and a code sent
+  // to the account's email (or phone) finishes it. Same step for both.
+  const [stage, setStage] = useState<"credentials" | "code">("credentials");
+  const [sentTo, setSentTo] = useState<string>("your email");
+  const [code, setCode] = useState("");
+  const [via, setVia] = useState<"email_code" | "phone_code">("email_code");
 
   async function submit() {
     if (!clerk.client) return;
@@ -112,14 +119,96 @@ function SignInPane({
         password,
       });
       if (result.status === "complete") return await onDone(result.createdSessionId);
-      if (result.status === "needs_second_factor") {
-        throw new Error("This account has two-step verification on, which the desk door doesn't do yet.");
+      if (result.status === "needs_client_trust" || result.status === "needs_second_factor") {
+        const factors = result.supportedSecondFactors ?? [];
+        const byEmail = factors.find((f) => f.strategy === "email_code");
+        const byPhone = factors.find((f) => f.strategy === "phone_code");
+        if (byEmail) {
+          await result.prepareSecondFactor({ strategy: "email_code", emailAddressId: byEmail.emailAddressId });
+          setVia("email_code");
+          setSentTo(byEmail.safeIdentifier ?? email.trim());
+        } else if (byPhone) {
+          await result.prepareSecondFactor({ strategy: "phone_code", phoneNumberId: byPhone.phoneNumberId });
+          setVia("phone_code");
+          setSentTo(byPhone.safeIdentifier ?? "your phone");
+        } else {
+          throw new Error(
+            result.status === "needs_client_trust"
+              ? "Clerk wants to confirm this device but offers no way to send a code — check the account's email in Clerk."
+              : "This account has two-step verification on with a method the desk door doesn't do (authenticator app or backup code).",
+          );
+        }
+        setStage("code");
+        setBusy(false);
+        return;
       }
       throw new Error(`Sign-in stopped at "${result.status}".`);
     } catch (e) {
       setError(clerkMessage(e));
       setBusy(false);
     }
+  }
+
+  async function confirm() {
+    if (!clerk.client) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await clerk.client.signIn.attemptSecondFactor({ strategy: via, code: code.trim() });
+      if (result.status === "complete") return await onDone(result.createdSessionId);
+      throw new Error(`Sign-in stopped at "${result.status}".`);
+    } catch (e) {
+      setError(clerkMessage(e));
+      setBusy(false);
+    }
+  }
+
+  if (stage === "code") {
+    return (
+      <>
+        <Heading icon={<LogIn size={13} strokeWidth={2.4} />} eyebrow="Printifi Desk" title="Confirm this device" />
+        <p className="m-0 mt-1 text-[12.5px] leading-relaxed text-muted">
+          First time on this device. A code was sent to <b className="font-semibold text-ink-soft">{sentTo}</b> — type it
+          here and this device is trusted from now on.
+        </p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void confirm();
+          }}
+          className="mt-4 flex flex-col gap-2"
+        >
+          <Field
+            type="text"
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(v) => setCode(v.replace(/\D/g, "").slice(0, 8))}
+            placeholder="Code"
+            label="Code"
+            autoFocus
+          />
+          <Primary busy={busy} disabled={code.trim().length < 4}>
+            Confirm
+          </Primary>
+        </form>
+        {error && <Problem>{error}</Problem>}
+        <div className="mt-4 flex flex-wrap justify-between gap-x-4 gap-y-1.5 text-[12px] text-muted">
+          <button
+            onClick={() => {
+              setStage("credentials");
+              setCode("");
+              setError(null);
+            }}
+            className="font-semibold underline-offset-2 hover:underline"
+          >
+            Back
+          </button>
+          <button onClick={() => void submit()} disabled={busy} className="font-semibold underline-offset-2 hover:underline disabled:opacity-50">
+            Send the code again
+          </button>
+        </div>
+      </>
+    );
   }
 
   return (
