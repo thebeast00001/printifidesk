@@ -641,6 +641,19 @@ check("PowerPoint too", validate(fake("deck.pptx"))?.includes("Save it as a PDF 
 check("the upload names its type when the browser doesn't", contentTypeOf(fake("scan.heic")), "image/heic");
 check("the upload keeps the browser's type when it has one", contentTypeOf(fake("a.pdf", "application/pdf")), "application/pdf");
 
+console.log("\n— the scan (every page checked; the count exact once the file opens) —");
+// Read as source: the scan itself needs a browser. What's pinned is the
+// shape that a 600-page file depends on — no page cap, no estimate once
+// the file is open, and a stall ending the scan rather than the count.
+const scan = readFileSync(join(__dirname, "..", "lib", "analysis.ts"), "utf8");
+const pdfScan = scan.slice(scan.indexOf("async function analysePdf("), scan.indexOf("type PageVerdict"));
+check("no cap on how many pages are colour-checked", /MAX_ANALYSED_PAGES|scanLimit/.test(scan), false);
+check("the loop runs to the last page", pdfScan.includes("for (let n = 1; n <= pages; n++)"), true);
+check("once open, the count is numPages, never an estimate", pdfScan.includes("doc.numPages") && !pdfScan.includes("estimatePages("), true);
+check("a stalled page or a spent budget ends the scan as exact", pdfScan.includes("STALL_MS") && pdfScan.includes("SCAN_BUDGET_MS") && pdfScan.includes("exact: true"), true);
+check("the estimate is only for a file that won't open", (scan.match(/estimatePages\(file\)/g) ?? []).length, 2);
+check("a shared image is looked up on the document, a page's own on the page", scan.includes('startsWith("g_") ? page.commonObjs : page.objs'), true);
+
 console.log("\n— the payout day (0040) —");
 // 2026-09-16 is a Wednesday (IST). Monday payouts: next is the 21st; Wednesday: today.
 const wed = new Date("2026-09-16T05:00:00Z");

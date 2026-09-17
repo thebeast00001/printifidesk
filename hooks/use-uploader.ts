@@ -9,12 +9,29 @@ import { useApp, type UploadFile } from "@/lib/store";
 type Patch = (id: string, patch: Partial<UploadFile>) => void;
 
 /**
+ * The scan's progress, for the bar. A long file reports every page — six
+ * hundred of them in a minute — so the store hears a few times a second,
+ * and always the last one.
+ */
+function paced(id: string, updateFile: Patch) {
+  let shownAt = 0;
+  return (done: number, total: number) => {
+    const now = Date.now();
+    if (done !== total && now - shownAt < 150) return;
+    shownAt = now;
+    updateFile(id, { progress: total ? done / total : 0 });
+  };
+}
+
+/**
  * Drives one file from "dropped" to "priced".
  *
- * Analysis runs before upload on purpose: the page count and colour pages are
- * what the quote needs, and measuring them locally means the price appears
- * immediately instead of after a round trip. The upload then happens behind
- * that, and a failed upload degrades to local-only rather than losing the file.
+ * The scan and the upload run side by side. The page count and colour pages
+ * are what the quote needs, and measuring them locally means the price
+ * appears without a round trip; the bytes go up meanwhile, so a 600-page
+ * file isn't scanned for a minute and then uploaded for another. The row is
+ * written once both are in. A failed upload degrades to local-only rather
+ * than losing the file.
  */
 export function useUploader() {
   const addFile = useApp((s) => s.addFile);
@@ -91,12 +108,48 @@ async function processFile({
   kind: ReturnType<typeof kindOf>;
   updateFile: Patch;
 }) {
+  /**
+   * The upload, started now and awaited later. Its failure is held rather
+   * than thrown — nothing is listening yet while the scan runs — and the bar
+   * only shows it once the scan is done and it's the thing still going.
+   */
+  function beginUpload(session: { userId: string; accessToken: string }) {
+    const path = storagePathFor(session.userId, id, file.name);
+    const state = { path, progress: 0, finished: false, showing: false };
+    const done: Promise<Error | null> = uploadToStorage({
+      file,
+      path,
+      accessToken: session.accessToken,
+      onProgress: (fraction) => {
+        state.progress = fraction;
+        if (state.showing) updateFile(id, { progress: fraction });
+      },
+    }).then(
+      () => {
+        state.finished = true;
+        return null;
+      },
+      (error: unknown) => {
+        state.finished = true;
+        return error instanceof Error ? error : new Error("Upload failed.");
+      },
+    );
+    return Object.assign(state, { done });
+  }
+
   try {
     updateFile(id, { status: "scanning", progress: 0 });
 
-    const analysis = await analyse(file, (done, total) => {
-      updateFile(id, { progress: total ? done / total : 0 });
-    });
+    // The scan drives the bar.
+    const scanning = analyse(file, paced(id, updateFile));
+
+    // The upload starts as soon as there's a session to upload for — usually
+    // at once. Signed out, or with sign-in still loading, it's asked again
+    // after the scan: a slow scan is time enough to have signed in.
+    let session = await ensureSession();
+    let upload = session.status === "ready" ? beginUpload(session) : null;
+
+    const analysis = await scanning;
 
     updateFile(id, {
       pages: analysis.pages,
@@ -106,7 +159,7 @@ async function processFile({
       progress: 1,
     });
 
-    const session = await ensureSession();
+    if (session.status !== "ready") session = await ensureSession();
 
     if (session.status !== "ready") {
       // The file is already measured and priced, so it stays in the job. It
@@ -125,15 +178,17 @@ async function processFile({
       return;
     }
 
-    updateFile(id, { status: "uploading", progress: 0 });
-    const path = storagePathFor(session.userId, id, file.name);
+    // Signed in during the scan: the upload starts now instead.
+    upload ??= beginUpload(session);
 
-    await uploadToStorage({
-      file,
-      path,
-      accessToken: session.accessToken,
-      onProgress: (fraction) => updateFile(id, { progress: fraction }),
-    });
+    // Usually done by now; a big file on slow wifi shows what's left.
+    if (!upload.finished) {
+      upload.showing = true;
+      updateFile(id, { status: "uploading", progress: upload.progress });
+    }
+    const failed = await upload.done;
+    if (failed) throw failed;
+    const { path } = upload;
 
     await recordDocument({ id, userId: session.userId, file, kind, path, analysis });
 
@@ -155,7 +210,7 @@ async function processFile({
       if (!signed?.data?.signedUrl) throw new Error("Converted, but the PDF couldn't be read back.");
       const blob = await (await fetch(signed.data.signedUrl)).blob();
       const pdf = new File([blob], converted.name, { type: "application/pdf" });
-      const measured = await analyse(pdf, (done, total) => updateFile(id, { progress: total ? done / total : 0 }));
+      const measured = await analyse(pdf, paced(id, updateFile));
       if (measured.exact) await setDocumentAnalysis(id, measured.pages, measured.colourIndex);
       updateFile(id, {
         status: "ready",

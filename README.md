@@ -1282,21 +1282,39 @@ rounding parity grid and the whole claim/confirm/clear sequence.
 
 ## How a file becomes a price
 
-`hooks/use-uploader.ts` runs analysis *before* upload, so the quote appears
-without a round trip and a failed upload degrades to local-only rather than
-losing the file.
+`hooks/use-uploader.ts` runs the scan and the upload *side by side*: the
+quote comes from the scan without a round trip, the bytes go up meanwhile, and
+the row is written once both are in. A failed upload degrades to local-only
+rather than losing the file.
 
 ```
-drop / pick → validate → analyse → Clerk session → upload (XHR, real
-              progress) → row in `documents` → quote
+drop / pick → validate → ┬ analyse (every page) ──┐
+                         └ Clerk session → upload ─┴→ row in `documents` → quote
+                           (XHR, real progress)
 ```
+
+**Every page is checked; the count is exact the moment the file opens.** A
+600-page file is billed on what's in it, not on a sample. `lib/analysis.ts`
+reads `doc.numPages` first, so whatever the colour scan manages after that,
+the page count is real. Two guards keep a phone from sitting on a scan
+forever — a page that gives no answer for 30 s, or four minutes in total,
+stops the scan where it is — and then only the pages not reached bill as
+black & white, said so in the note, for the desk to correct. Only a file
+that won't *open* (broken, encrypted, or the worker never answers within a
+minute) gets a size-based estimate, marked `pages_exact = false`.
 
 **Colour detection reads the operator list, not pixels.** `page.getOperatorList()`
 exposes every fill and stroke pdf.js has normalised to RGB, so a coloured chart
 or heading is visible without rasterising. It's far faster, needs no canvas, and
 — unlike `page.render()` — doesn't depend on `requestAnimationFrame`, which a
-background tab suspends. Only pages that paint a raster image fall back to
-rendering, since their colours aren't in the operator list.
+background tab suspends. A page whose colour is inside a raster image has the
+*image itself* read: building the operator list already decoded it, and pdf.js
+holds it on the page (or on the document, for one many pages share — names
+starting `g_`) as a bitmap or as bytes with a kind, so a few thousand pixels
+are sampled from it with no page render. That is how a 600-page phone scan is
+judged in seconds, in a background tab as fast as in front. Only an image that
+can't be read has the page rendered, and only a render that fails leaves a page
+"unchecked" — billed B/W and named in the note.
 
 ## Layout
 

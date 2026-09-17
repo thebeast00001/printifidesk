@@ -1,6 +1,6 @@
 "use client";
 
-import type { PDFPageProxy } from "pdfjs-dist";
+import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 
 /**
  * Client-side document analysis.
@@ -34,7 +34,20 @@ export interface Analysis {
 }
 
 export const MAX_FILE_BYTES = 50 * 1024 * 1024;
-const MAX_ANALYSED_PAGES = 400;
+
+/**
+ * Every page is checked for colour — a 600-page file is billed on what's in
+ * it, not on a sample of it. Two guards keep a phone from sitting on a scan
+ * forever: a page that gives no answer for STALL_MS means the worker is
+ * stuck (a broken page, a tab the browser has frozen), and past
+ * SCAN_BUDGET_MS in total the scan stops where it is. Either way the page
+ * count is exact — it's known the moment the file opens — and only the
+ * pages not reached bill as black & white, which the desk can correct.
+ */
+const STALL_MS = 30_000;
+const SCAN_BUDGET_MS = 4 * 60_000;
+/** Pixels sampled from one image to judge its colour — plenty for a scan, cheap for a photo. */
+const IMAGE_SAMPLE_PIXELS = 24_000;
 
 /** Above this share of coloured pixels, a page is charged at the colour rate. */
 const COLOUR_PIXEL_RATIO = 0.004;
@@ -150,8 +163,13 @@ export function formatBytes(bytes: number) {
 
 /* ------------------------------------------------------------------ */
 
-/** Nothing may leave a file stuck mid-scan; past this we price it as B/W. */
-const ANALYSIS_TIMEOUT_MS = 45_000;
+/**
+ * How long opening the file may take: pdf.js copies the whole 50 MB into
+ * its worker and parses the page tree. Nothing may leave a file stuck at
+ * that stage; the scan that follows keeps its own time (STALL_MS,
+ * SCAN_BUDGET_MS) and can't hang because the count is in hand by then.
+ */
+const OPEN_TIMEOUT_MS = 60_000;
 
 export async function analyse(
   file: File,
@@ -160,12 +178,18 @@ export async function analyse(
   const kind = kindOf(file);
 
   if (kind === "PDF") {
-    return withTimeout(analysePdf(file, onProgress), {
-      pages: estimatePages(file),
-      colourIndex: [],
-      exact: false,
-      note: "Took too long to scan here — we'll count the pages at the counter.",
-    });
+    try {
+      return await analysePdf(file, onProgress);
+    } catch {
+      // Unreadable here — broken, encrypted, or the worker never answered.
+      // A rough count marked as one; the desk confirms it.
+      return {
+        pages: estimatePages(file),
+        colourIndex: [],
+        exact: false,
+        note: "Couldn't read this PDF here — the page count is confirmed at the counter.",
+      };
+    }
   }
   if (kind === "IMAGE") return analyseImage(file);
 
@@ -180,23 +204,26 @@ export async function analyse(
 }
 
 
-function withTimeout(work: Promise<Analysis>, fallback: Analysis): Promise<Analysis> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(fallback), ANALYSIS_TIMEOUT_MS);
+const TIMED_OUT = Symbol("timed out");
+
+/** The work's result, or TIMED_OUT once `ms` have passed without one. A rejection is the caller's to handle. */
+function within<T>(work: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(TIMED_OUT), ms);
     work.then(
       (result) => {
         clearTimeout(timer);
         resolve(result);
       },
-      () => {
+      (error: unknown) => {
         clearTimeout(timer);
-        resolve(fallback);
+        reject(error);
       },
     );
   });
 }
 
-/** A rough count — a PDF that couldn't be scanned in time, or an office file awaiting conversion — marked as such. */
+/** A rough count — a PDF that couldn't be read here, or an office file awaiting conversion — marked as such. */
 function estimatePages(file: File) {
   return Math.max(1, Math.round(file.size / 45_000));
 }
@@ -216,36 +243,34 @@ async function analysePdf(
   });
 
   const buffer = await file.arrayBuffer();
-  const doc = await pdfjs.getDocument({ data: buffer }).promise;
+  const doc = await within(pdfjs.getDocument({ data: buffer }).promise, OPEN_TIMEOUT_MS);
+  if (doc === TIMED_OUT) throw new Error("The PDF didn't open in time.");
 
   try {
+    // Exact from here on, whatever the colour scan manages after it.
     const pages = doc.numPages;
     const colourIndex: number[] = [];
-    const scanLimit = Math.min(pages, MAX_ANALYSED_PAGES);
     let uncheckedImages = 0;
+    let checked = 0;
+    const started = Date.now();
 
-    for (let n = 1; n <= scanLimit; n++) {
-      const page = await doc.getPage(n);
-      const verdict = await inspectOperators(page, pdfjs.OPS);
+    for (let n = 1; n <= pages; n++) {
+      if (Date.now() - started > SCAN_BUDGET_MS) break;
+      const verdict = await within(judgePage(doc, n, pdfjs.OPS), STALL_MS);
+      if (verdict === TIMED_OUT) break;
 
-      if (verdict === "colour") {
-        colourIndex.push(n);
-      } else if (verdict === "image") {
-        // A raster image's colours aren't in the operator list, so this is the
-        // one case that needs pixels. Rasterising is best-effort: it depends on
-        // requestAnimationFrame, which a backgrounded tab suspends.
-        const raster = await rasterisePage(page);
-        if (raster === "colour") colourIndex.push(n);
-        else if (raster === "unknown") uncheckedImages++;
-      }
+      if (verdict === "colour") colourIndex.push(n);
+      else if (verdict === "unknown") uncheckedImages++;
 
-      page.cleanup();
-      onProgress?.(n, scanLimit);
+      checked = n;
+      onProgress?.(n, pages);
     }
 
     const notes: string[] = [];
-    if (pages > scanLimit) {
-      notes.push(`Colour checked on the first ${scanLimit} pages; the rest bill as black & white.`);
+    if (checked < pages) {
+      notes.push(
+        `Colour checked on the first ${checked} pages; the rest bill as black & white, and the desk confirms.`,
+      );
     }
     if (uncheckedImages > 0) {
       notes.push(
@@ -260,13 +285,42 @@ async function analysePdf(
       note: notes.length ? notes.join(" ") : undefined,
     };
   } finally {
-    // Release the worker's copy of the file; a 50 MB PDF held open would
-    // otherwise sit in memory for the rest of the session.
-    void doc.cleanup();
+    // Release what the worker decoded — fonts, images, the page tree's
+    // caches — which for 600 pages would otherwise sit in memory for the
+    // rest of the session. (Not `destroy`: the worker is shared with the
+    // thumbnails, and destroying through a shared port can strand them.)
+    // A page still mid-parse after a stall makes this refuse; that's
+    // nothing to report.
+    doc.cleanup().catch(() => {});
   }
 }
 
-type Verdict = "colour" | "mono" | "image" | "unknown";
+/** What a page comes to; "image" is the in-between state of a page whose colour is inside its pictures. */
+type PageVerdict = "colour" | "mono" | "unknown";
+type Verdict = PageVerdict | "image";
+
+/**
+ * One page's verdict. Colour in the drawing instructions settles it at once;
+ * a page whose colour is inside its images has those images read; only an
+ * image that can't be read has the page drawn. A page pdf.js can't parse is
+ * "unknown" — counted, billed as B/W, confirmed at the counter — rather than
+ * the end of the scan.
+ */
+async function judgePage(doc: PDFDocumentProxy, n: number, OPS: Record<string, number>): Promise<PageVerdict> {
+  let page: PDFPageProxy | null = null;
+  try {
+    page = await doc.getPage(n);
+    const { verdict, images } = await inspectOperators(page, OPS);
+    if (verdict !== "image") return verdict;
+
+    const fromImages = await inspectImages(page, images);
+    return fromImages === "unknown" ? await rasterisePage(page) : fromImages;
+  } catch {
+    return "unknown";
+  } finally {
+    page?.cleanup();
+  }
+}
 
 /**
  * Is this colour operand actually coloured, rather than a shade of grey?
@@ -308,8 +362,10 @@ function spread(r: number, g: number, b: number) {
 async function inspectOperators(
   page: PDFPageProxy,
   OPS: Record<string, number>,
-): Promise<Verdict> {
-  let sawImage = false;
+): Promise<{ verdict: Verdict; images: unknown[] }> {
+  // What each image operator was handed: the name of a decoded image held
+  // on the page, or (inline) the image itself. Read by `inspectImages`.
+  const images: unknown[] = [];
 
   try {
     const { fnArray, argsArray } = await page.getOperatorList();
@@ -319,25 +375,131 @@ async function inspectOperators(
 
       if (fn === OPS.setFillRGBColor || fn === OPS.setStrokeRGBColor) {
         const args = argsArray[i] as unknown[];
-        if (isColoured(args?.[0]) || isColoured(args)) return "colour";
+        if (isColoured(args?.[0]) || isColoured(args)) return { verdict: "colour", images };
       } else if (
         fn === OPS.paintImageXObject ||
+        fn === OPS.paintImageXObjectRepeat ||
         fn === OPS.paintInlineImageXObject ||
         fn === OPS.paintJpegXObject
       ) {
         // Stencil masks (paintImageMaskXObject) paint in the current fill
         // colour, so they're deliberately not counted here.
-        sawImage = true;
+        images.push((argsArray[i] as unknown[])?.[0]);
       }
     }
   } catch {
-    return "unknown";
+    return { verdict: "unknown", images };
   }
 
-  return sawImage ? "image" : "mono";
+  return { verdict: images.length ? "image" : "mono", images };
 }
 
-async function rasterisePage(page: PDFPageProxy): Promise<Verdict> {
+/**
+ * The colour of a page's images, read from the images themselves.
+ *
+ * Building the operator list already decoded them; pdf.js holds each on the
+ * page (or on the document, for an image many pages share) as a bitmap, or
+ * as bytes with a kind. A 1-bit greyscale image — most scans — is mono
+ * without a look; anything else is sampled at a few thousand pixels. That
+ * needs no page render and no animation frame, so it runs at the same
+ * speed in a background tab as in front, which is how a 600-page scan is
+ * judged in seconds on a phone. What can't be read says "unknown", and the
+ * page is drawn instead.
+ */
+async function inspectImages(page: PDFPageProxy, images: unknown[]): Promise<PageVerdict> {
+  // Waited for together: a page of many small images shouldn't pay the
+  // wait for each in turn.
+  const decoded = await Promise.all(images.map((ref) => decodedImage(page, ref)));
+  let sawUnknown = false;
+  for (const image of decoded) {
+    const judged = image ? imageColour(image) : "unknown";
+    if (judged === "colour") return "colour";
+    if (judged === "unknown") sawUnknown = true;
+  }
+  return sawUnknown ? "unknown" : "mono";
+}
+
+/** What pdf.js's worker hands over for one image (`PDFImage.createImageData`). */
+interface DecodedImage {
+  width?: number;
+  height?: number;
+  /** pdf.js ImageKind: 1 greyscale 1-bit, 2 RGB 24-bit, 3 RGBA 32-bit. */
+  kind?: number;
+  data?: Uint8ClampedArray | Uint8Array | null;
+  /** An ImageBitmap, or a VideoFrame where the browser's own decoder did the work. */
+  bitmap?: CanvasImageSource | null;
+}
+
+/** How long to wait for the worker to hand an image over before the page is drawn instead. */
+const IMAGE_WAIT_MS = 8_000;
+
+/**
+ * The decoded image behind one paint operator. An inline image arrives as
+ * itself; a named one is looked up on the page — or on the document, where
+ * pdf.js keeps the ones several pages share (their names start `g_`) — and
+ * waited for, since the operator list can finish streaming before the last
+ * image has been decoded.
+ */
+function decodedImage(page: PDFPageProxy, ref: unknown): Promise<DecodedImage | null> {
+  if (ref && typeof ref === "object") return Promise.resolve(ref as DecodedImage);
+  if (typeof ref !== "string") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), IMAGE_WAIT_MS);
+    try {
+      const pool = ref.startsWith("g_") ? page.commonObjs : page.objs;
+      pool.get(ref, (image: DecodedImage | null) => {
+        clearTimeout(timer);
+        resolve(image ?? null);
+      });
+    } catch {
+      clearTimeout(timer);
+      resolve(null);
+    }
+  });
+}
+
+function imageColour(image: DecodedImage): PageVerdict {
+  try {
+    if (image.kind === 1) return "mono";
+
+    if (image.bitmap) {
+      // A thumbnail-sized draw, then the same test a photo gets.
+      const w = Number(image.width) || 1;
+      const h = Number(image.height) || 1;
+      const scale = Math.min(1, Math.sqrt(IMAGE_SAMPLE_PIXELS / (w * h)));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(w * scale));
+      canvas.height = Math.max(1, Math.round(h * scale));
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return "unknown";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image.bitmap, 0, 0, canvas.width, canvas.height);
+      return colourRatio(ctx.getImageData(0, 0, canvas.width, canvas.height).data, 1) > COLOUR_PIXEL_RATIO ? "colour" : "mono";
+    }
+
+    if (image.data && (image.kind === 2 || image.kind === 3)) {
+      const stride = image.kind === 2 ? 3 : 4;
+      const pixels = Math.floor(image.data.length / stride);
+      const step = Math.max(1, Math.floor(pixels / IMAGE_SAMPLE_PIXELS));
+      let coloured = 0;
+      let sampled = 0;
+      for (let p = 0; p < pixels; p += step) {
+        const i = p * stride;
+        if (stride === 4 && image.data[i + 3] < 8) continue;
+        sampled++;
+        if (spread(image.data[i], image.data[i + 1], image.data[i + 2])) coloured++;
+      }
+      return sampled > 0 && coloured / sampled > COLOUR_PIXEL_RATIO ? "colour" : "mono";
+    }
+
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+async function rasterisePage(page: PDFPageProxy): Promise<PageVerdict> {
   try {
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
