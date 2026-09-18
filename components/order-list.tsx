@@ -15,6 +15,10 @@ import { SignedOutNotice } from "./signed-out-notice";
 import { ReportSheet } from "./report-sheet";
 import { cn, easeIos } from "@/lib/utils";
 
+/** One shape for every control on a card: a 40px square that grows a label on a wide screen. */
+const ACTION =
+  "flex h-10 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-line bg-surface-sunk px-2.5 text-[12.5px] font-semibold text-muted transition-colors hover:text-ink disabled:opacity-50 sm:px-3.5";
+
 /* State reads as form, not just words — a live job should be findable
    without reading every row. */
 const STATUS_STYLE: Record<OrderStatus, string> = {
@@ -190,14 +194,18 @@ function OrderCard({
 
   return (
     <article className="rounded-[20px] border border-line bg-surface shadow-card transition-shadow hover:shadow-lift">
-      <div className="flex items-center gap-4 p-3.5 lg:p-5">
+      {/* Token, then the words, then the buttons. On a phone the buttons
+          take a line of their own under the words (the row wraps at the
+          `basis`), so the title and the chips get the card's width instead
+          of the sliver left beside three buttons. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 p-3.5 lg:p-5">
         <span className="grid size-[52px] shrink-0 place-items-center rounded-2xl bg-surface-sunk font-mono text-sm font-medium tracking-wide text-ink-soft lg:size-[60px] lg:text-base">
           {order.token ?? "—"}
         </span>
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-[200px]">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-            <h3 className="m-0 truncate text-[14.5px] font-semibold tracking-[-0.01em] lg:text-base">
+            <h3 className="m-0 min-w-0 max-w-full truncate text-[14.5px] font-semibold tracking-[-0.01em] lg:text-base">
               {summary}
             </h3>
             <span
@@ -221,7 +229,7 @@ function OrderCard({
             )}
             {/* Delivery (0046): where it's going, from the order's own snapshot. */}
             {order.delivery && !["cancelled", "failed"].includes(order.status) && (
-              <span className="rounded-full border border-line bg-surface-sunk px-2.5 py-1 text-[10.5px] font-semibold whitespace-nowrap text-ink-soft">
+              <span className="max-w-full truncate rounded-full border border-line bg-surface-sunk px-2.5 py-1 text-[10.5px] font-semibold whitespace-nowrap text-ink-soft">
                 To {[order.deliver_to?.hostel, order.deliver_to?.room].filter(Boolean).join(" ") || "your room"}
               </span>
             )}
@@ -246,60 +254,60 @@ function OrderCard({
           {problem && <p className="m-0 mt-1 text-[11.5px] text-clay-ink dark:text-clay">Couldn&apos;t cancel: {problem}</p>}
         </div>
 
-        {cancellable && (
-          <motion.button
-            whileTap={{ scale: 0.94 }}
-            disabled={busy}
-            onClick={onCancel}
-            className="flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-sunk px-3.5 py-2 text-[12.5px] font-semibold text-ink-soft disabled:opacity-50"
-          >
-            <X size={13} strokeWidth={2.2} />
-            <span className="hidden sm:inline">Cancel</span>
-          </motion.button>
-        )}
+        {/* Every control the same height and corner, so a row of them reads
+            as one row; on a phone they're icons and sit under the words. */}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {cancellable && (
+            <motion.button
+              whileTap={{ scale: 0.94 }}
+              disabled={busy}
+              onClick={onCancel}
+              aria-label={`Cancel order ${order.token ?? ""}`}
+              className={ACTION}
+            >
+              <X size={14} strokeWidth={2.2} />
+              <span className="hidden sm:inline">Cancel</span>
+            </motion.button>
+          )}
 
-        {reportable && (
-          <motion.button
-            whileTap={{ scale: 0.94 }}
-            onClick={onReport}
-            aria-label={`Report a problem with order ${order.token ?? ""}`}
-            className="flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-sunk px-3.5 py-2 text-[12.5px] font-semibold text-muted transition-colors hover:text-ink"
-          >
-            <Flag size={13} strokeWidth={2.2} />
-            <span className="hidden sm:inline">Report</span>
-          </motion.button>
-        )}
+          {reportable && (
+            <motion.button
+              whileTap={{ scale: 0.94 }}
+              onClick={onReport}
+              aria-label={`Report a problem with order ${order.token ?? ""}`}
+              className={ACTION}
+            >
+              <Flag size={14} strokeWidth={2.2} />
+              <span className="hidden sm:inline">Report</span>
+            </motion.button>
+          )}
 
-        {order.refunded_at && (
-          <span className="shrink-0 rounded-full bg-clay px-3 py-2 text-[11.5px] font-semibold whitespace-nowrap text-clay-ink">
-            Refunded {money(Number(order.refund_amount ?? 0))}
-          </span>
-        )}
+          {order.refunded_at && (
+            <span className="flex h-10 items-center rounded-xl bg-clay px-3 text-[11.5px] font-semibold whitespace-nowrap text-clay-ink">
+              Refunded {money(Number(order.refund_amount ?? 0))}
+            </span>
+          )}
 
-        {/* A receipt once there's a payment to receipt. */}
-        {order.payment_taken_at && (
-          <Link
-            href={`/receipt/${order.id}`}
-            aria-label={`Receipt for order ${order.token ?? ""}`}
-            title="Receipt — print it or save it as a PDF"
-            className="grid size-10 shrink-0 place-items-center rounded-xl border border-line bg-surface-sunk text-muted transition-colors hover:text-ink"
-          >
-            <Receipt size={15} strokeWidth={2.2} />
-          </Link>
-        )}
+          {/* A receipt once there's a payment to receipt. */}
+          {order.payment_taken_at && (
+            <Link
+              href={`/receipt/${order.id}`}
+              aria-label={`Receipt for order ${order.token ?? ""}`}
+              title="Receipt — print it or save it as a PDF"
+              className={ACTION}
+            >
+              <Receipt size={15} strokeWidth={2.2} />
+            </Link>
+          )}
 
-        <button
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          aria-label="Bill"
-          className="grid size-10 shrink-0 place-items-center rounded-xl border border-line bg-surface-sunk text-muted transition-colors hover:text-ink"
-        >
-          <ChevronDown
-            size={16}
-            strokeWidth={2.2}
-            className={cn("transition-transform", open && "rotate-180")}
-          />
-        </button>
+          <button onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-label="Bill" className={ACTION}>
+            <ChevronDown
+              size={16}
+              strokeWidth={2.2}
+              className={cn("transition-transform", open && "rotate-180")}
+            />
+          </button>
+        </div>
       </div>
 
       <AnimatePresence initial={false}>

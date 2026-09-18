@@ -53,14 +53,9 @@ export function PaySheet({
   // different number is a warning now instead of a surprise at the counter.
   const [sent, setSent] = useState("");
   const [error, setError] = useState<string | null>(null);
-  // Paying through Printifi lives in <OnlinePay>; this only remembers
-  // whether the student asked for the direct route instead.
-  const [showDirect, setShowDirect] = useState(false);
-
   useEffect(() => {
     if (!open || !order) return;
     setError(null);
-    setShowDirect(false);
     setSent(Number(order.total).toFixed(2));
     setStanding(null);
     void getOperator(order.operator_id).then(setOperator);
@@ -204,7 +199,13 @@ export function PaySheet({
       : 0;
 
   const claimed = Boolean(order?.payment_claimed_at);
+  // Where Printifi collects, the two ways are online and cash: a transfer
+  // to the desk's own UPI id isn't offered beside a checkout that confirms
+  // itself — it would be a second, slower way to do the same thing, and
+  // the one the desk has to check by hand. Everywhere else the direct
+  // route is the online route.
   const gateway = canPayOnline(operator);
+  const direct = Boolean(operator) && !gateway;
 
   return (
     <Drawer.Root open={open} onOpenChange={onOpenChange}>
@@ -232,26 +233,16 @@ export function PaySheet({
               </Panel>
             )}
             {operator && gateway && !claimed && order && order.requote_status !== "proposed" && (
-              <>
-                <OnlinePay
-                  orderId={order.id}
-                  amount={Number(order.total)}
-                  currency={operator.currency ?? "₹"}
-                  onPaid={() => {
-                    onClaimed();
-                    onOpenChange(false);
-                  }}
-                  onCheckoutOpen={() => onOpenChange(false)}
-                />
-                {!showDirect && (
-                  <button
-                    onClick={() => setShowDirect(true)}
-                    className="mb-4 w-full text-center text-[12px] font-semibold text-muted underline-offset-2 hover:underline"
-                  >
-                    Pay the desk directly instead
-                  </button>
-                )}
-              </>
+              <OnlinePay
+                orderId={order.id}
+                amount={Number(order.total)}
+                currency={operator.currency ?? "₹"}
+                onPaid={() => {
+                  onClaimed();
+                  onOpenChange(false);
+                }}
+                onCheckoutOpen={() => onOpenChange(false)}
+              />
             )}
 
             {!operator ? (
@@ -259,7 +250,7 @@ export function PaySheet({
                 <Loader2 size={15} className="animate-spin" />
                 Loading…
               </Panel>
-            ) : order?.requote_status === "proposed" ? null : gateway && !claimed && !showDirect ? null : !request ? (
+            ) : order?.requote_status === "proposed" ? null : !direct ? null : !request ? (
               <Panel tone="clay">
                 <AlertCircle size={15} strokeWidth={2.2} />
                 This operator hasn&apos;t added a UPI id yet — pay cash at the desk.
@@ -412,13 +403,35 @@ export function PaySheet({
               </>
             )}
 
-            {order?.requote_status !== "proposed" && (
-            <div className="mt-5 border-t border-line pt-4">
+            {order?.requote_status !== "proposed" && operator && (
+            <div className={cn("border-t border-line pt-4", gateway && !claimed ? "mt-1" : "mt-5")}>
               {claimed ? (
                 <p className="m-0 flex items-center gap-2 rounded-[14px] bg-bone px-4 py-3 text-[12.5px] leading-relaxed text-ink">
                   <Check size={15} strokeWidth={2.6} className="shrink-0" />
-                  You&apos;ve marked this as paid. The operator confirms it when they see the money.
+                  {order?.payment_method === "cash"
+                    ? `Cash it is — ${order?.delivery ? "the runner takes it at your door" : "the desk takes it when you collect"}.`
+                    : "You've marked this as paid. The operator confirms it when they see the money."}
                 </p>
+              ) : gateway ? (
+                // Printifi collects: the other way is cash, and only cash.
+                cash ? (
+                  <>
+                    <p className="m-0 mb-3 text-[12.5px] leading-relaxed text-muted">
+                      Or pay in cash{order?.delivery ? " at your door" : " at the counter"}.
+                    </p>
+                    <ClaimButton
+                      busy={busy === "cash" || cash.disabled}
+                      onClick={() => claim("cash")}
+                      icon={<Banknote size={15} strokeWidth={2.2} />}
+                      label={cash.label}
+                    />
+                    <p className={cn("m-0 mt-2 text-[11.5px] leading-relaxed", cash.ok ? "text-muted" : "text-clay-ink dark:text-clay")}>
+                      {cash.hint}
+                    </p>
+                  </>
+                ) : (
+                  <p className="m-0 text-[11.5px] leading-relaxed text-muted">This desk takes online payment only.</p>
+                )
               ) : (
                 <>
                   <p className="m-0 mb-3 text-[12.5px] leading-relaxed text-muted">
@@ -486,8 +499,9 @@ export function PaySheet({
               )}
 
               <p className="m-0 mt-3 text-[11px] leading-relaxed text-muted">
-                Printifi never holds your money — it goes straight to the operator. We can&apos;t see
-                whether a transfer succeeded, so they confirm it themselves before printing.
+                {gateway
+                  ? "Paid through Printifi, the order is confirmed the moment the money lands and the desk starts without checking anything. Cash is counted in the hand."
+                  : "Printifi never holds your money — it goes straight to the operator. We can't see whether a transfer succeeded, so they confirm it themselves before printing."}
               </p>
             </div>
             )}
