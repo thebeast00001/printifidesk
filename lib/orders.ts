@@ -14,6 +14,8 @@ export type OrderStatus =
   | "printing"
   | "finishing"
   | "ready"
+  /** Picked up from the desk by Printifi's runner, on its way to the student's door (0046). */
+  | "delivering"
   | "collected"
   | "cancelled"
   | "failed"
@@ -104,6 +106,21 @@ export interface OrderRow {
   covered_amount?: number | string | null;
   /** 0044: the cover sheet's line on the bill, as priced. */
   cover_charge?: number | string | null;
+  /* 0046: delivery to the door by Printifi's runner. */
+  /** Chosen at placing; the job goes to `deliver_to` instead of the shelf's counter. */
+  delivery?: boolean;
+  /** The platform's fee for it, inside `total`, after the desk's bill. */
+  delivery_fee?: number | string | null;
+  deliver_to?: { hostel?: string; room?: string } | null;
+  /** The runner carrying it (their account id), while it's out. */
+  runner_id?: string | null;
+  picked_up_at?: string | null;
+  delivered_at?: string | null;
+  /** Brought back to the desk undelivered, most recently. */
+  returned_at?: string | null;
+  delivery_returns?: number;
+  /** "scan": handed over against the student's code; "runner": on the runner's word. */
+  delivery_proof?: "scan" | "runner" | null;
   refunded_at: string | null;
   refund_amount: number | null;
   refund_note: string | null;
@@ -202,7 +219,8 @@ export interface Operator {
   /** 0044: every job comes out under a labelled cover sheet, priced as one line on the bill. */
   cover_sheet?: boolean;
   cover_price?: number | string;
-  /** 0044: the cover sheet's line on this order, as it was priced. */
+  /** 0046: Printifi's runner collects from this desk — the admin's switch, like online payment. */
+  delivery?: boolean;
   accepts_cash: boolean;
   paper_stock: number | null;
   low_paper_at: number;
@@ -275,6 +293,7 @@ const OPERATOR_SELECT_LEGACY =
 // 42703 ("column does not exist") steps down one list at a time, so a
 // project on 0028 still gets 0027's columns rather than none of them.
 const OPERATOR_SELECTS = [
+  OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status, hours, closed_on, tz, extras, unpaid_expiry_minutes, unclaimed_after_hours, gateway_paused, open_set_at, cover_sheet, cover_price, delivery", // 0046
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status, hours, closed_on, tz, extras, unpaid_expiry_minutes, unclaimed_after_hours, gateway_paused, open_set_at, cover_sheet, cover_price", // 0044
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status, hours, closed_on, tz, extras, unpaid_expiry_minutes, unclaimed_after_hours, gateway_paused, open_set_at", // 0041
   OPERATOR_SELECT_LEGACY + ", upi_kind, upi_mc, round_to_rupee, shelf_rows, shelf_cols, upi_qr, gateway_status, hours, closed_on, tz, extras, unpaid_expiry_minutes, unclaimed_after_hours, gateway_paused", // 0040
@@ -319,14 +338,25 @@ export interface Totals {
   saved: number;
 }
 
-/** Statuses where the job is still the counter's problem. */
+/** Statuses where the job is still live — the counter's, or the runner's (0046). */
 export const ACTIVE_STATUSES: OrderStatus[] = [
   "placed",
   "queued",
   "printing",
   "finishing",
   "ready",
+  "delivering",
 ];
+
+/**
+ * The statuses a job ends in. Queries ask for "not ended" rather than for
+ * the live list: a project that hasn't run 0045 has no 'delivering' in its
+ * enum, and naming it in a filter would fail the whole query — while
+ * naming only the endings works on either.
+ */
+export const ENDED_STATUSES: OrderStatus[] = ["collected", "cancelled", "failed", "unclaimed"];
+/** The same, as a PostgREST `not.in` filter value. */
+export const NOT_ENDED = `(${ENDED_STATUSES.join(",")})`;
 
 export const STATUS_LABEL: Record<OrderStatus, string> = {
   placed: "Pay to start printing",
@@ -334,6 +364,7 @@ export const STATUS_LABEL: Record<OrderStatus, string> = {
   printing: "Printing",
   finishing: "Binding",
   ready: "Ready for pickup",
+  delivering: "Out for delivery",
   collected: "Collected",
   cancelled: "Cancelled",
   failed: "Couldn't print",
@@ -559,6 +590,8 @@ export interface NewOrderInput {
   /** `pickup_at` must be set when scheduled, and null when not — the database
       enforces the pairing. */
   pickupAt: string | null;
+  /** 0046: to the door instead of the counter. Null for a pickup; can't go with a pickup time. */
+  delivery?: { hostel: string; room: string } | null;
   items: {
     documentId: string | null;
     name: string;
@@ -593,17 +626,22 @@ export async function createOrder(input: NewOrderInput): Promise<OrderRow> {
   const session = await ensureSession();
   if (session.status !== "ready") throw new Error("Sign in to place an order.");
 
+  const items = input.items.map((item) => ({
+    document_id: item.documentId,
+    name: item.name,
+    pages: item.pages,
+    colour_pages: item.colourPages,
+    selected_pages: item.selectedPages,
+    config: item.config,
+  }));
+  // A project before 0046 has the three-argument place_order and no
+  // delivery; naming a fourth argument would fail to match it. So the
+  // argument goes only when there is a delivery to send.
   const { data: id, error } = await supabase.rpc("place_order", {
     p_operator: input.operatorId,
-    p_items: input.items.map((item) => ({
-      document_id: item.documentId,
-      name: item.name,
-      pages: item.pages,
-      colour_pages: item.colourPages,
-      selected_pages: item.selectedPages,
-      config: item.config,
-    })),
+    p_items: items,
     p_pickup_at: input.pickupAt,
+    ...(input.delivery ? { p_delivery: { hostel: input.delivery.hostel.trim(), room: input.delivery.room.trim() } } : {}),
   });
 
   if (error) throw new Error(friendly(error.message));
@@ -648,7 +686,7 @@ export async function activeOrderBundle(): Promise<{ order: OrderRow | null; eve
   const { data } = await supabase
     .from("orders")
     .select(`${ORDER_SELECT}, order_events(*)`)
-    .in("status", ACTIVE_STATUSES)
+    .not("status", "in", NOT_ENDED)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -946,6 +984,12 @@ export interface DeskCreditSummary {
   dues_taken: number;
   via_payout: number;
   via_fee: number;
+  /* 0046: deliveries by Printifi's runner. Zero before it. */
+  /** Delivered with cash taken at the door: the desk's price on each, credited. */
+  delivery_orders: number;
+  delivery_cash: number;
+  /** Delivery fees the desk was paid directly and owes Printifi. */
+  delivery_fees: number;
 }
 
 export async function deskCreditSummary(operatorId: string): Promise<DeskCreditSummary | null> {
@@ -960,6 +1004,9 @@ export async function deskCreditSummary(operatorId: string): Promise<DeskCreditS
     dues_taken: Number(r.dues_taken ?? 0),
     via_payout: Number(r.via_payout ?? 0),
     via_fee: Number(r.via_fee ?? 0),
+    delivery_orders: Number(r.delivery_orders ?? 0),
+    delivery_cash: Number(r.delivery_cash ?? 0),
+    delivery_fees: Number(r.delivery_fees ?? 0),
   };
 }
 
@@ -979,7 +1026,7 @@ export async function operatorQueue(operatorId: string): Promise<OrderRow[]> {
     .from("orders")
     .select(ORDER_SELECT)
     .eq("operator_id", operatorId)
-    .in("status", ACTIVE_STATUSES)
+    .not("status", "in", NOT_ENDED)
     .order("created_at", { ascending: true });
   return (data ?? []) as OrderRow[];
 }
@@ -995,7 +1042,7 @@ function friendly(message: string): string {
     return "The database refused that change. Check the RLS policies in 0001_init.sql.";
   }
   // The RPC's own messages are written for the student; pass them through.
-  if (/not yours|out of range|lot of orders|not taking orders|at least one file|split it in two|due from an uncollected|Cash is off|one at a time|doesn't take cash|accept the new price|already paid|isn't waiting|doesn't need a signal|already started/.test(message)) {
+  if (/not yours|out of range|lot of orders|not taking orders|at least one file|split it in two|due from an uncollected|Cash is off|one at a time|doesn't take cash|accept the new price|already paid|isn't waiting|doesn't need a signal|already started|isn't on right now|doesn't deliver|Which hostel|Which room|phone number|pickup time doesn't apply/.test(message)) {
     return message;
   }
   if (message.includes("orders_pickup_at_matches_mode")) {

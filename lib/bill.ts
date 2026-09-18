@@ -42,7 +42,9 @@ export function billFor(
         }))
       : [{ pages: order.pages, colourPages: order.colour_pages, config: { ...DEFAULT_CONFIG, ...order.config } }];
 
-  const quote = quoteOrder(lines, card);
+  // The delivery fee (0046) is on the row, not in the card: the platform's
+  // line, after the desk's bill.
+  const quote = quoteOrder(lines, card, { deliveryFee: Number(order.delivery_fee ?? 0) });
   const names = items.length > 0 ? items.map((i) => i.name) : [`${order.pages} pages`];
 
   return {

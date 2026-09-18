@@ -154,9 +154,11 @@ export function AccountPanel() {
 /**
  * New-order alerts on this device, with the tab closed. The subscription is
  * flagged as a desk one, so the dispatcher sends this device the desk's
- * pushes and the student's "ready" pushes go where they went before.
+ * pushes and the student's "ready" pushes go where they went before. The
+ * runner's page (0046) draws the same row: a delivery filed on a shelf
+ * reaches a runner through the same desk-flagged subscription.
  */
-function DeskPushRow() {
+export function DeskPushRow({ what = "orders" }: { what?: "orders" | "deliveries" }) {
   const authKey = useAuthKey();
   const [state, setState] = useState<PushState>("checking");
   const [busy, setBusy] = useState(false);
@@ -171,14 +173,14 @@ function DeskPushRow() {
     unsupported: "This browser can't do notifications. Try Chrome, Edge or Firefox.",
     unconfigured: "Not set up on the server — NEXT_PUBLIC_VAPID_PUBLIC_KEY is missing.",
     denied: "Blocked. Allow notifications for this site in your browser settings, then reload.",
-    off: "A notification the moment a new order lands, even with this closed.",
-    on: "On for this device. Every new order buzzes here.",
+    off: what === "deliveries" ? "A notification the moment a delivery is filed on a shelf, even with this closed." : "A notification the moment a new order lands, even with this closed.",
+    on: what === "deliveries" ? "On for this device. Every delivery ready for pickup buzzes here." : "On for this device. Every new order buzzes here.",
   };
 
   return (
     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-line bg-surface-sunk p-4">
       <div className="min-w-0">
-        <p className="m-0 text-[13px] font-semibold">New-order alerts</p>
+        <p className="m-0 text-[13px] font-semibold">{what === "deliveries" ? "Delivery alerts" : "New-order alerts"}</p>
         <p className="m-0 mt-0.5 text-[12px] leading-relaxed text-muted">{error ?? description[state]}</p>
       </div>
       {state === "checking" ? (

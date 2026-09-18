@@ -1,51 +1,36 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useClerk } from "@clerk/nextjs";
-import { AlertCircle, ChevronDown, ChevronRight, Download, Loader2, LogIn, UserRoundCheck } from "lucide-react";
+import { AlertCircle, ChevronDown, Loader2, LogIn, UserRoundCheck } from "lucide-react";
 import { useConnectionVerdict } from "../connection-banner";
 import { DeskSignIn } from "../operator/desk-sign-in";
 import { JoinDesk } from "../join-desk";
 import { useSurface } from "../surface-provider";
 import { useDesk } from "./desk-provider";
+import { Deliveries } from "./deliveries";
+import { InstallNudge } from "./install-nudge";
+import { RunnerRequest } from "./runner-request";
 import { OpenSwitch } from "./open-switch";
 import { SupportLine } from "../support-line";
 import { cn } from "@/lib/utils";
-import { canInstall, useInstall } from "@/lib/install";
-import { useApp } from "@/lib/store";
 
 /**
  * Routes between the states someone can be in on the desk site: not signed
- * in, signed in but on no desk, or running one — and, for the last, draws
- * the header every desk page shares.
+ * in; signed in but on no desk and not a runner (offered both ways in);
+ * a runner and nothing else (Deliveries, whatever the address); or running
+ * a desk — and, for the last, draws the header every desk page shares.
  */
-/** One line under the desk's name, until the app is on the home screen. */
-function InstallNudge() {
-  const state = useInstall();
-  const setOpen = useApp((s) => s.setInstallOpen);
-  if (!canInstall(state)) return null;
-  return (
-    <button
-      onClick={() => setOpen(true)}
-      className="flex w-full items-center gap-3 rounded-[16px] border border-line bg-surface px-4 py-3 text-left shadow-card transition-colors hover:bg-surface-sunk"
-    >
-      <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-surface-sunk">
-        <Download size={16} strokeWidth={2.2} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[13.5px] font-semibold tracking-[-0.01em]">Install Printifi Desk on this phone</span>
-        <span className="mt-0.5 block text-[12px] text-muted">Full screen at the counter, and new orders buzz the phone in a pocket.</span>
-      </span>
-      <ChevronRight size={15} strokeWidth={2.2} className="shrink-0 text-faint" />
-    </button>
-  );
-}
-
 export function DeskShell({ children }: { children: React.ReactNode }) {
-  const { backend, operatorId, operator, operatorIds, deskNames, reload, paired, chooseDesk } = useDesk();
+  const { backend, operatorId, operator, operatorIds, deskNames, reload, paired, chooseDesk, runner, refreshRunner } = useDesk();
   const { verdict } = useConnectionVerdict();
   const { surface, split, desk } = useSurface();
   const clerk = useClerk();
+  const pathname = usePathname();
+  // 0046: the Deliveries page is the runner's; on a desk it sits beside
+  // the queue, and for an account that only delivers it is the whole site.
+  const onDeliveries = pathname === desk("/operator/deliveries");
 
   if (backend.state === "loading") {
     return <Notice icon={<Loader2 size={16} className="animate-spin" />} title="Opening…" />;
@@ -81,16 +66,37 @@ export function DeskShell({ children }: { children: React.ReactNode }) {
     return <Notice tone="clay" title="Can't reach the database" body={backend.message} />;
   }
 
-  // Not staff anywhere. The only way onto a desk is a code from whoever runs
-  // it, so that's what this account is offered.
+  // Not staff anywhere. A runner the admin has granted gets Deliveries —
+  // the whole site, whatever the address, since the desk's pages would have
+  // nothing to show them. Anyone else is offered both ways in: a desk's
+  // code, or a request to deliver — which opens nothing by itself.
   if (!operatorId || !operator) {
     // A rejected token also produces "no operator"; the banner above already
     // explains that, so don't ask for a code on top of it.
     if (verdict.kind === "blocked") return null;
-    if (verdict.kind === "checking") {
+    if (verdict.kind === "checking" || runner === "unknown") {
       return <Notice icon={<Loader2 size={16} className="animate-spin" />} title="Checking access…" />;
     }
-    return <JoinDesk onJoined={() => void reload()} />;
+    if (runner === "active") return <Deliveries standalone />;
+    return (
+      <div className="flex min-w-0 flex-col gap-4" data-anim="board">
+        <JoinDesk onJoined={() => void reload()} />
+        <RunnerRequest status={runner} onChanged={refreshRunner} />
+      </div>
+    );
+  }
+
+  // On a desk, at the Deliveries address: the runner's page under the
+  // desk's header — or, for staff who aren't runners, the way to ask.
+  if (onDeliveries && runner !== "active") {
+    if (runner === "unknown") {
+      return <Notice icon={<Loader2 size={16} className="animate-spin" />} title="Checking access…" />;
+    }
+    return (
+      <div className="flex min-w-0 flex-col gap-4" data-anim="board">
+        <RunnerRequest status={runner} onChanged={refreshRunner} />
+      </div>
+    );
   }
 
   return (
@@ -139,11 +145,8 @@ export function DeskShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* The same offer the student site makes, the moment the desk is signed
-          in: only drawn when the browser can actually install (Chrome's
-          prompt in hand, or an iPhone's Share route); never on a device
-          that already has it. */}
-      <InstallNudge />
+      {/* The same offer the student site makes, the moment the desk is signed in. */}
+      <InstallNudge why="Full screen at the counter, and new orders buzz the phone in a pocket." />
 
       {operator.shut_at && (
         <Notice

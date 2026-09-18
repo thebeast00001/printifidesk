@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { jwtMsRemaining } from "../lib/jwt";
 import { clockLabel } from "../lib/utils";
 import { deskPrefix, parseCoverScan, parseScan } from "../components/operator/scan-sheet";
+import { deliveryProblem } from "../components/delivery-picker";
 import QRCode from "qrcode";
 import jsQR from "jsqr";
 import { deskPath, hostsFrom, isSingleHost, onDesk, routeFor, sameOriginPath, surfaceFor } from "../lib/surface";
@@ -647,12 +648,33 @@ console.log("\n— the scan (every page checked; the count exact once the file o
 // the file is open, and a stall ending the scan rather than the count.
 const scan = readFileSync(join(__dirname, "..", "lib", "analysis.ts"), "utf8");
 const pdfScan = scan.slice(scan.indexOf("async function analysePdf("), scan.indexOf("type PageVerdict"));
+const inScan = (needle: string) => pdfScan.indexOf(needle) >= 0;
 check("no cap on how many pages are colour-checked", /MAX_ANALYSED_PAGES|scanLimit/.test(scan), false);
-check("the loop runs to the last page", pdfScan.includes("for (let n = 1; n <= pages; n++)"), true);
-check("once open, the count is numPages, never an estimate", pdfScan.includes("doc.numPages") && !pdfScan.includes("estimatePages("), true);
-check("a stalled page or a spent budget ends the scan as exact", pdfScan.includes("STALL_MS") && pdfScan.includes("SCAN_BUDGET_MS") && pdfScan.includes("exact: true"), true);
+check("the loop runs to the last page", inScan("for (let n = 1; n <= pages; n++)"), true);
+check("once open, the count is numPages, never an estimate", inScan("doc.numPages") && !inScan("estimatePages("), true);
+check("a stalled page or a spent budget ends the scan as exact", inScan("STALL_MS") && inScan("SCAN_BUDGET_MS") && inScan("exact: true"), true);
 check("the estimate is only for a file that won't open", (scan.match(/estimatePages\(file\)/g) ?? []).length, 2);
-check("a shared image is looked up on the document, a page's own on the page", scan.includes('startsWith("g_") ? page.commonObjs : page.objs'), true);
+check("a shared image is looked up on the document, a page's own on the page", scan.indexOf('startsWith("g_") ? page.commonObjs : page.objs') >= 0, true);
+
+console.log("\n— delivery to the door (0046) —");
+{
+  const card = rateCardOf({ bw_per_page: 1.5, colour_per_page: 8, min_order: 20, platform_fee_percent: 5, platform_fee_min: 2, round_to_rupee: true, cover_sheet: true, cover_price: 1 });
+  const lines = [{ pages: 4, colourPages: 0, config: { colour: "bw" as const, sides: "single" as const, binding: "none" as const, copies: 1 } }];
+  const walk = quoteOrder(lines, card);
+  const ride = quoteOrder(lines, card, { deliveryFee: 10 });
+  check("no delivery by default", walk.delivery, 0);
+  check("the fee is a line after the desk's bill", ride.delivery, 10);
+  check("the total is the desk's bill plus it", ride.total, paise(walk.total + 10));
+  check("the platform fee isn't charged on it", ride.platformFee, walk.platformFee);
+  check("rounding is the desk's, before it", ride.rounding, walk.rounding);
+  check("what full colour would have cost carries it too", ride.fullColourTotal, paise(walk.fullColourTotal + 10));
+  check("a negative fee is nothing", quoteOrder(lines, card, { deliveryFee: -5 }).delivery, 0);
+  check("a draft needs a hostel", deliveryProblem({ hostel: " ", room: "213", phone: "9876543210" })?.includes("hostel"), true);
+  check("a draft needs a room", deliveryProblem({ hostel: "Ganga", room: "", phone: "9876543210" })?.includes("room"), true);
+  check("a draft needs a phone the runner can call", deliveryProblem({ hostel: "Ganga", room: "213", phone: "12" })?.includes("phone"), true);
+  check("a complete draft has no problem", deliveryProblem({ hostel: "Ganga", room: "213", phone: "98765 43210" }), null);
+  check("no delivery, no problem", deliveryProblem(null), null);
+}
 
 console.log("\n— the payout day (0040) —");
 // 2026-09-16 is a Wednesday (IST). Monday payouts: next is the 21st; Wednesday: today.

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
-import { Activity, House, Inbox, Printer, Receipt, Settings2, SlidersHorizontal, Store, Wallet } from "lucide-react";
+import { Activity, Bike, House, Inbox, Printer, Receipt, Settings2, SlidersHorizontal, Store, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { adminApplications } from "@/lib/operator";
 import { useActiveCount } from "@/hooks/use-tracking";
@@ -48,10 +48,11 @@ const ADMIN_NAV = [
   { href: "/admin", label: "Fees", icon: Receipt },
   { href: "/admin/applications", label: "Applications", icon: Inbox },
   { href: "/admin/desks", label: "Desks", icon: Store },
+  { href: "/admin/runners", label: "Runners", icon: Bike },
   { href: "/diagnostics", label: "Diagnostics", icon: Activity },
 ] as const;
 
-/** Money, applications, desks, and whether the wiring is right. Nothing that leaves the admin. */
+/** Money, applications, desks, runners, and whether the wiring is right. Nothing that leaves the admin. */
 function AdminDock({ pathname }: { pathname: string }) {
   // Applications waiting to be read. Admin-only in the database, so a
   // non-admin on these pages simply gets no badge.
@@ -92,15 +93,22 @@ function StudentDock({ pathname }: { pathname: string }) {
 
 function OperatorDock({ pathname }: { pathname: string }) {
   const pending = useApp((s) => s.operatorPending);
+  const has = useApp((s) => s.deskFaces);
   const { desk } = useSurface();
-  // The three faces are real pages; the browser URL says which is active.
+  // The faces are real pages; the browser URL says which is active.
   // `desk()` gives the public address on this site: `/takings` on the desk
-  // host, `/operator/takings` where both sites share one.
-  const faces = [
-    { internal: "/operator", label: "Queue", icon: Printer, badge: pending || undefined },
-    { internal: "/operator/takings", label: "Takings", icon: Wallet, badge: undefined },
-    { internal: "/operator/settings", label: "Settings", icon: SlidersHorizontal, badge: undefined },
-  ] as const;
+  // host, `/operator/takings` where both sites share one. An account that
+  // only delivers (0046) gets Deliveries alone — the desk's pages would
+  // have nothing to show it; one on a desk that also delivers gets both.
+  const runnerOnly = has !== null && !has.desk && has.deliveries;
+  const faces = runnerOnly
+    ? ([{ internal: "/operator", label: "Deliveries", icon: Bike, badge: undefined }] as const)
+    : ([
+        { internal: "/operator", label: "Queue", icon: Printer, badge: pending || undefined },
+        ...(has?.deliveries ? ([{ internal: "/operator/deliveries", label: "Deliveries", icon: Bike, badge: undefined }] as const) : []),
+        { internal: "/operator/takings", label: "Takings", icon: Wallet, badge: undefined },
+        { internal: "/operator/settings", label: "Settings", icon: SlidersHorizontal, badge: undefined },
+      ] as const);
   const active = faces.reduce<string>((best, f) => {
     const href = desk(f.internal);
     const hit = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");

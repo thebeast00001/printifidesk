@@ -89,6 +89,15 @@ export default function RefundsPage() {
         of the whole bill returns the whole bill — cover sheet, fee and rounding included.
       </p>
 
+      <H2>Delivery</H2>
+      <p>
+        The delivery fee is its own line, and Printifi&apos;s. It is refunded with the rest when a whole bill
+        is refunded before printing. It isn&apos;t refunded for a delivery attempt that failed because nobody
+        was at the door or the room was wrong, or when you collect at the desk yourself after choosing
+        delivery. A delivery order you never take is cleared and becomes dues like any other, the delivery
+        fee included.
+      </p>
+
       <H2>Timing</H2>
       <p>
         Cash refunds are immediate. UPI refunds from a desk depend on the desk making the transfer.

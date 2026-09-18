@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Drawer } from "vaul";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -17,6 +17,9 @@ import { Bill } from "./bill";
 import { UploadStep } from "./upload-step";
 import { createOrder, defaultOperatorId } from "@/lib/orders";
 import { PickupPicker } from "./pickup-picker";
+import { DeliveryPicker, deliveryProblem, type DeliveryDraft } from "./delivery-picker";
+import { platformSettings } from "@/lib/platform";
+import { ensureSession, getSupabase } from "@/lib/supabase/client";
 import { useOperatorWait } from "@/hooks/use-tracking";
 import {
   allExact,
@@ -452,6 +455,12 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
   const [showBill, setShowBill] = useState(false);
   // null means "as soon as possible"; an ISO string means a booked slot.
   const [pickupAt, setPickupAt] = useState<string | null>(null);
+  // 0046: to the door instead — null is the desk. Can't go with a booked time.
+  const [delivery, setDelivery] = useState<DeliveryDraft | null>(null);
+  const [deliveryFee, setDeliveryFee] = useState(0);
+  useEffect(() => {
+    void platformSettings().then((s) => setDeliveryFee(s.delivery_enabled ? s.delivery_fee : 0));
+  }, []);
   const { operator, wait, ready: waitReady } = useOperatorWait();
   // Preparing a job while closed is fine; sending one that nobody will pick up
   // is not, so the button is what's gated.
@@ -464,7 +473,8 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
 
   const card = useMemo(() => rateCardOf(operator), [operator]);
   const lines = useMemo(() => linesOf(files), [files]);
-  const q = useMemo(() => quoteOrder(lines, card), [lines, card]);
+  const quoteOpts = useMemo(() => ({ deliveryFee: delivery ? deliveryFee : 0 }), [delivery, deliveryFee]);
+  const q = useMemo(() => quoteOrder(lines, card, quoteOpts), [lines, card, quoteOpts]);
 
   const shared = useMemo(() => sharedConfig(files, sheetConfig), [files, sheetConfig]);
 
@@ -481,7 +491,7 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
         ? { ...line, config: { ...line.config, [group]: value } }
         : line,
     );
-    return quoteOrder(next, card).total - q.total;
+    return quoteOrder(next, card, quoteOpts).total - q.total;
   };
 
   const smartNote = (
@@ -530,13 +540,31 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
         throw new Error("No operator is set up yet. Run the migrations in supabase/migrations.");
       }
 
+      // A delivery (0046) needs a room and a phone; they're kept on the
+      // profile so the next order has them, and place_order() reads the
+      // phone from there.
+      const missing = deliveryProblem(delivery);
+      if (missing) throw new Error(missing);
+      if (delivery) {
+        const session = await ensureSession();
+        if (session.status !== "ready") throw new Error("Sign in to place an order.");
+        const { error: saveError } = await getSupabase()!
+          .from("profiles")
+          .upsert(
+            { id: session.userId, hostel: delivery.hostel.trim(), room: delivery.room.trim(), phone: delivery.phone.trim() },
+            { onConflict: "id" },
+          );
+        if (saveError) throw new Error(saveError.message);
+      }
+
       // No price goes with this. The database prices the same lines from the
       // operator's rate card — see place_order() in migration 0014 — so the
       // figure in the footer is a preview of what it will decide, not an
       // instruction to it.
       await createOrder({
         operatorId,
-        pickupAt,
+        pickupAt: delivery ? null : pickupAt,
+        delivery: delivery ? { hostel: delivery.hostel, room: delivery.room } : null,
         items: files.map((f) => ({
           documentId: f.localOnly ? null : f.id,
           name: f.name,
@@ -631,8 +659,14 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
           operator={operator}
           pages={lines.reduce((n, l) => n + l.pages * l.config.copies, 0)}
           value={pickupAt}
-          onChange={setPickupAt}
+          onChange={(at) => {
+            setPickupAt(at);
+            // A booked time is a counter appointment; delivery goes on the next round.
+            if (at !== null) setDelivery(null);
+          }}
         />
+
+        <DeliveryPicker operator={operator} value={delivery} onChange={setDelivery} disabled={pickupAt !== null} />
 
         <div className="h-2" />
       </div>
@@ -729,6 +763,8 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
           {closed
             ? (operator?.status_note?.trim() ??
               "Your files stay here — send them as soon as Printifi opens.")
+            : delivery
+              ? `Delivered to ${[delivery.hostel.trim(), delivery.room.trim()].filter(Boolean).join(" ") || "your room"} on the next round. Pay ${money(q.total, card.currency)} online, or in cash at the door.`
             : pickupAt
               ? `Ready by ${new Date(pickupAt).toLocaleString([], {
                   weekday: "short",

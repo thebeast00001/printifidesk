@@ -23,6 +23,7 @@ const STATUS_STYLE: Record<OrderStatus, string> = {
   printing: "bg-ink text-paper",
   finishing: "bg-ink text-paper",
   ready: "bg-sage text-sage-ink",
+  delivering: "bg-sage text-sage-ink",
   collected: "border border-line bg-surface-sunk text-muted",
   cancelled: "border border-line bg-surface-sunk text-muted",
   failed: "bg-clay text-clay-ink",
@@ -207,11 +208,21 @@ function OrderCard({
             >
               {order.status === "cancelled" && order.cancelled_by === "operator"
                 ? "Declined"
-                : STATUS_LABEL[order.status]}
+                : order.status === "ready" && order.delivery
+                  ? (order.returned_at ? "Back at the desk" : "Printed, going out")
+                  : order.status === "collected" && order.delivered_at
+                    ? "Delivered"
+                    : STATUS_LABEL[order.status]}
             </span>
-            {order.status === "ready" && order.shelf_slot && (
+            {order.status === "ready" && order.shelf_slot && !order.delivery && (
               <span className="rounded-full border border-sage-ink/30 bg-sage px-2.5 py-1 font-mono text-[10.5px] font-semibold whitespace-nowrap text-sage-ink">
                 Shelf {order.shelf_slot}
+              </span>
+            )}
+            {/* Delivery (0046): where it's going, from the order's own snapshot. */}
+            {order.delivery && !["cancelled", "failed"].includes(order.status) && (
+              <span className="rounded-full border border-line bg-surface-sunk px-2.5 py-1 text-[10.5px] font-semibold whitespace-nowrap text-ink-soft">
+                To {[order.deliver_to?.hostel, order.deliver_to?.room].filter(Boolean).join(" ") || "your room"}
               </span>
             )}
             {/* The desk's word (or Cashfree's), never the student's own claim. */}
@@ -342,7 +353,9 @@ function OrderCard({
 function PaymentLine({ order }: { order: OrderRow }) {
   const paid = Boolean(order.payment_taken_at);
   const claimed = Boolean(order.payment_claimed_at);
-  const method = order.payment_method === "cash" ? "cash at the desk" : order.payment_method === "upi" ? "UPI" : null;
+  const method = order.payment_method === "cash"
+    ? (order.delivered_at ? "cash at your door" : "cash at the desk")
+    : order.payment_method === "upi" ? "UPI" : null;
 
   const balance = paymentBalance(order);
 
@@ -356,10 +369,14 @@ function PaymentLine({ order }: { order: OrderRow }) {
     text = `The desk received ${money(balance.received ?? 0)} for a ${money(Number(order.total))} bill — it will return ${money(balance.over)} to you.`;
   } else if (paid && order.payment_method === "gateway") {
     text = `Paid online through Printifi${order.payment_reference ? ` · ref ${order.payment_reference}` : ""}.`;
+  } else if (paid && order.delivered_at && order.payment_method === "cash") {
+    text = `Paid in cash to Printifi's runner at the door${order.delivery_proof === "scan" ? " — your code was scanned" : ""}.`;
   } else if (paid) {
     text = `Paid${method ? ` by ${method}` : ""}, confirmed by the desk${
       order.payment_reference ? ` · ref ${order.payment_reference}` : ""
     }${order.shortfall_cleared_at ? " · the rest taken in cash" : ""}.`;
+  } else if (order.pay_at_pickup && order.delivery && (order.status === "delivering" || order.status === "ready" || order.status === "queued" || order.status === "printing" || order.status === "finishing")) {
+    text = `Pay ${money(Number(order.total))} in cash to the runner at your door.`;
   } else if (claimed) {
     text = `You marked this paid${method ? ` by ${method}` : ""}; the desk hasn't confirmed it yet.`;
   } else if (order.status === "unclaimed") {

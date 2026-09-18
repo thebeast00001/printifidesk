@@ -57,6 +57,8 @@ export const MIGRATION_PROBES: MigrationProbe[] = [
   // 0042 changes only the words in messages and can't be told apart from here.
   { id: "0043", without: "choosing cash fails on the pay sheet; no cash limits, dues, or cover for a desk's uncollected orders", check: column("orders", "pay_at_pickup") },
   { id: "0044", without: "no cover sheet on printed jobs; the desk opens bare files; no cover line on bills", check: column("orders", "cover_charge") },
+  // 0045 is the enum value alone and can't be asked for from here; 0046 can't apply without it.
+  { id: "0045+0046", without: "no delivery to the door: the choice isn't offered, runners can't be granted, Deliveries is empty", check: column("orders", "delivery_fee") },
 ];
 
 export interface MigrationReport {

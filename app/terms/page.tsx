@@ -86,6 +86,33 @@ export default function TermsPage() {
         yet paid for it becomes dues.
       </p>
 
+      <H2>Delivery to your room</H2>
+      <p>
+        Where Printifi offers it and the desk is one Printifi&apos;s runner collects from, you can have the
+        job brought to your hostel room instead of collecting it. You choose it when you order, give the
+        hostel, room and a phone number the runner can call, and a <b>delivery fee</b> — shown as its own line
+        on the bill, ₹10 unless the app shows otherwise — is added after the desk&apos;s bill. The fee is
+        Printifi&apos;s, not the desk&apos;s. Delivery goes out on the runner&apos;s next round, so it can&apos;t
+        take a booked pickup time; the app tells you when rounds go.
+      </p>
+      <p>
+        The runner is a person Printifi has approved, carrying your job from the desk&apos;s shelf to your
+        door. They see your name, phone, hostel and room for that job, and nothing else about you. At the
+        door they scan the same QR code the counter would; a job handed over without a scan is recorded as
+        such. If you chose cash, the runner takes the bill in cash at the door — a cash delivery is printed
+        straight away whatever your cash limit, and an order you don&apos;t take becomes dues exactly as an
+        uncollected counter order does. Paying online, or to the desk by UPI before it&apos;s printed, works
+        as it always does.
+      </p>
+      <p>
+        If the runner can&apos;t deliver — nobody at the door, a wrong room — the job goes back to the
+        desk&apos;s shelf, you&apos;re told why, and you can collect it there with your token or wait for
+        the next round; the desk&apos;s collection window runs from then. The delivery fee isn&apos;t
+        refunded for a failed attempt, or if you collect at the desk yourself after choosing delivery. A
+        delivery order that is never collected is cleared and becomes dues like any other, delivery fee
+        included.
+      </p>
+
       <H2>Problems, refunds and reports</H2>
       <p>
         If a print is wrong, report it from the order in the app; the desk sees the report and decides

@@ -43,6 +43,7 @@ truncate table
   public.platform_payouts,
   public.desk_credits,
   public.dues_payments,
+  public.runners,
   public.operator_applications,
   public.staff,
   public.operators,

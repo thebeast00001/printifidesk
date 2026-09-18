@@ -52,7 +52,7 @@ export async function POST(request: Request) {
 
   const { data: order } = await supabase
     .from("orders")
-    .select("id, user_id, operator_id, token, status, total, pages, colour_pages, config, shelf_slot, pay_at_pickup, payment_taken_at, gateway_paid_at, payment_method, created_at, pickup_mode, pickup_at")
+    .select("id, user_id, operator_id, token, status, total, pages, colour_pages, config, shelf_slot, pay_at_pickup, payment_taken_at, gateway_paid_at, payment_method, created_at, pickup_mode, pickup_at, delivery, deliver_to")
     .eq("id", item.order_id)
     .maybeSingle();
   if (!order) return fail("No such order.", 404);
@@ -114,14 +114,27 @@ export async function POST(request: Request) {
     y -= 22;
     text(cover, fileLine, body, 12, 48, y, MUTED, A4.w - 96);
 
-    // The money, in a box: what the counter must do at the handover.
+    // The money, in a box: what the counter — or the runner (0046) — must
+    // do at the handover. A delivery's cash is taken at the door, not here.
     y -= 44;
-    const money = cashDue ? `CASH ${amount} AT PICKUP` : paid ? `PAID${order.payment_method === "gateway" ? " ONLINE" : ""} · ${amount}` : `UNPAID · ${amount}`;
+    const delivery = Boolean(order.delivery);
+    const money = cashDue
+      ? `CASH ${amount} ${delivery ? "AT THE DOOR (RUNNER)" : "AT PICKUP"}`
+      : paid ? `PAID${order.payment_method === "gateway" ? " ONLINE" : ""} · ${amount}` : `UNPAID · ${amount}`;
     cover.drawRectangle({ x: 48, y: y - 12, width: A4.w - 96, height: 40, borderColor: INK, borderWidth: cashDue ? 2 : 1, color: cashDue ? rgb(0.96, 0.93, 0.85) : rgb(0.97, 0.97, 0.96) });
     text(cover, money, font, 17, 60, y, INK);
 
-    // Where it lives, and when it was ordered.
+    // Where it lives, and when it was ordered. A delivery says where it's
+    // going, in the runner's eye-line, above the shelf it waits on.
     y -= 52;
+    if (delivery) {
+      const to = (order.deliver_to ?? {}) as { hostel?: string; room?: string };
+      const dest = [to.hostel, to.room ? `Room ${to.room}` : null].filter(Boolean).join(" - ") || "room not given";
+      cover.drawRectangle({ x: 48, y: y - 14, width: A4.w - 96, height: 44, borderColor: INK, borderWidth: 2, color: rgb(1, 1, 1) });
+      text(cover, "DELIVERY - PRINTIFI'S RUNNER COLLECTS THIS", mono, 9, 60, y + 18, MUTED);
+      text(cover, dest, font, 18, 60, y - 2, INK, A4.w - 120);
+      y -= 58;
+    }
     if (order.shelf_slot) {
       text(cover, "SHELF", mono, 9, 48, y + 26, MUTED);
       text(cover, order.shelf_slot, font, 40, 48, y - 8, INK);

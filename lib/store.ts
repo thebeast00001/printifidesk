@@ -84,6 +84,13 @@ interface AppState {
   /** Orders waiting to be accepted, for the desk dock's badge. Null until known. */
   operatorPending: number | null;
   setOperatorPending: (n: number | null) => void;
+  /**
+   * 0046: which faces this account has on the desk site — a desk's queue,
+   * Printifi's deliveries, or both — for the dock. Null until known, which
+   * draws the desk's three as it always did.
+   */
+  deskFaces: { desk: boolean; deliveries: boolean } | null;
+  setDeskFaces: (faces: { desk: boolean; deliveries: boolean } | null) => void;
 }
 
 export const useApp = create<AppState>((set) => ({
@@ -137,6 +144,8 @@ export const useApp = create<AppState>((set) => ({
 
   operatorPending: null,
   setOperatorPending: (operatorPending) => set({ operatorPending }),
+  deskFaces: null,
+  setDeskFaces: (deskFaces) => set({ deskFaces }),
 }));
 
 /* ---------- selectors ---------- */

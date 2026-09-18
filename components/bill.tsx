@@ -82,6 +82,16 @@ export function Bill({
             muted={muted}
           />
         )}
+        {/* Delivery (0046): Printifi's runner to the door — the platform's
+            line, after everything the desk's card decides. */}
+        {quote.delivery > 0 && (
+          <Row
+            label="Delivery to your room"
+            hint="by Printifi's runner"
+            value={`+${money(quote.delivery, cur)}`}
+            muted={muted}
+          />
+        )}
         <Row
           label="Total"
           value={money(quote.total, cur)}

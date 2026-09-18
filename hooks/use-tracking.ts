@@ -6,7 +6,7 @@ import { useChanged, type Topic } from "@/lib/changed";
 import { ensureSession, getSupabase, type SessionState } from "@/lib/supabase/client";
 import { subscribeTable, type ConnectionState } from "@/lib/realtime";
 import {
-  ACTIVE_STATUSES,
+  NOT_ENDED,
   activeOrderBundle,
   queueStatusMine,
   operatorQueue,
@@ -315,7 +315,7 @@ export function useActiveCount() {
     const { count: n } = await supabase!
       .from("orders")
       .select("id", { count: "exact", head: true })
-      .in("status", ACTIVE_STATUSES);
+      .not("status", "in", NOT_ENDED);
     setCount(n ?? 0);
     setReady(true);
   // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)

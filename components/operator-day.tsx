@@ -60,6 +60,11 @@ export function OperatorDay({ operator }: { operator: Operator }) {
         ...(Number(stats.online_total ?? 0) > 0
           ? [{ label: "Online", value: money(Math.round(Number(stats.online_total)), currency) }]
           : []),
+        // Delivery (0046): cash Printifi's runner took at doors never reached
+        // the till; the desk's price on it is a credit in Takings.
+        ...(Number(stats.delivery_cash ?? 0) > 0
+          ? [{ label: "Cash at doors, by Printifi's runner (credited to you)", value: money(Math.round(Number(stats.delivery_cash)), currency) }]
+          : []),
         { label: "Refunded", value: money(Math.round(Number(stats.refunded)), currency) },
         // The fee was inside every total the student paid; it's Printifi's,
         // so what the desk actually keeps is shown next to it.

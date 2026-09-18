@@ -3,8 +3,10 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useOperatorQueue } from "@/hooks/use-tracking";
+import { useAuthKey } from "@/hooks/use-auth-key";
 import { isPairedDevice } from "@/lib/desk-auth";
 import { listStaff } from "@/lib/desk";
+import { myRunnerStatus, type RunnerStatus } from "@/lib/delivery";
 import { useApp } from "@/lib/store";
 import { operatorNames, type Operator, type OrderRow , myRole, type StaffRole } from "@/lib/orders";
 
@@ -27,7 +29,10 @@ interface DeskValue {
   hasPin: boolean;
   /** 0039: owner or staff on this desk. Owner until known, so nothing flashes hidden for the person who set the desk up. */
   role: StaffRole;
+  /** 0046: where this account stands with delivery — "unknown" until asked. */
+  runner: RunnerStatus | "unknown";
   refreshPin: () => Promise<void>;
+  refreshRunner: () => Promise<void>;
   chooseDesk: (id: string) => void;
 }
 
@@ -88,9 +93,32 @@ export function DeskProvider({ children }: { children: React.ReactNode }) {
     };
   }, [operatorId, userId]);
 
+  // 0046: a runner is an account the admin granted; the site asks once per
+  // sign-in, and again after a request or an approval.
+  const authKey = useAuthKey();
+  const [runner, setRunner] = useState<RunnerStatus | "unknown">("unknown");
+  const refreshRunner = useCallback(async () => {
+    setRunner(await myRunnerStatus());
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-made when the signed-in identity changes (useAuthKey)
+  }, [authKey]);
+  useEffect(() => {
+    if (backend.state !== "ready") return setRunner("unknown");
+    void refreshRunner();
+  }, [backend.state, refreshRunner]);
+
+  // The dock draws the faces this account has: a desk's, deliveries, or both.
+  const setFaces = useApp((s) => s.setDeskFaces);
+  useEffect(() => {
+    if (backend.state !== "ready" || runner === "unknown") return setFaces(null);
+    setFaces({ desk: Boolean(operatorId), deliveries: runner === "active" });
+  }, [backend.state, operatorId, runner, setFaces]);
+
   // Leaving the desk site clears the dock badge, so the student-side dock
   // never shows a stale operator count.
-  useEffect(() => () => setPending(null), [setPending]);
+  useEffect(() => () => {
+    setPending(null);
+    setFaces(null);
+  }, [setPending, setFaces]);
 
   const chooseDesk = useCallback((id: string) => {
     setPreferred(id);
@@ -115,7 +143,9 @@ export function DeskProvider({ children }: { children: React.ReactNode }) {
         paired,
         hasPin,
         role,
+        runner,
         refreshPin,
+        refreshRunner,
         chooseDesk,
       }}
     >

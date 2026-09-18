@@ -151,7 +151,7 @@ function LiveOrder({
     const id = setInterval(() => tick((n) => n + 1), 30_000);
     return () => clearInterval(id);
   }, [order.status]);
-  const done = order.status === "ready" || order.status === "collected";
+  const done = order.status === "ready" || order.status === "delivering" || order.status === "collected";
   const failed = order.status === "failed" || order.status === "cancelled";
 
   // A job that didn't happen through no fault of the student's. Their own
@@ -217,7 +217,8 @@ function LiveOrder({
         )}
       </motion.button>
 
-      {order.status === "ready" && order.token && (
+      {/* The code the desk scans at the counter — or the runner at the door (0046). */}
+      {(order.status === "ready" || order.status === "delivering") && order.token && (
         <HandoverCode token={order.token} code={order.handover_code} operatorId={order.operator_id} />
       )}
 
@@ -334,7 +335,15 @@ function LiveOrder({
 function headline(order: OrderRow, queue: QueueStatus | null): string {
   if (order.status === "cancelled" && order.cancelled_by === "operator") return "Declined";
   if (order.status === "queued" && queue) return `In queue, number ${queue.place}`;
+  // A delivery (0046) isn't "ready for pickup": it's printed and waiting for the runner's round.
+  if (order.status === "ready" && order.delivery) return order.returned_at ? "Back at the desk" : "Printed — going out next round";
+  if (order.status === "collected" && order.delivered_at) return "Delivered";
   return STATUS_LABEL[order.status];
+}
+
+/** "Ganga 213" — where a delivery goes, from the order's own snapshot. */
+function whereTo(order: OrderRow): string {
+  return [order.deliver_to?.hostel, order.deliver_to?.room].filter(Boolean).join(" ");
 }
 
 function detail(order: OrderRow, queue: QueueStatus | null): string {
@@ -344,8 +353,28 @@ function detail(order: OrderRow, queue: QueueStatus | null): string {
   const cashDue = order.pay_at_pickup && !order.payment_taken_at && !order.gateway_paid_at;
   const paid = order.payment_taken_at && !order.refunded_at
     ? (order.payment_method === "gateway" ? "Paid online" : "Paid")
-    : cashDue ? `${money(Number(order.total))} cash at the counter` : null;
+    : cashDue ? `${money(Number(order.total))} cash ${order.delivery ? "at your door" : "at the counter"}` : null;
   const lead = (rest: string) => (paid ? `${paid} · ${rest}` : rest);
+
+  // Delivery (0046): the shelf and the counter aren't where this one ends.
+  if (order.delivery) {
+    if (order.status === "ready") {
+      return order.returned_at
+        ? (order.note ?? "Couldn't be delivered — collect it at the desk with your token, or wait for the next round")
+        : lead(`goes out to ${whereTo(order) || "your room"} on the next delivery round`);
+    }
+    if (order.status === "delivering") {
+      return [
+        `with Printifi's runner, heading to ${whereTo(order) || "you"}`,
+        "have your QR ready at the door",
+        cashDue ? `pay ${money(Number(order.total))} in cash` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+        .replace(/^with/, "With");
+    }
+    if (order.status === "collected" && order.delivered_at) return `${sheets} · delivered to ${whereTo(order) || "your room"}`;
+  }
 
   switch (order.status) {
     case "placed":
@@ -452,6 +481,8 @@ function progressFor(order: OrderRow, queue: QueueStatus | null): number {
       return 62;
     case "ready":
       return 75;
+    case "delivering":
+      return 88;
     case "collected":
       return 100;
     case "failed":
@@ -463,11 +494,13 @@ function progressFor(order: OrderRow, queue: QueueStatus | null): number {
 }
 
 const STAGES = ["Placed", "Queued", "Printing", "Ready", "Collected"] as const;
+/** The same five for a delivery (0046): the last stop is the door, not the counter. */
+const DELIVERY_STAGES = ["Placed", "Queued", "Printing", "Ready", "Delivered"] as const;
 
 /** The furthest stage this order got to — the timestamps say, not the status. */
 function stageReached(order: OrderRow): number {
   if (order.status === "collected") return 4;
-  if (order.status === "ready" || order.ready_at) return 3;
+  if (order.status === "ready" || order.status === "delivering" || order.ready_at) return 3;
   if (order.status === "printing" || order.status === "finishing" || order.started_at) return 2;
   if (order.status === "queued" || order.queued_at) return 1;
   return 0;
@@ -494,6 +527,7 @@ function StageTrack({
 }) {
   const reached = stageReached(order);
   const tone = failed ? "bg-clay" : done ? "bg-sage" : "bg-shell-ink";
+  const stages = order.delivery ? DELIVERY_STAGES : STAGES;
 
   return (
     <motion.div layout="position" className="mt-3.5">
@@ -509,7 +543,7 @@ function StageTrack({
             tone,
           )}
         />
-        {STAGES.map((stage, i) => {
+        {stages.map((stage, i) => {
           const passed = i < reached || (i === reached && (done || failed));
           const current = i === reached && !done && !failed;
           return (
@@ -530,7 +564,7 @@ function StageTrack({
       </div>
 
       <div className="mt-1.5 grid grid-cols-5">
-        {STAGES.map((stage, i) => (
+        {stages.map((stage, i) => (
           <span
             key={stage}
             className={cn(

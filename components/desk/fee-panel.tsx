@@ -165,10 +165,10 @@ export function FeePanel({ operator }: { operator: Operator }) {
 
           <p className="m-0 mt-2.5 font-mono text-[11px] text-muted">
             accrued {money(balance.accrued, currency)} · settled {money(balance.settled, currency)}
-            {credits && credits.via_fee !== 0 ? ` · ${credits.via_fee > 0 ? "covered by Printifi" : "dues you took"} ${money(Math.abs(credits.via_fee), currency)}` : ""}
+            {credits && credits.via_fee !== 0 ? ` · ${credits.via_fee > 0 ? "credited to you" : "owed on by you"} ${money(Math.abs(credits.via_fee), currency)}` : ""}
             {" "}· fees count on collected orders that were paid and weren&apos;t fully refunded
           </p>
-          {credits && (credits.covered_orders > 0 || credits.dues_taken > 0) && (
+          {credits && (credits.covered_orders > 0 || credits.dues_taken > 0 || credits.delivery_orders > 0 || credits.delivery_fees > 0) && (
             <p className="m-0 mt-2 rounded-xl bg-surface-sunk px-3 py-2 text-[12px] leading-relaxed text-ink-soft">
               {credits.covered_orders > 0 && (
                 <>
@@ -179,7 +179,19 @@ export function FeePanel({ operator }: { operator: Operator }) {
               )}
               {credits.dues_taken > 0 && (
                 <>
-                  You took {money(credits.dues_taken, currency)} in cash for students&apos; dues; that&apos;s owed on to Printifi the same way.
+                  You took {money(credits.dues_taken, currency)} in cash for students&apos; dues; that&apos;s owed on to Printifi the same way.{" "}
+                </>
+              )}
+              {/* Delivery (0046): cash the runner took at doors is Printifi's; the desk's price on it comes back here. */}
+              {credits.delivery_orders > 0 && (
+                <>
+                  <b className="font-semibold text-ink">{credits.delivery_orders} {credits.delivery_orders === 1 ? "delivery" : "deliveries"} paid in cash at the door</b> —
+                  Printifi&apos;s runner holds that cash; your price for {credits.delivery_orders === 1 ? "it" : "them"}, {money(credits.delivery_cash, currency)}, is credited to you the same way.{" "}
+                </>
+              )}
+              {credits.delivery_fees > 0 && (
+                <>
+                  Delivery fees paid to you directly, {money(credits.delivery_fees, currency)}, are Printifi&apos;s and owed on.
                 </>
               )}
             </p>

@@ -120,6 +120,26 @@ export default async function DeskTermsPage() {
         Printifi the same way.
       </p>
 
+      <H2>Delivery by Printifi&apos;s runner</H2>
+      <p>
+        Printifi may switch your desk on for delivery: a student can then have a job brought to their room
+        by Printifi&apos;s own runner. Your part doesn&apos;t change — print it, file it on the shelf under its
+        cover sheet (which says where it&apos;s going) — and the runner collects it from there; the card
+        says <b>delivery</b>, and <b>with Printifi&apos;s runner</b> once it has gone. A job in the runner&apos;s
+        hands isn&apos;t yours to move; if it can&apos;t be delivered it comes back to your shelf as ready.
+        The delivery fee is Printifi&apos;s, added after your bill and outside the platform fee; your price
+        for the job is what it always was.
+      </p>
+      <p>
+        <b>The money.</b> Paid through Printifi: your share is the bill less the platform fee less the delivery
+        fee, paid out as usual. Cash: the runner takes it at the door, and <b>Printifi credits you your
+        price for the job</b> (bill less fee less delivery fee) against your fee ledger, or in your next
+        payout — no fee is charged on it. Paid to you directly by UPI: you were paid the delivery fee too, and
+        that part is owed on to Printifi like a fee. Each of these is a named line in Takings. A delivery
+        order the student collects at your counter themselves is an ordinary handover: you take the money as
+        usual and keep it, delivery fee included.
+      </p>
+
       <H2>Jobs that go nowhere</H2>
       <p>
         You set two windows. An unpaid order past the first is cancelled and the student told. A ready job

@@ -1,0 +1,11 @@
+-- Printifi — 0045: one new order status, on its own.
+--
+-- Run after 0044, and run 0046 separately afterwards. A new enum value
+-- can't be used in the transaction that adds it, and 0046's functions
+-- name it — so this is its own paste, its own run (as 0038 was).
+--
+-- 'delivering': printed, picked up from the desk by Printifi's runner, on
+-- its way to the student's door. Between 'ready' and 'collected'; the
+-- desk's part is done, the shelf slot is free, and the student is told
+-- it's coming.
+alter type public.order_status add value if not exists 'delivering';

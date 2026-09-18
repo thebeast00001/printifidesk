@@ -657,6 +657,78 @@ So the number of hops is what the code controls:
 The database's own region is the remaining lever, and it's yours — see
 *Marked for you*.
 
+### Delivery to the door, by Printifi's runner (`0045` + `0046`)
+
+A student can have the job brought to their hostel room instead of
+walking to the desk. The desk's part doesn't change — print it, file it
+on the shelf under its cover — and a **runner** carries it from there.
+`0045` adds the `'delivering'` status on its own (an enum value can't be
+used in the transaction that adds it — same as `0038`); `0046` is the rest.
+
+- **A runner is granted, never self-appointed.** A runner sees students'
+  names, phones and room numbers and marks orders delivered and cash
+  taken — that's access, not a preference. `request_runner()` writes a
+  `runners` row as `requested` and pushes the admin a note; nothing opens.
+  The admin approves it (`admin_set_runner`), or grants an account by
+  email (`admin_add_runner` — yourself, to start with), under **Runners**
+  in `/admin`. Removing a runner puts whatever they were carrying back on
+  the desk's shelf as ready. `is_runner()` gates every runner function.
+- **The desk site is one app for both.** `DeskShell` reads the account's
+  runner status beside its desk membership: staff on a desk see the queue
+  and, if also a runner, a **Deliveries** face in the dock; an account that
+  only delivers sees Deliveries whatever the address; an account that is
+  neither is offered both ways in — a desk's code, and *Deliver for
+  Printifi* (a request). The dock reads `deskFaces` from the store.
+- **What a runner can do is exactly three things.** `runner_orders()`
+  (delivery orders on a shelf, in their hands, or delivered by them today —
+  name, phone, hostel, room, what's owed; never the handover secret, and
+  never the row itself: RLS gives a runner nothing on `orders`),
+  `runner_pickup(order)` (ready → `delivering`, the runner named),
+  `runner_deliver(order, code)` (→ `collected`, `delivered_at`,
+  `delivery_proof` `'scan'` when the student's code was scanned and
+  checked in SQL, `'runner'` on their word; a wrong code is refused), and
+  `runner_return(order, reason)` (→ `ready`, `returned_at`, the reason in
+  the student's message; the desk's uncollected clock starts then). The
+  desk can't move a job that's `delivering`; it comes back or ends at the
+  door. The runner's page polls every 15 s while in front — a socket
+  wouldn't reach it — and reads the cover sheet's QR at a shelf, the
+  student's QR at a door (same decoders as the scan sheet).
+- **Priced honestly.** `platform_settings.delivery_enabled / delivery_fee
+  (₹10) / delivery_areas / delivery_note` and `operators.delivery` (the
+  admin's switch, like online payment — the owner is refused). `place_order`
+  takes a fourth argument `p_delivery {hostel, room}`: only where both
+  switches are on, only to a listed hostel (when the list isn't empty), only
+  with a room and a phone on the profile, never with a booked pickup time.
+  The fee goes on **after** the desk's whole bill — outside the minimum,
+  the platform fee and the rounding, which are the desk's arithmetic —
+  as `orders.delivery_fee`, mirrored by `quoteOrder(lines, card, {
+  deliveryFee })` (`Quote.delivery`) and shown on the bill as *Delivery
+  to your room*. `reprice_order` keeps it through a correction. The
+  student's hostel/room/phone are saved to the profile at placing.
+- **The money, by how the student paid.** Through Printifi: `desk_share`
+  is the bill less the platform fee less the delivery fee. Cash at the
+  door (a delivery queues at once whatever the cash limit — the runner is
+  the one at the door): the runner holds it, the fee counts as retained
+  (`fee_settled_at`), and the desk is credited its price — a `desk_credits`
+  row `delivery_cash`. UPI to the desk: the desk was paid the delivery fee
+  too and owes it on — a `delivery_fee` row, negative. All three land in
+  the ledgers 0043 built (`fee_balance`, `payout_balance`,
+  `desk_credit_summary` with two new columns, `payout_orders` with two
+  new line kinds). `operator_stats_range` gains `delivery_cash` and keeps
+  door cash out of `cash_total`, so the cash-up matches the till. A
+  delivery order the student collects at the desk themselves is an
+  ordinary handover: no credit, the bill as placed. An unclaimed one is
+  covered less the delivery fee.
+- **The student is told at every step** — printed and going out (with the
+  room and the cash to have ready), on its way, delivered, or brought back
+  and why — and every active runner with a desk device hears when a
+  delivery is filed on a shelf. The sweep leaves a delivery waiting for the
+  runner alone; once brought back, it's on the clock like any ready job.
+- **Deploys before the migration keep working**: live-order queries ask
+  for "not ended" rather than naming `'delivering'`, which an un-migrated
+  enum would refuse; `createOrder` sends `p_delivery` only when there is
+  one, so the three-argument `place_order` still matches.
+
 ### Every job comes out labelled (`0044`)
 
 The desks' other objection: fifty printed piles look alike, and the
@@ -1323,8 +1395,8 @@ app/
   layout.tsx            fonts, metadata + structured data, theme, <AppChrome>
   page.tsx              home — upload, files, live status, how it works, footer
   orders/, profile/, settings/, receipt/[id]/   the student's own pages
-  operator/             the desk: queue, takings, settings (served as / on the desk host)
-  admin/                fee, desks, applications — the admin only
+  operator/             the desk: queue, deliveries, takings, settings (served as / on the desk host)
+  admin/                fee, desks, applications, runners — the admin only
   join/, sign-in/, sso-callback/, board/, diagnostics/
   privacy/ terms/ refunds/ desk-terms/          the policies (server-rendered)
   api/                  payments (Cashfree), notifications, purge, convert, desk sign-in
@@ -1334,9 +1406,12 @@ components/
   operator-portal.tsx   the desk's queue — the only thing that advances an order
   operator/             the desk's tools: scan, slip, shelf, stock, staff, devices,
                         close-out, messages, hours/extras/windows (desk-setup), requote
-  desk/                 the desk site's frame: provider, faces, payouts, fees, account
+  desk/                 the desk site's frame: provider, faces, payouts, fees, account,
+                        deliveries (the runner's page) and the runner request
+  admin-runners.tsx     delivery's switches, the desks it collects from, the runners
   order-list.tsx        your orders, with cancel while still cancellable
   print-sheet.tsx       upload step → options step → place order
+  delivery-picker.tsx   to the desk, or to your room — hostel, room, phone, the fee
   upload-step.tsx       dropzone, per-file progress
   pay-sheet.tsx         UPI, cash, or Printifi's hosted checkout
   feed.tsx              your stored documents
@@ -1349,6 +1424,7 @@ hooks/
   use-uploader.ts       validate → analyse → upload (→ convert) → record
 lib/
   orders.ts             order reads/writes and the status machine
+  delivery.ts           the runner's three actions and the admin's runner/delivery knobs
   analysis.ts           page count + per-page colour; which files are taken
   pricing.ts            pure quote engine — same code client and server
   hours.ts              the desk's week, the Open switch, and which one decides
@@ -1356,7 +1432,7 @@ lib/
   seo.ts                the site's name, address and public pages, once
   surface.ts            the two-site routing table
   supabase/client.ts    browser client, tokens bridged from Clerk
-supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0044)
+supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0046)
 scripts/                the checks: pricing parity, features, the SQL harness, RLS
 ```
 
@@ -1418,7 +1494,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0044** in the SQL editor, pasted from the files, **in
+2. **Run 0022 → 0046** in the SQL editor, pasted from the files, **in
    number order** — a later migration can name a column an earlier one
    adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
    student update on an order failed and the X on /orders did nothing).
@@ -1437,6 +1513,14 @@ Things the code can't do on its own, in the order they bite:
    the admin's fee rows errors quietly; until 0034, a too-late cancel is
    refused by the policy alone (silently) rather than by the guard (in words);
    until 0035, online payment can't be turned on for a desk.
+   **Then 0045, then 0046 — as two separate runs** — delivery to the door
+   (see *Delivery to the door*). 0045 is one line, the `'delivering'`
+   status, and must be its own paste: an enum value can't be used in the
+   transaction that adds it, and 0046 names it. Until they run, delivery
+   isn't offered, *Runners* on `/admin` errors, and a runner-only account
+   sees the join screen. After them: `/admin` → *Runners* — switch
+   delivery on, set the fee (₹10) and the hostels, switch on the desks the
+   runner collects from, and grant yourself by email.
    **Then 0044** — the cover sheet (see *Every job comes out labelled*).
    Until it runs, the desk opens bare files and bills carry no cover line.
    After it, every desk has the sheet on at ₹1; the owner changes that
@@ -1495,7 +1579,7 @@ Things the code can't do on its own, in the order they bite:
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
    project, so: create a new project in **Mumbai (`ap-south-1`)**, run
-   `0001 → 0044` in its SQL editor, create the private `documents` bucket,
+   `0001 → 0046` in its SQL editor, create the private `documents` bucket,
    add both Clerk domains under Authentication → Third-Party Auth, then
    swap `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    and `SUPABASE_SERVICE_ROLE_KEY` on both Vercel projects and in

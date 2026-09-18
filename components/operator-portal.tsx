@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   AlertCircle,
   Banknote,
+  Bike,
   Check,
   Coins,
   CreditCard,
@@ -83,6 +84,7 @@ const STATUS_STYLE: Record<string, string> = {
   printing: "bg-ink text-paper",
   finishing: "bg-ink text-paper",
   ready: "bg-sage text-sage-ink",
+  delivering: "border border-line bg-surface-sunk text-ink-soft",
   collected: "border border-line bg-surface-sunk text-muted",
   cancelled: "border border-line bg-surface-sunk text-muted",
   failed: "bg-clay text-clay-ink",
@@ -291,7 +293,9 @@ export function OperatorPortal({ operator, owner = true }: { operator: Operator;
         case "working":
           return o.status === "queued" || o.status === "printing" || o.status === "finishing";
         case "ready":
-          return o.status === "ready";
+          // A delivery in the runner's hands (0046) stays here until it's
+          // delivered: the desk sees where the packet went.
+          return o.status === "ready" || o.status === "delivering";
         case "scheduled":
           return o.pickup_mode === "scheduled" && ["placed", "queued"].includes(o.status);
         case "reports":
@@ -345,7 +349,7 @@ export function OperatorPortal({ operator, owner = true }: { operator: Operator;
     return {
       inbox: all.filter((o) => o.status === "placed").length,
       working: all.filter((o) => ["queued", "printing", "finishing"].includes(o.status)).length,
-      ready: all.filter((o) => o.status === "ready").length,
+      ready: all.filter((o) => o.status === "ready" || o.status === "delivering").length,
       scheduled: all.filter(
         (o) => o.pickup_mode === "scheduled" && ["placed", "queued"].includes(o.status),
       ).length,
@@ -770,10 +774,14 @@ function OrderCard({
             {cashAtPickup && (
               <span
                 className="flex items-center gap-1 rounded-full bg-bone px-2.5 py-1 text-[10.5px] font-semibold text-ink"
-                title={`Printed on the student's cash credit (within their limit). Take ${money(Number(order.total), currency)} in cash when they collect. If they never do, Printifi covers your price for the job.`}
+                title={
+                  order.delivery
+                    ? `A cash delivery: Printifi's runner takes ${money(Number(order.total), currency)} at the student's door, and your price for the job is credited to you in Takings. If the student collects here instead, take the cash yourself as usual.`
+                    : `Printed on the student's cash credit (within their limit). Take ${money(Number(order.total), currency)} in cash when they collect. If they never do, Printifi covers your price for the job.`
+                }
               >
                 <Banknote size={10} strokeWidth={2.4} />
-                {money(Number(order.total), currency)} cash at pickup
+                {money(Number(order.total), currency)} cash {order.delivery ? "at the door" : "at pickup"}
               </span>
             )}
             {awaitingSignal && (
@@ -792,6 +800,29 @@ function OrderCard({
               >
                 <ShieldCheck size={10} strokeWidth={2.4} />
                 covered by Printifi · {money(Number(order.covered_amount ?? 0), currency)}
+              </span>
+            )}
+            {/* Delivery (0046): Printifi's runner collects this one from the
+                shelf and carries it to the room. Print and file it as always;
+                the desk's part ends at the shelf. */}
+            {order.delivery && !["cancelled", "failed"].includes(order.status) && (
+              <span
+                className="flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[10.5px] font-semibold text-ink-soft"
+                title={
+                  order.status === "delivering"
+                    ? "Picked up by Printifi's runner. If it can't be delivered it comes back to your shelf as ready."
+                    : order.status === "collected" && order.delivered_at
+                      ? `Delivered by Printifi's runner${cashAtPickup || (order.pay_at_pickup && order.payment_taken_at) ? " — cash taken at the door; your price for the job is credited in Takings" : ""}.`
+                      : `Printifi's runner collects this from your shelf and delivers it — keep it on the shelf when it's ready. ${order.pay_at_pickup ? "The runner takes the cash at the door; your price is credited in Takings." : ""}`
+                }
+              >
+                <Bike size={10} strokeWidth={2.4} />
+                {order.status === "delivering"
+                  ? "with Printifi's runner"
+                  : order.status === "collected" && order.delivered_at
+                    ? "delivered by Printifi"
+                    : `delivery · ${[order.deliver_to?.hostel, order.deliver_to?.room].filter(Boolean).join(" ") || "room"}`}
+                {order.status === "ready" && order.returned_at ? " · brought back" : ""}
               </span>
             )}
             {order.payment_claimed_at && !order.payment_taken_at && !cashAtPickup && (

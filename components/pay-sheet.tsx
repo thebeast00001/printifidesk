@@ -188,6 +188,10 @@ export function PaySheet({
       return { ok: false, label: "Cash at the counter", hint: `Cash is off for your account until ${standing.blocked_until ? new Date(standing.blocked_until).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "later"} — two orders went uncollected. UPI works as usual.`, disabled: true };
     if (standing.reason === "open")
       return { ok: false, label: "Cash at the counter", hint: `Collect your other cash order${standing.open_cash_token ? ` (${standing.open_cash_token})` : ""} first — one at a time.`, disabled: true };
+    // A delivery (0046): the runner is the one who sets off, so there's no
+    // "leaving now" — it queues at once and the cash changes hands at the door.
+    if (order?.delivery)
+      return { ok: true, label: `Pay ${money(total, operator?.currency)} cash at my door`, hint: "Printed now; Printifi's runner takes the cash when it's delivered. An order you don't take becomes dues on your account, like any cash order.", disabled: false };
     if (total <= standing.cash_limit)
       return { ok: true, label: `Pay ${money(total, operator?.currency)} cash when I collect`, hint: `Printed now, paid at the counter. Your cash limit is ${money(standing.cash_limit, operator?.currency)} — it grows each time you collect.`, disabled: false };
     return { ok: true, label: "Cash — printed when I set off", hint: `Above your ${money(standing.cash_limit, operator?.currency)} cash limit, so the desk prints when you tap "Leaving now" — it's ready by the time you arrive. Pay online to have it printed right away.`, disabled: false };

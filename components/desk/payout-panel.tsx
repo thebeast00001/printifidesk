@@ -198,6 +198,9 @@ function OrderLines({ rows, currency }: { rows: PayoutOrderRow[]; currency: stri
                 {r.token ?? "—"}
                 {r.status === "covered" && <span className="ml-1.5 rounded-full bg-sage px-1.5 py-px font-sans text-[9.5px] font-semibold text-sage-ink">covered</span>}
                 {r.status === "dues taken" && <span className="ml-1.5 rounded-full bg-bone px-1.5 py-px font-sans text-[9.5px] font-semibold text-ink">dues taken</span>}
+                {/* Delivery (0046): cash the runner took at the door, your price credited; or the delivery fee you were paid, owed on. */}
+                {r.status === "delivered, cash at the door" && <span className="ml-1.5 rounded-full bg-sage px-1.5 py-px font-sans text-[9.5px] font-semibold text-sage-ink">delivered · cash</span>}
+                {r.status === "delivery fee" && <span className="ml-1.5 rounded-full bg-bone px-1.5 py-px font-sans text-[9.5px] font-semibold text-ink">delivery fee</span>}
               </td>
               <td className="py-1.5 pr-2 text-right font-mono tabular-nums">{money(r.total, currency)}</td>
               <td className="py-1.5 pr-2 text-right font-mono tabular-nums text-muted">−{money(r.platform_fee, currency)}</td>

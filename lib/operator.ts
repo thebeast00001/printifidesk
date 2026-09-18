@@ -2,7 +2,7 @@
 
 import { ensureSession, getSupabase } from "./supabase/client";
 import { pokeDispatch } from "./push";
-import type { OrderRow, OrderStatus } from "./orders";
+import { ENDED_STATUSES, type OrderRow, type OrderStatus } from "./orders";
 
 /* ============================================================
    Applications — asking to run a desk
@@ -267,7 +267,10 @@ export async function operatorOrders(
     .from("orders")
     .select(ORDER_SELECT)
     .eq("operator_id", operatorId)
-    .or(`status.in.(placed,queued,printing,finishing,ready),created_at.gte.${since}`)
+    // Live is "not ended" rather than a list of live statuses: a project
+    // that hasn't run 0045 has no 'delivering' in its enum, and naming it
+    // in a filter would fail the whole query.
+    .or(`status.not.in.(${ENDED_STATUSES.join(",")}),created_at.gte.${since}`)
     .order("is_priority", { ascending: false })
     .order("created_at", { ascending: true })
     .limit(limit);
@@ -464,6 +467,8 @@ export interface RangeStats {
   median_minutes: number;
   /** Printifi's share of the collected, unrefunded orders in the window. */
   platform_fee: number;
+  /** 0046: cash taken at doors by Printifi's runner — never in the till; the desk's price on it is credited in Takings. */
+  delivery_cash?: number;
 }
 
 export async function statsForRange(

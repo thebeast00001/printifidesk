@@ -26,6 +26,14 @@ export interface PlatformSettings {
   cash_limit_cap: number;
   cash_strikes_allowed: number;
   cash_lockout_days: number;
+  /* 0046: delivery to the door by Printifi's runner. */
+  delivery_enabled: boolean;
+  /** The platform's fee per delivery, after the desk's bill. */
+  delivery_fee: number;
+  /** Hostels served; empty means any the student names. */
+  delivery_areas: string[];
+  /** A line the student reads with the choice — round times, mostly. */
+  delivery_note: string | null;
   updated_at: string;
 }
 
@@ -42,6 +50,10 @@ const EMPTY: PlatformSettings = {
   cash_limit_cap: 300,
   cash_strikes_allowed: 2,
   cash_lockout_days: 120,
+  delivery_enabled: false,
+  delivery_fee: 10,
+  delivery_areas: [],
+  delivery_note: null,
   updated_at: "",
 };
 
@@ -87,6 +99,11 @@ async function fetchSettings(): Promise<PlatformSettings> {
         cash_limit_cap: Number(data.cash_limit_cap ?? 300),
         cash_strikes_allowed: Number(data.cash_strikes_allowed ?? 2),
         cash_lockout_days: Number(data.cash_lockout_days ?? 120),
+        // Off until 0046 is run and the admin turns it on.
+        delivery_enabled: data.delivery_enabled === true,
+        delivery_fee: Number(data.delivery_fee ?? 10),
+        delivery_areas: Array.isArray(data.delivery_areas) ? (data.delivery_areas as unknown[]).map(String) : [],
+        delivery_note: (data.delivery_note as string | null) ?? null,
         updated_at: data.updated_at,
       };
   cache = { at: Date.now(), value };

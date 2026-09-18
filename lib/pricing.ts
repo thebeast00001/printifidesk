@@ -208,6 +208,12 @@ export interface Quote {
   platformFee: number;
   /** What lifting to the next rupee added; zero unless the desk rounds. */
   rounding: number;
+  /**
+   * Delivery to the door by Printifi's runner (0046): the platform's fee,
+   * after the desk's whole bill — outside the minimum, the platform fee and
+   * the rounding, which are the desk's arithmetic. Zero for a pickup.
+   */
+  delivery: number;
   total: number;
   /** What full colour would have cost — the smart-colour pitch. */
   fullColourTotal: number;
@@ -352,7 +358,12 @@ const printedPages = (lines: QuoteLine[]) =>
  * loose handout is one order with two different answers — while the bulk slab
  * and the minimum order are properties of the job as a whole.
  */
-export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
+/** What the job is besides its lines: delivery to the door, at the platform's fee. */
+export interface QuoteOptions {
+  deliveryFee?: number;
+}
+
+export function quoteOrder(lines: QuoteLine[], card: RateCard, options: QuoteOptions = {}): Quote {
   const bulkApplied = printedPages(lines) >= card.bulkThreshold;
   const bulk = bulkApplied ? card.bulkMultiplier : 1;
   const minOrder = paise(card.minOrder);
@@ -372,7 +383,11 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
   const topUp = paise(base - subtotal - cover);
   // The minimum lifts the lines; the fee sits on top of that.
   const platformFee = platformFeeOn(base, card);
-  const { total, rounding } = roundedTotal(base + platformFee, card);
+  const { total: deskTotal, rounding } = roundedTotal(base + platformFee, card);
+  // Delivery (0046) comes after the desk's whole bill, rounding included —
+  // place_order() adds it in the same place.
+  const delivery = paise(Math.max(0, options.deliveryFee ?? 0));
+  const total = paise(deskTotal + delivery);
 
   // What the same job would have cost printed entirely in colour. Used by the
   // savings widget, so every line counts regardless of what it was set to.
@@ -382,7 +397,7 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
       .reduce((n, v) => n + v, 0),
   );
   const fullColourBase = Math.max(fullColourSum + cover, minOrder);
-  const fullColourTotal = roundedTotal(fullColourBase + platformFeeOn(fullColourBase, card), card).total;
+  const fullColourTotal = paise(roundedTotal(fullColourBase + platformFeeOn(fullColourBase, card), card).total + delivery);
 
   // The smart-colour claim only counts lines actually set to smart. A line the
   // student deliberately set to black & white saved them money, but not by
@@ -399,7 +414,7 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
       .reduce((n, v) => n + v, 0),
   );
   const smartBase = Math.max(smartSum + cover, minOrder);
-  const smartTotal = roundedTotal(smartBase + platformFeeOn(smartBase, card), card).total;
+  const smartTotal = paise(roundedTotal(smartBase + platformFeeOn(smartBase, card), card).total + delivery);
 
   return {
     bwPages: sum((c) => c.bwPages),
@@ -415,6 +430,7 @@ export function quoteOrder(lines: QuoteLine[], card: RateCard): Quote {
     topUp,
     platformFee,
     rounding,
+    delivery,
     total,
     fullColourTotal,
     smartSaving: Math.max(0, paise(smartTotal - total)),

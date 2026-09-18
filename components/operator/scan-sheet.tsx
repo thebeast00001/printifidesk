@@ -81,7 +81,7 @@ export function tokenFromScan(raw: string): string | null {
 
 type Proof = "verified" | "unverified" | "wrong";
 
-interface Detector {
+export interface Detector {
   detect(source: HTMLVideoElement | HTMLCanvasElement | ImageBitmap): Promise<{ rawValue: string }[]>;
 }
 
@@ -92,9 +92,10 @@ interface DetectorCtor {
 
 /**
  * The native detector, only if it can actually read QR codes on this
- * platform. Resolves null otherwise, and jsQR takes over.
+ * platform. Resolves null otherwise, and jsQR takes over. Shared with the
+ * runner's scanner (0046), which reads the same codes at a door.
  */
-async function nativeDetector(): Promise<Detector | null> {
+export async function nativeDetector(): Promise<Detector | null> {
   const ctor = (globalThis as { BarcodeDetector?: DetectorCtor }).BarcodeDetector;
   if (!ctor) return null;
   try {
