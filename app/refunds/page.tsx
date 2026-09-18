@@ -93,7 +93,7 @@ export default function RefundsPage() {
       <p>
         The delivery fee is its own line, and Printifi&apos;s. It is refunded with the rest when a whole bill
         is refunded before printing. It isn&apos;t refunded for a delivery attempt that failed because nobody
-        was at the door or the room was wrong, or when you collect at the desk yourself after choosing
+        was at the spot or the phone went unanswered, or when you collect at the desk yourself after choosing
         delivery. A delivery order you never take is cleared and becomes dues like any other, the delivery
         fee included.
       </p>

@@ -36,7 +36,8 @@ import { SupportLine } from "../support-line";
  *
  * Three lists, in the order a round goes: what's in your hands, what's
  * waiting on a shelf, and what you've delivered today. Every row is a
- * person's name, a room, a phone to call and what to take in cash; every
+ * person's name, the spot they said they'd be (moved, if they moved), a
+ * phone to call and what to take in cash; every
  * action is one of the three functions in the database — picked up,
  * delivered, couldn't deliver — which check that this account is a runner
  * and that this job is theirs. The list is read again every fifteen
@@ -186,7 +187,7 @@ export function Deliveries({ standalone = false }: { standalone?: boolean }) {
                   className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-ink px-3 text-[13px] font-semibold text-paper disabled:opacity-60"
                 >
                   <ScanLine size={14} strokeWidth={2.2} />
-                  Delivered · scan their code
+                  Handed over · scan their code
                 </button>
                 <button
                   disabled={busy === job.id}
@@ -333,10 +334,14 @@ function Section({
   );
 }
 
-/** One job: the token big, the person, the room, the phone, the cash. */
+/** One job: the token big, the person, the spot, the phone, the cash. */
 function JobCard({ job, busy, quiet, children }: { job: RunnerJob; busy: boolean; quiet?: boolean; children?: React.ReactNode }) {
-  const where = [job.hostel, job.room ? `Room ${job.room}` : null].filter(Boolean).join(" · ");
+  const where = [job.spot, job.detail].filter(Boolean).join(" · ");
   const firstName = (job.student ?? "").trim().split(/\s+/)[0] || "Student";
+  // The student moved after this left the shelf: the spot on the card is
+  // newer than the pickup, and says so.
+  const moved =
+    job.status === "delivering" && job.spot_changed_at && job.picked_up_at && new Date(job.spot_changed_at) > new Date(job.picked_up_at);
   return (
     <article className={cn("rounded-[20px] border border-line bg-surface p-4 shadow-card", quiet && "opacity-80")}>
       <div className="flex items-start gap-3.5">
@@ -345,9 +350,14 @@ function JobCard({ job, busy, quiet, children }: { job: RunnerJob; busy: boolean
         </span>
         <div className="min-w-0 flex-1">
           <p className="m-0 text-[15px] font-semibold tracking-[-0.01em]">{job.student ?? firstName}</p>
-          <p className="m-0 mt-0.5 flex items-center gap-1.5 text-[12.5px] text-ink-soft">
+          <p className={cn("m-0 mt-0.5 flex items-center gap-1.5 text-[12.5px]", moved ? "font-semibold text-ink" : "text-ink-soft")}>
             <MapPin size={12} strokeWidth={2.2} className="shrink-0" />
-            {where || "No room given"}
+            <span className="min-w-0 [overflow-wrap:anywhere]">{where || "No spot given"}</span>
+            {moved && (
+              <span className="shrink-0 rounded-full bg-clay px-2 py-0.5 text-[10px] font-semibold text-clay-ink">
+                moved {new Date(job.spot_changed_at!).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+              </span>
+            )}
           </p>
           <p className="m-0 mt-0.5 text-[12px] text-muted">
             {job.pages} {job.pages === 1 ? "page" : "pages"} · {job.desk}
@@ -410,7 +420,7 @@ function ReturnSheet({
   useEffect(() => {
     if (job) setReason("");
   }, [job]);
-  const quick = ["Nobody answered the door", "Room locked", "Wrong hostel or room", "Couldn't pay the cash"];
+  const quick = ["Nobody at the spot", "Didn't pick up the phone", "Wrong spot given", "Couldn't pay the cash"];
   return (
     <Drawer.Root open={job !== null} onOpenChange={(o) => !o && onClose()}>
       <Drawer.Portal>
@@ -462,7 +472,7 @@ function ReturnSheet({
 
 /**
  * The runner's camera. At a shelf it reads the cover sheet's code
- * (`printify:cover:<token>:<desk>`) and picks that job up; at a door it
+ * (`printify:cover:<token>:<desk>`) and picks that job up; at the spot it
  * reads the student's code (`printify:order:<token>:<secret>:<desk>`) and
  * hands the job over with the secret — which the database checks, so a
  * wrong phone is refused, not recorded. Same decoders as the desk's scanner.

@@ -6,9 +6,10 @@ import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { useGoogleSignIn } from "./sign-in/google-button";
 import { useSurface } from "./surface-provider";
-import { AlertCircle, Flag, Footprints, Loader2, LogIn, RotateCcw } from "lucide-react";
+import { AlertCircle, Flag, Footprints, Loader2, LogIn, MapPin, RotateCcw } from "lucide-react";
 import { useActiveOrder } from "@/hooks/use-tracking";
-import { STATUS_LABEL, signalLeaving, type OrderEventRow, type OrderRow, type QueueStatus } from "@/lib/orders";
+import { STATUS_LABEL, signalLeaving, whereTo, type OrderEventRow, type OrderRow, type QueueStatus } from "@/lib/orders";
+import { SpotSheet } from "./spot-sheet";
 import { money } from "@/lib/pricing";
 import { useApp } from "@/lib/store";
 import type { ConnectionState } from "@/lib/realtime";
@@ -132,6 +133,9 @@ function LiveOrder({
   const awaitingSignal = order.status === "placed" && order.print_on_signal === true && !order.signalled_at;
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
+  // 0047: a delivery's spot is the student's to move until it's handed over.
+  const [movingSpot, setMovingSpot] = useState(false);
+  const canMove = Boolean(order.delivery) && ["placed", "queued", "printing", "finishing", "ready", "delivering"].includes(order.status);
   async function leaveNow() {
     setLeaving(true);
     setLeaveError(null);
@@ -216,6 +220,26 @@ function LiveOrder({
           </span>
         )}
       </motion.button>
+
+      {/* Where a delivery is coming to, and the way to move it (0047). */}
+      {canMove && (
+        <>
+          <button
+            onClick={() => setMovingSpot(true)}
+            className="mt-3 flex w-full items-center gap-2.5 rounded-xl border border-shell-line px-3.5 py-2.5 text-left"
+          >
+            <MapPin size={15} strokeWidth={2.2} className="shrink-0 text-shell-faint" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[11px] font-semibold tracking-[0.04em] text-shell-faint uppercase">
+                {order.status === "delivering" ? "Coming to" : "Where you'll be"}
+              </span>
+              <span className="block truncate text-[13.5px] font-semibold">{whereTo(order) || "Not set"}</span>
+            </span>
+            <span className="shrink-0 text-[12.5px] font-semibold text-shell-faint">Change</span>
+          </button>
+          <SpotSheet order={order} open={movingSpot} onOpenChange={setMovingSpot} onChanged={onChanged} />
+        </>
+      )}
 
       {/* The code the desk scans at the counter — or the runner at the door (0046). */}
       {(order.status === "ready" || order.status === "delivering") && order.token && (
@@ -341,11 +365,6 @@ function headline(order: OrderRow, queue: QueueStatus | null): string {
   return STATUS_LABEL[order.status];
 }
 
-/** "Ganga 213" — where a delivery goes, from the order's own snapshot. */
-function whereTo(order: OrderRow): string {
-  return [order.deliver_to?.hostel, order.deliver_to?.room].filter(Boolean).join(" ");
-}
-
 function detail(order: OrderRow, queue: QueueStatus | null): string {
   const sheets = `${order.pages} ${order.pages === 1 ? "page" : "pages"}`;
   // Confirmed by the desk or by Cashfree — a fact on the row, so it leads.
@@ -353,27 +372,27 @@ function detail(order: OrderRow, queue: QueueStatus | null): string {
   const cashDue = order.pay_at_pickup && !order.payment_taken_at && !order.gateway_paid_at;
   const paid = order.payment_taken_at && !order.refunded_at
     ? (order.payment_method === "gateway" ? "Paid online" : "Paid")
-    : cashDue ? `${money(Number(order.total))} cash ${order.delivery ? "at your door" : "at the counter"}` : null;
+    : cashDue ? `${money(Number(order.total))} cash ${order.delivery ? "when it's handed to you" : "at the counter"}` : null;
   const lead = (rest: string) => (paid ? `${paid} · ${rest}` : rest);
 
-  // Delivery (0046): the shelf and the counter aren't where this one ends.
+  // Delivery (0046/0047): the shelf and the counter aren't where this one ends.
   if (order.delivery) {
     if (order.status === "ready") {
       return order.returned_at
         ? (order.note ?? "Couldn't be delivered — collect it at the desk with your token, or wait for the next round")
-        : lead(`goes out to ${whereTo(order) || "your room"} on the next delivery round`);
+        : lead(`comes to ${whereTo(order) || "the spot you chose"} on the next round`);
     }
     if (order.status === "delivering") {
       return [
-        `with Printifi's runner, heading to ${whereTo(order) || "you"}`,
-        "have your QR ready at the door",
+        `with Printifi's runner, coming to ${whereTo(order) || "you"}`,
+        "have your QR ready",
         cashDue ? `pay ${money(Number(order.total))} in cash` : null,
       ]
         .filter(Boolean)
         .join(" · ")
         .replace(/^with/, "With");
     }
-    if (order.status === "collected" && order.delivered_at) return `${sheets} · delivered to ${whereTo(order) || "your room"}`;
+    if (order.status === "collected" && order.delivered_at) return `${sheets} · delivered at ${whereTo(order) || "the spot you chose"}`;
   }
 
   switch (order.status) {

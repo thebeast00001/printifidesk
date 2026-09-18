@@ -2889,7 +2889,7 @@ await scenario("the cover sheet is a line on the bill, the desk's to switch and 
 const RUNNER = "runner_one";
 const RUNNER_TWO = "runner_two";
 const DELIV = "student_deliv";
-const mkDelivery = async (name, pages, to = { hostel: "Ganga", room: "213" }) =>
+const mkDelivery = async (name, pages, to = { spot: "Ganga hostel", detail: "213" }) =>
   (await db.query(`select public.place_order($1, $2::jsonb, null, $3::jsonb) as id;`, [
     OPERATOR,
     JSON.stringify([{ name, pages, colour_pages: 0, config: { copies: 1, sides: "single", colour: "bw", binding: "none" } }]),
@@ -2915,14 +2915,14 @@ await scenario("delivery is the admin's to switch on, priced as a line after the
   // The policy and the desk switch are the admin's; the desk's owner can't flip its own.
   await actingAs("op_test");
   let notAdmin = "";
-  try { await db.query(`select public.set_delivery_policy(true, 10, '{Ganga}', null);`); } catch (error) { notAdmin = String(error?.message ?? error); }
+  try { await db.query(`select public.set_delivery_policy(true, 10, '{Ganga hostel}', null);`); } catch (error) { notAdmin = String(error?.message ?? error); }
   if (!/Only the admin/.test(notAdmin)) throw new Error(`an owner set delivery: ${notAdmin || "no error"}`);
   const ownerFlip = await refused("authenticated", "op_test", `update public.operators set delivery = true where id = $1;`, [OPERATOR]);
   if (!/Only Printifi switches delivery/.test(ownerFlip ?? "")) throw new Error(`owner switched delivery: ${ownerFlip ?? "allowed"}`);
   await actingAs("admin_test");
-  await db.query(`select public.set_delivery_policy(true, 10, '{Ganga,Kaveri, Ganga }', 'Rounds at 1 pm and 7 pm');`);
+  await db.query(`select public.set_delivery_policy(true, 10, '{"Ganga hostel","Library entrance", "Ganga hostel" }', 'Rounds at 1 pm and 7 pm');`);
   const { rows: ps1 } = await db.query(`select delivery_enabled, delivery_areas, delivery_note from public.platform_settings where id;`);
-  if (!ps1[0].delivery_enabled || JSON.stringify(ps1[0].delivery_areas) !== JSON.stringify(["Ganga", "Kaveri"]) || ps1[0].delivery_note !== "Rounds at 1 pm and 7 pm") throw new Error(`policy: ${JSON.stringify(ps1[0])}`);
+  if (!ps1[0].delivery_enabled || JSON.stringify(ps1[0].delivery_areas) !== JSON.stringify(["Ganga hostel", "Library entrance"]) || ps1[0].delivery_note !== "Rounds at 1 pm and 7 pm") throw new Error(`policy: ${JSON.stringify(ps1[0])}`);
 
   await actingAs(DELIV);
   let deskOff = "";
@@ -2934,11 +2934,18 @@ await scenario("delivery is the admin's to switch on, priced as a line after the
   // Only to a listed hostel, only with a room, only with a phone.
   await actingAs(DELIV);
   let mars = "";
-  try { await mkDelivery("mars.pdf", 2, { hostel: "Mars", room: "1" }); } catch (error) { mars = String(error?.message ?? error); }
-  if (!/doesn't deliver to Mars/.test(mars)) throw new Error(`off-list hostel: ${mars || "allowed"}`);
-  let noRoom = "";
-  try { await mkDelivery("noroom.pdf", 2, { hostel: "Ganga", room: "  " }); } catch (error) { noRoom = String(error?.message ?? error); }
-  if (!/Which room/.test(noRoom)) throw new Error(`no room: ${noRoom || "allowed"}`);
+  try { await mkDelivery("mars.pdf", 2, { spot: "Mars", detail: "1" }); } catch (error) { mars = String(error?.message ?? error); }
+  if (!/doesn't deliver to Mars/.test(mars)) throw new Error(`off-list spot: ${mars || "allowed"}`);
+  let noSpot = "";
+  try { await mkDelivery("nospot.pdf", 2, { spot: "  ", detail: "213" }); } catch (error) { noSpot = String(error?.message ?? error); }
+  if (!/Where should it come to/.test(noSpot)) throw new Error(`no spot: ${noSpot || "allowed"}`);
+  // A spot without a detail is fine — "Library entrance" needs no room number.
+  const bare = await mkDelivery("bare.pdf", 2, { spot: "Library entrance" });
+  const bareRow = (await db.query(`select deliver_to, public.delivery_place(o) as place from public.orders o where id = $1;`, [bare])).rows[0];
+  if (bareRow.deliver_to.spot !== "Library entrance" || "detail" in bareRow.deliver_to || bareRow.place !== "Library entrance" || !bareRow.deliver_to.changed_at) throw new Error(`bare spot: ${JSON.stringify(bareRow)}`);
+  await actingAs(null);
+  await db.query(`delete from public.orders where id = $1;`, [bare]);
+  await actingAs(DELIV);
   await actingAs(null);
   await db.query(`update public.profiles set phone = null where id = $1;`, [DELIV]);
   await actingAs(DELIV);
@@ -2959,7 +2966,7 @@ await scenario("delivery is the admin's to switch on, priced as a line after the
   const A = await mkDelivery("deliv.pdf", 6);
   const row = (await db.query(`select total, platform_fee, delivery, delivery_fee, deliver_to, pickup_mode from public.orders where id = $1;`, [A])).rows[0];
   if (Number(row.total) !== withRun.total) throw new Error(`SQL ${row.total} vs TS ${withRun.total} with delivery`);
-  if (!row.delivery || Number(row.delivery_fee) !== 10 || row.deliver_to.hostel !== "Ganga" || row.deliver_to.room !== "213" || row.pickup_mode !== "asap") throw new Error(`row: ${JSON.stringify(row)}`);
+  if (!row.delivery || Number(row.delivery_fee) !== 10 || row.deliver_to.spot !== "Ganga hostel" || row.deliver_to.detail !== "213" || row.pickup_mode !== "asap") throw new Error(`row: ${JSON.stringify(row)}`);
   if (Number(row.platform_fee) !== plain.platformFee) throw new Error("the platform fee was charged on the delivery fee");
   // A pickup (no delivery) at the same desk is priced as before.
   const B = (await db.query(`select public.place_order($1, $2::jsonb) as id;`, [OPERATOR, JSON.stringify([{ name: "walk.pdf", pages: 6, colour_pages: 0, config: lines[0].config }])])).rows[0].id;
@@ -2971,14 +2978,14 @@ await scenario("delivery is the admin's to switch on, priced as a line after the
   const expected = quoteOrder([{ pages: 9, colourPages: 0, config: lines[0].config }], rateCardOf((await db.query(`select rate_card from public.orders where id = $1;`, [A])).rows[0].rate_card), { deliveryFee: 10 }).total;
   if (Number(rep[0].total) !== expected) throw new Error(`reprice ${rep[0].total} vs ${expected} — the delivery fee moved`);
   // The student can't turn a pickup into a delivery, or point a delivery elsewhere.
-  const edit = await refused("authenticated", DELIV, `update public.orders set delivery = true, delivery_fee = 0, deliver_to = '{"hostel":"Mars","room":"9"}', runner_id = 'me' where id = $1;`, [B]);
+  const edit = await refused("authenticated", DELIV, `update public.orders set delivery = true, delivery_fee = 0, deliver_to = '{"spot":"Mars","detail":"9"}', runner_id = 'me' where id = $1;`, [B]);
   if (edit) throw new Error(`the edit itself was refused (${edit}) — it should be silently pinned`);
   const pinned = (await db.query(`select delivery, delivery_fee, deliver_to, runner_id from public.orders where id = $1;`, [B])).rows[0];
   if (pinned.delivery || Number(pinned.delivery_fee) !== 0 || pinned.deliver_to !== null || pinned.runner_id !== null) throw new Error(`student moved delivery columns: ${JSON.stringify(pinned)}`);
 
   await actingAs(null);
   await db.query(`delete from public.orders where id in ($1, $2);`, [A, B]);
-  return "off by default; the policy and the desk switch are admin-only (owner refused on both); off-list hostel, no room, no phone all refused; ₹10 after the desk's bill in SQL and TS alike, fee untouched by it; a pickup unchanged; a correction keeps it; pinned against the student";
+  return "off by default; the policy and the desk switch are admin-only (owner refused on both); off-list spot, no spot, no phone all refused; a spot without a detail is fine; ₹10 after the desk's bill in SQL and TS alike, fee untouched by it; a pickup unchanged; a correction keeps it; pinned against the student";
 });
 
 await scenario("a runner is granted by the admin, picks up, delivers against the student's code, and the desk is credited the cash taken at the door", async () => {
@@ -3035,16 +3042,16 @@ await scenario("a runner is granted by the admin, picks up, delivers against the
   const { rows: cash } = await db.query(`select public.choose_cash($1) as how;`, [A]);
   if (cash[0].how !== "queued") throw new Error(`cash for a delivery → ${cash[0].how}`);
   const { rows: queuedMsg } = await db.query(`select body from public.notifications where order_id = $1 and channel = 'push' order by id desc limit 1;`, [A]);
-  if (!/cash at your door/.test(queuedMsg[0]?.body ?? "")) throw new Error(`queued message: ${queuedMsg[0]?.body}`);
+  if (!/in cash when it's handed to you/.test(queuedMsg[0]?.body ?? "")) throw new Error(`queued message: ${queuedMsg[0]?.body}`);
   // One open cash order at a time still holds while it's out for delivery (below).
 
   // The desk prints and files it; the runner hears, the student hears, the sweep leaves it be.
   await actingAs("op_test");
   for (const to of ["printing", "ready"]) await db.query(`update public.orders set status = $2, note = $3 where id = $1;`, [A, to, to === "ready" ? "Printed, ready" : "Start printing"]);
   const { rows: readyMsg } = await db.query(`select body from public.notifications where order_id = $1 and channel = 'push' and audience = 'student' order by id desc limit 1;`, [A]);
-  if (!/goes out to Ganga 213/.test(readyMsg[0]?.body ?? "") || !/cash ready at the door/.test(readyMsg[0].body)) throw new Error(`ready message: ${readyMsg[0]?.body}`);
+  if (!/comes to Ganga hostel, 213/.test(readyMsg[0]?.body ?? "") || !/Change the spot/.test(readyMsg[0].body) || !/in cash ready/.test(readyMsg[0].body)) throw new Error(`ready message: ${readyMsg[0]?.body}`);
   const { rows: runnerMsg } = await db.query(`select user_id, body from public.notifications where order_id = $1 and audience = 'desk' and body like 'Delivery ready%';`, [A]);
-  if (runnerMsg.length !== 1 || runnerMsg[0].user_id !== RUNNER || !/Ganga 213/.test(runnerMsg[0].body) || !/cash at the door/.test(runnerMsg[0].body)) throw new Error(`runner rows: ${JSON.stringify(runnerMsg)}`);
+  if (runnerMsg.length !== 1 || runnerMsg[0].user_id !== RUNNER || !/Ganga hostel, 213/.test(runnerMsg[0].body) || !/cash on handover/.test(runnerMsg[0].body)) throw new Error(`runner rows: ${JSON.stringify(runnerMsg)}`);
   await actingAs(null);
   await db.query(`select set_config('printify.gateway', '1', false);`);
   await db.query(`update public.orders set ready_at = now() - interval '10 hours' where id = $1;`, [A]);
@@ -3057,7 +3064,7 @@ await scenario("a runner is granted by the admin, picks up, delivers against the
   await actingAs(RUNNER);
   const { rows: jobs } = await db.query(`select * from public.runner_orders();`);
   const job = jobs.find((j) => j.id === A);
-  if (!job || job.status !== "ready" || job.student !== "Deliv Student" || job.phone !== "9876543210" || job.hostel !== "Ganga" || job.room !== "213") throw new Error(`runner's view: ${JSON.stringify(job)}`);
+  if (!job || job.status !== "ready" || job.student !== "Deliv Student" || job.phone !== "9876543210" || job.spot !== "Ganga hostel" || job.detail !== "213" || !job.spot_changed_at) throw new Error(`runner's view: ${JSON.stringify(job)}`);
   if (Math.abs(Number(job.cash_due) - total) > 0.005 || job.mine !== false || job.runner_id !== null) throw new Error(`runner's money: ${JSON.stringify(job)}`);
   if ("handover_code" in job) throw new Error("the runner's list carries the handover secret");
   const { rows: asStaff } = await (async () => { await actingAs("op_test"); try { return await db.query(`select * from public.runner_orders();`); } finally { await actingAs(null); } })();
@@ -3073,7 +3080,7 @@ await scenario("a runner is granted by the admin, picks up, delivers against the
   const { rows: out } = await db.query(`select status, runner_id, picked_up_at from public.orders where id = $1;`, [A]);
   if (out[0].status !== "delivering" || out[0].runner_id !== RUNNER || !out[0].picked_up_at) throw new Error(`after pickup: ${JSON.stringify(out[0])}`);
   const { rows: wayMsg } = await db.query(`select body from public.notifications where order_id = $1 and channel = 'push' and audience = 'student' order by id desc limit 1;`, [A]);
-  if (!/On its way/.test(wayMsg[0]?.body ?? "") || !/in cash/.test(wayMsg[0].body)) throw new Error(`delivering message: ${wayMsg[0]?.body}`);
+  if (!/On its way/.test(wayMsg[0]?.body ?? "") || !/Still there\?/.test(wayMsg[0].body) || !/in cash/.test(wayMsg[0].body)) throw new Error(`delivering message: ${wayMsg[0]?.body}`);
   const deskMove = await refused("authenticated", "op_test", `update public.orders set status = 'collected' where id = $1;`, [A]);
   if (!/with Printifi's runner/.test(deskMove ?? "")) throw new Error(`the desk moved a job in the runner's hands: ${deskMove ?? "allowed"}`);
   await actingAs(DELIV);
@@ -3141,7 +3148,7 @@ await scenario("a runner is granted by the admin, picks up, delivers against the
   await db.query(`delete from public.desk_credits where order_id = $1;`, [A]);
   await db.query(`delete from public.orders where id = $1;`, [A]);
   await db.query(`update public.operators set unclaimed_after_hours = 48, shelf_rows = 0 where id = $1;`, [OPERATOR]);
-  return "a request tells the admin and opens nothing; approve/add-by-email are admin-only; cash for a delivery queues above the limit; the runner sees name, phone, room and what's owed (never the secret, never the row); the desk can't move a job in the runner's hands; one open cash order still holds; a return goes back on the shelf with the reason and starts the clock; a wrong code is refused; delivered with the code → proof 'scan', cash stamped, fee retained, desk credited bill-less-fee-less-delivery, till untouched";
+  return "a request tells the admin and opens nothing; approve/add-by-email are admin-only; cash for a delivery queues above the limit; the runner sees name, phone, spot and what's owed (never the secret, never the row); the desk can't move a job in the runner's hands; one open cash order still holds; a return goes back on the shelf with the reason and starts the clock; a wrong code is refused; delivered with the code → proof 'scan', cash stamped, fee retained, desk credited bill-less-fee-less-delivery, till untouched";
 });
 
 await scenario("a delivery paid to the desk directly owes Printifi its fee; online, the desk's share leaves it out; a removed runner's jobs go back to the shelf", async () => {
@@ -3249,6 +3256,108 @@ await scenario("a delivery paid to the desk directly owes Printifi its fee; onli
   return "UPI to the desk → a −fee credit, delivered on the runner's word → proof 'runner'; online → desk_share = bill − fee − delivery; a walk-in collection keeps the bill and makes no credit; removing a runner puts their job back on the shelf and shuts them out; a returned, never-collected delivery → dues for the whole bill, the desk covered its price; the report is the admin's";
 });
 
+/* ---------- 0047: the spot moves with the student; rounds frame the words ---------- */
+
+await scenario("a delivery goes to a spot the student can move until it's handed over; the runner hears a move; the round names the time", async () => {
+  await actingAs(null);
+  await db.query(`update public.operators set gateway_status = 'off', accepts_cash = true, delivery = true where id = $1;`, [OPERATOR]);
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`update public.profiles set dues = 0, cash_collected = 0, cash_strikes = 0, cash_blocked_until = null, phone = '9876543210' where id = $1;`, [DELIV]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+  await db.exec(`insert into public.push_subscriptions (user_id, endpoint, p256dh, auth, desk)
+                 values ('${RUNNER}', 'https://fcm.googleapis.com/fcm/send/runner-1', 'k', 'a', true) on conflict (endpoint) do nothing;`);
+
+  // Rounds: HH:MM, tidied and sorted; a bad one refused.
+  await actingAs("admin_test");
+  let badRound = "";
+  try { await db.query(`select public.set_delivery_policy(true, 10, '{"Ganga hostel"}', null, '{"25:00"}');`); } catch (error) { badRound = String(error?.message ?? error); }
+  if (!/HH:MM/.test(badRound)) throw new Error(`a 25:00 round was accepted: ${badRound || "no error"}`);
+  await db.query(`select public.set_delivery_policy(true, 10, '{"Ganga hostel","Library entrance","Canteen"}', null, '{"18:00"," 9:05 ","13:00","13:00"}');`);
+  const { rows: pol } = await db.query(`select delivery_rounds from public.platform_settings where id;`);
+  if (JSON.stringify(pol[0].delivery_rounds) !== JSON.stringify(["09:05", "13:00", "18:00"])) throw new Error(`rounds: ${JSON.stringify(pol[0].delivery_rounds)}`);
+  await db.query(`select public.admin_add_runner('one@printifi.test');`);
+
+  // The next round, as the student reads it, in the platform's timezone (IST).
+  const at = async (iso) => (await db.query(`select public.next_delivery_round($1::timestamptz) as r;`, [iso])).rows[0].r;
+  if ((await at("2026-09-18T07:00:00Z")) !== "1:00 pm") throw new Error(`12:30 IST → ${await at("2026-09-18T07:00:00Z")}`);
+  if ((await at("2026-09-18T07:30:00Z")) !== "1:00 pm") throw new Error("a round leaving this very minute should still count");
+  if ((await at("2026-09-18T08:00:00Z")) !== "6:00 pm") throw new Error(`1:30 pm IST → ${await at("2026-09-18T08:00:00Z")}`);
+  if ((await at("2026-09-18T14:00:00Z")) !== "9:05 am") throw new Error(`7:30 pm IST → ${await at("2026-09-18T14:00:00Z")} (should roll to the morning)`);
+
+  // Placed to one spot; moved to another before anyone sets off.
+  await actingAs(DELIV);
+  const D = await mkDelivery("moving.pdf", 3, { spot: "Ganga hostel", detail: "213" });
+  const first = (await db.query(`select deliver_to from public.orders where id = $1;`, [D])).rows[0].deliver_to;
+  await new Promise((r) => setTimeout(r, 20));
+  await db.query(`select public.set_delivery_spot($1, 'Canteen', null);`, [D]);
+  const moved = (await db.query(`select deliver_to, public.delivery_place(o) as place from public.orders o where id = $1;`, [D])).rows[0];
+  if (moved.deliver_to.spot !== "Canteen" || "detail" in moved.deliver_to || moved.place !== "Canteen" || !(new Date(moved.deliver_to.changed_at) > new Date(first.changed_at))) throw new Error(`moved: ${JSON.stringify(moved)}`);
+  let offList = "";
+  try { await db.query(`select public.set_delivery_spot($1, 'Mars', '1');`, [D]); } catch (error) { offList = String(error?.message ?? error); }
+  if (!/doesn't deliver to Mars/.test(offList)) throw new Error(`off-list move: ${offList || "allowed"}`);
+  const P = (await db.query(`select public.place_order($1, $2::jsonb) as id;`, [OPERATOR, JSON.stringify([{ name: "walk.pdf", pages: 1, colour_pages: 0, config: { copies: 1 } }])])).rows[0].id;
+  let notDelivery = "";
+  try { await db.query(`select public.set_delivery_spot($1, 'Canteen', null);`, [P]); } catch (error) { notDelivery = String(error?.message ?? error); }
+  if (!/collected at the desk/.test(notDelivery)) throw new Error(`a pickup took a spot: ${notDelivery || "allowed"}`);
+  await actingAs("student_cash");
+  let notMine = "";
+  try { await db.query(`select public.set_delivery_spot($1, 'Canteen', null);`, [D]); } catch (error) { notMine = String(error?.message ?? error); }
+  if (!/Not your order/.test(notMine)) throw new Error(`another student moved it: ${notMine || "allowed"}`);
+
+  // Printed: the message names the spot and the round; the runner's list carries both.
+  await actingAs(DELIV);
+  await db.query(`select public.choose_cash($1);`, [D]);
+  await actingAs("op_test");
+  for (const to of ["printing", "ready"]) await db.query(`update public.orders set status = $2, note = $3 where id = $1;`, [D, to, to]);
+  const { rows: readyMsg } = await db.query(`select body from public.notifications where order_id = $1 and channel = 'push' and audience = 'student' order by id desc limit 1;`, [D]);
+  if (!/comes to Canteen on the (9:05 am|1:00 pm|6:00 pm) round/.test(readyMsg[0]?.body ?? "") || !/Change the spot in the app/.test(readyMsg[0].body)) throw new Error(`ready message: ${readyMsg[0]?.body}`);
+  await actingAs(RUNNER);
+  const before = (await db.query(`select spot, detail, spot_changed_at from public.runner_orders() where id = $1;`, [D])).rows[0];
+  if (before.spot !== "Canteen" || before.detail !== null || !before.spot_changed_at) throw new Error(`runner sees: ${JSON.stringify(before)}`);
+
+  // Out for delivery, then the student moves again: the runner is pushed at once.
+  await db.query(`select public.runner_pickup($1);`, [D]);
+  await actingAs(DELIV);
+  await db.query(`select public.set_delivery_spot($1, 'Library entrance', 'near the steps');`, [D]);
+  const { rows: pushed } = await db.query(`select user_id, body, status, audience from public.notifications where order_id = $1 and body like '%moved%' order by id desc limit 1;`, [D]);
+  if (pushed.length !== 1 || pushed[0].user_id !== RUNNER || pushed[0].audience !== "desk" || pushed[0].status !== "queued" || !/now at Library entrance, near the steps/.test(pushed[0].body)) throw new Error(`runner push on a move: ${JSON.stringify(pushed)}`);
+  await actingAs(RUNNER);
+  const after = (await db.query(`select spot, detail, spot_changed_at, picked_up_at from public.runner_orders() where id = $1;`, [D])).rows[0];
+  if (after.spot !== "Library entrance" || after.detail !== "near the steps" || !(new Date(after.spot_changed_at) >= new Date(after.picked_up_at))) throw new Error(`runner after the move: ${JSON.stringify(after)}`);
+  // A move before pickup pushes nobody.
+  const { rows: quiet } = await db.query(`select count(*)::int as n from public.notifications where order_id = $1 and body like '%moved%';`, [D]);
+  if (quiet[0].n !== 1) throw new Error(`moves pushed: ${quiet[0].n} (the first move, before pickup, should have been quiet)`);
+
+  // Handed over: no more moving.
+  await db.query(`select public.runner_deliver($1, null);`, [D]);
+  await actingAs(DELIV);
+  let over = "";
+  try { await db.query(`select public.set_delivery_spot($1, 'Canteen', null);`, [D]); } catch (error) { over = String(error?.message ?? error); }
+  if (!/is over/.test(over)) throw new Error(`moved a delivered order: ${over || "allowed"}`);
+
+  // 0046 rows still read: {hostel, room} is a spot and a detail.
+  await actingAs(null);
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`update public.orders set deliver_to = '{"hostel":"Kaveri","room":"12"}' where id = $1;`, [P]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+  const legacy = (await db.query(`select public.delivery_spot(o) as s, public.delivery_detail(o) as d, public.delivery_place(o) as p from public.orders o where id = $1;`, [P])).rows[0];
+  if (legacy.s !== "Kaveri" || legacy.d !== "12" || legacy.p !== "Kaveri, 12") throw new Error(`legacy keys: ${JSON.stringify(legacy)}`);
+
+  await db.query(`delete from public.desk_credits where order_id in ($1, $2);`, [D, P]);
+  await db.query(`delete from public.orders where id in ($1, $2);`, [D, P]);
+  await db.query(`delete from public.runners where user_id in ($1, $2);`, [RUNNER, RUNNER_TWO]);
+  await db.query(`update public.operators set delivery = false where id = $1;`, [OPERATOR]);
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`update public.profiles set dues = 0, cash_strikes = 0, cash_blocked_until = null, cash_collected = 0 where id = $1;`, [DELIV]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+  await actingAs("admin_test");
+  await db.query(`select public.set_delivery_policy(false, 10, '{}', null, '{}');`);
+  const { rows: cleared } = await db.query(`select delivery_rounds from public.platform_settings where id;`);
+  if (cleared[0].delivery_rounds.length !== 0) throw new Error("rounds didn't clear");
+  await actingAs(null);
+  return "rounds tidy to sorted HH:MM, a bad one refused; next_delivery_round rolls 12:30→1:00 pm, 1:30→6:00 pm, 7:30 pm→9:05 am; the spot moves quietly before pickup and pushes the runner after it; off-list, another student, a pickup order and a delivered order are refused; 0046's {hostel, room} still reads";
+});
+
 const GRANTS = {
   // Policies evaluate these as the asking role.
   "clerk_id()": ["anon", "authenticated"],
@@ -3330,9 +3439,11 @@ const GRANTS = {
   "runner_pickup(uuid)": ["authenticated"],
   "runner_deliver(uuid,text)": ["authenticated"],
   "runner_return(uuid,text)": ["authenticated"],
-  "set_delivery_policy(boolean,numeric,text[],text)": ["authenticated"],
+  "set_delivery_policy(boolean,numeric,text[],text,text[])": ["authenticated"],
   "set_desk_delivery(uuid,boolean)": ["authenticated"],
   "admin_delivery_report()": ["authenticated"],
+  // 0047: the spot moves with the student.
+  "set_delivery_spot(uuid,text,text)": ["authenticated"],
   // The server's.
   "sweep_all_orders()": [],
   "claim_notifications(integer)": [],
@@ -3355,6 +3466,10 @@ const GRANTS = {
   "order_paid(orders)": [],
   "cash_limit_of(text)": [],
   "is_runner()": [],
+  "delivery_spot(orders)": [],
+  "delivery_detail(orders)": [],
+  "delivery_place(orders)": [],
+  "next_delivery_round(timestamp with time zone)": [],
   "notify_student(text,uuid,text)": [],
   "operator_open_at(operators,timestamp with time zone)": [],
   "operator_last_boundary(operators,timestamp with time zone)": [],

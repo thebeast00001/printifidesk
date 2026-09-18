@@ -45,7 +45,7 @@ import {
   type Customer,
   type OperatorStats,
 } from "@/lib/operator";
-import { STATUS_LABEL, nextSteps, paymentBalance, type Operator, type OrderRow, type OrderStatus } from "@/lib/orders";
+import { STATUS_LABEL, nextSteps, paymentBalance, whereTo, type Operator, type OrderRow, type OrderStatus } from "@/lib/orders";
 import { refundOnline } from "@/lib/gateway";
 import { money, paise, type PrintConfig } from "@/lib/pricing";
 import { summarisePages } from "@/lib/pages";
@@ -776,12 +776,12 @@ function OrderCard({
                 className="flex items-center gap-1 rounded-full bg-bone px-2.5 py-1 text-[10.5px] font-semibold text-ink"
                 title={
                   order.delivery
-                    ? `A cash delivery: Printifi's runner takes ${money(Number(order.total), currency)} at the student's door, and your price for the job is credited to you in Takings. If the student collects here instead, take the cash yourself as usual.`
+                    ? `A cash delivery: Printifi's runner takes ${money(Number(order.total), currency)} when it's handed to the student, and your price for the job is credited to you in Takings. If the student collects here instead, take the cash yourself as usual.`
                     : `Printed on the student's cash credit (within their limit). Take ${money(Number(order.total), currency)} in cash when they collect. If they never do, Printifi covers your price for the job.`
                 }
               >
                 <Banknote size={10} strokeWidth={2.4} />
-                {money(Number(order.total), currency)} cash {order.delivery ? "at the door" : "at pickup"}
+                {money(Number(order.total), currency)} cash {order.delivery ? "on handover, by the runner" : "at pickup"}
               </span>
             )}
             {awaitingSignal && (
@@ -821,7 +821,7 @@ function OrderCard({
                   ? "with Printifi's runner"
                   : order.status === "collected" && order.delivered_at
                     ? "delivered by Printifi"
-                    : `delivery · ${[order.deliver_to?.hostel, order.deliver_to?.room].filter(Boolean).join(" ") || "room"}`}
+                    : `delivery · ${whereTo(order) || "spot to come"}`}
                 {order.status === "ready" && order.returned_at ? " · brought back" : ""}
               </span>
             )}

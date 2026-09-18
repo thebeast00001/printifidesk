@@ -657,13 +657,35 @@ So the number of hops is what the code controls:
 The database's own region is the remaining lever, and it's yours — see
 *Marked for you*.
 
-### Delivery to the door, by Printifi's runner (`0045` + `0046`)
+### Delivery to where the student is, by Printifi's runner (`0045` + `0046` + `0047`)
 
-A student can have the job brought to their hostel room instead of
-walking to the desk. The desk's part doesn't change — print it, file it
-on the shelf under its cover — and a **runner** carries it from there.
-`0045` adds the `'delivering'` status on its own (an enum value can't be
-used in the transaction that adds it — same as `0038`); `0046` is the rest.
+A student can have the job brought to them instead of walking to the
+desk. The desk's part doesn't change — print it, file it on the shelf
+under its cover — and a **runner** carries it from there. `0045` adds the
+`'delivering'` status on its own (an enum value can't be used in the
+transaction that adds it — same as `0038`); `0046` is the rest; `0047`
+reshapes *where*: a student isn't a fixed point.
+
+- **A spot, not a room (`0047`).** The admin's list is a list of **spots**
+  on campus — hostels, the library entrance, a block's gate, the canteen;
+  the student picks one and adds a **detail** (a room number, "near the
+  steps"). `deliver_to` is `{spot, detail, changed_at}`; rows from 0046
+  carry `{hostel, room}` and `delivery_spot()/delivery_detail()/whereTo()`
+  read both.
+- **Framed by the round.** `platform_settings.delivery_rounds` (HH:MM,
+  IST) and `next_delivery_round()` / `nextRound()` — the same rule in SQL
+  and TS, `check:features` holds them to the same four instants — so the
+  sheet asks *"It comes on the 1:00 pm round. Where will you be?"* and the
+  "printed" push says which round it comes on. No rounds set: "the next
+  round".
+- **The spot moves with the student.** `set_delivery_spot()` — the
+  student's own, any time while the job is live. Before the runner sets
+  off, a quiet edit; once it's `delivering`, the runner is pushed *"A02
+  moved: now at Library entrance, near the steps"* at once, and their card
+  marks the spot **moved 1:42 pm**. The "on its way" message asks the
+  student to confirm or change. From the capsule: a *Where you'll be /
+  Coming to → Change* row opens `SpotSheet`. The spot is remembered on the
+  device (`localStorage`) for next time; the phone stays on the profile.
 
 - **A runner is granted, never self-appointed.** A runner sees students'
   names, phones and room numbers and marks orders delivered and cash
@@ -1411,7 +1433,8 @@ components/
   admin-runners.tsx     delivery's switches, the desks it collects from, the runners
   order-list.tsx        your orders, with cancel while still cancellable
   print-sheet.tsx       upload step → options step → place order
-  delivery-picker.tsx   to the desk, or to your room — hostel, room, phone, the fee
+  delivery-picker.tsx   to the desk, or brought to you — the spot for the round, a detail, a phone
+  spot-fields.tsx, spot-sheet.tsx   the spot and detail, on the sheet and moved from the capsule
   upload-step.tsx       dropzone, per-file progress
   pay-sheet.tsx         UPI, cash, or Printifi's hosted checkout
   feed.tsx              your stored documents
@@ -1432,7 +1455,7 @@ lib/
   seo.ts                the site's name, address and public pages, once
   surface.ts            the two-site routing table
   supabase/client.ts    browser client, tokens bridged from Clerk
-supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0046)
+supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0047)
 scripts/                the checks: pricing parity, features, the SQL harness, RLS
 ```
 
@@ -1494,7 +1517,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0046** in the SQL editor, pasted from the files, **in
+2. **Run 0022 → 0047** in the SQL editor, pasted from the files, **in
    number order** — a later migration can name a column an earlier one
    adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
    student update on an order failed and the X on /orders did nothing).
@@ -1513,14 +1536,15 @@ Things the code can't do on its own, in the order they bite:
    the admin's fee rows errors quietly; until 0034, a too-late cancel is
    refused by the policy alone (silently) rather than by the guard (in words);
    until 0035, online payment can't be turned on for a desk.
-   **Then 0045, then 0046 — as two separate runs** — delivery to the door
+   **Then 0045, then 0046, then 0047 — 0045 on its own** — delivery
    (see *Delivery to the door*). 0045 is one line, the `'delivering'`
    status, and must be its own paste: an enum value can't be used in the
    transaction that adds it, and 0046 names it. Until they run, delivery
    isn't offered, *Runners* on `/admin` errors, and a runner-only account
-   sees the join screen. After them: `/admin` → *Runners* — switch
-   delivery on, set the fee (₹10) and the hostels, switch on the desks the
-   runner collects from, and grant yourself by email.
+   sees the join screen; until 0047, saving the delivery policy errors and
+   the spot can't be moved. After them: `/admin` → *Runners* — switch
+   delivery on, set the fee (₹10), the spots and the round times, switch
+   on the desks the runner collects from, and grant yourself by email.
    **Then 0044** — the cover sheet (see *Every job comes out labelled*).
    Until it runs, the desk opens bare files and bills carry no cover line.
    After it, every desk has the sheet on at ₹1; the owner changes that
@@ -1579,7 +1603,7 @@ Things the code can't do on its own, in the order they bite:
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
    project, so: create a new project in **Mumbai (`ap-south-1`)**, run
-   `0001 → 0046` in its SQL editor, create the private `documents` bucket,
+   `0001 → 0047` in its SQL editor, create the private `documents` bucket,
    add both Clerk domains under Authentication → Third-Party Auth, then
    swap `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    and `SUPABASE_SERVICE_ROLE_KEY` on both Vercel projects and in

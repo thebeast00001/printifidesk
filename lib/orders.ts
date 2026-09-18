@@ -111,7 +111,12 @@ export interface OrderRow {
   delivery?: boolean;
   /** The platform's fee for it, inside `total`, after the desk's bill. */
   delivery_fee?: number | string | null;
-  deliver_to?: { hostel?: string; room?: string } | null;
+  /**
+   * Where it goes: a spot on campus and a line of detail (0047), set at
+   * placing and movable by the student until it's handed over. Orders from
+   * 0046 carry `hostel`/`room` instead; `whereTo()` reads both.
+   */
+  deliver_to?: { spot?: string; detail?: string; changed_at?: string; hostel?: string; room?: string } | null;
   /** The runner carrying it (their account id), while it's out. */
   runner_id?: string | null;
   picked_up_at?: string | null;
@@ -336,6 +341,18 @@ export interface Totals {
   colour_pages: number;
   spent: number;
   saved: number;
+}
+
+/** The spot and detail of a delivery, from either shape of `deliver_to`. */
+export function deliverySpot(order: Pick<OrderRow, "deliver_to">): { spot: string; detail: string } {
+  const to = order.deliver_to ?? {};
+  return { spot: (to.spot ?? to.hostel ?? "").trim(), detail: (to.detail ?? to.room ?? "").trim() };
+}
+
+/** "Ganga hostel, 213" — where a delivery goes, for a line of copy. Empty when none is set. */
+export function whereTo(order: Pick<OrderRow, "deliver_to">): string {
+  const { spot, detail } = deliverySpot(order);
+  return [spot, detail].filter(Boolean).join(", ");
 }
 
 /** Statuses where the job is still live — the counter's, or the runner's (0046). */
@@ -590,8 +607,8 @@ export interface NewOrderInput {
   /** `pickup_at` must be set when scheduled, and null when not — the database
       enforces the pairing. */
   pickupAt: string | null;
-  /** 0046: to the door instead of the counter. Null for a pickup; can't go with a pickup time. */
-  delivery?: { hostel: string; room: string } | null;
+  /** 0046/0047: to a spot on campus instead of the counter. Null for a pickup; can't go with a pickup time. */
+  delivery?: { spot: string; detail: string } | null;
   items: {
     documentId: string | null;
     name: string;
@@ -641,7 +658,7 @@ export async function createOrder(input: NewOrderInput): Promise<OrderRow> {
     p_operator: input.operatorId,
     p_items: items,
     p_pickup_at: input.pickupAt,
-    ...(input.delivery ? { p_delivery: { hostel: input.delivery.hostel.trim(), room: input.delivery.room.trim() } } : {}),
+    ...(input.delivery ? { p_delivery: { spot: input.delivery.spot.trim(), detail: input.delivery.detail.trim() || null } } : {}),
   });
 
   if (error) throw new Error(friendly(error.message));
@@ -1042,7 +1059,7 @@ function friendly(message: string): string {
     return "The database refused that change. Check the RLS policies in 0001_init.sql.";
   }
   // The RPC's own messages are written for the student; pass them through.
-  if (/not yours|out of range|lot of orders|not taking orders|at least one file|split it in two|due from an uncollected|Cash is off|one at a time|doesn't take cash|accept the new price|already paid|isn't waiting|doesn't need a signal|already started|isn't on right now|doesn't deliver|Which hostel|Which room|phone number|pickup time doesn't apply/.test(message)) {
+  if (/not yours|out of range|lot of orders|not taking orders|at least one file|split it in two|due from an uncollected|Cash is off|one at a time|doesn't take cash|accept the new price|already paid|isn't waiting|doesn't need a signal|already started|isn't on right now|doesn't deliver|Where should it come to|Keep the detail short|phone number|pickup time doesn't apply|collected at the desk|is over/.test(message)) {
     return message;
   }
   if (message.includes("orders_pickup_at_matches_mode")) {

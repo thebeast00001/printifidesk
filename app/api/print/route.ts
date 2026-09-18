@@ -119,7 +119,7 @@ export async function POST(request: Request) {
     y -= 44;
     const delivery = Boolean(order.delivery);
     const money = cashDue
-      ? `CASH ${amount} ${delivery ? "AT THE DOOR (RUNNER)" : "AT PICKUP"}`
+      ? `CASH ${amount} ${delivery ? "ON HANDOVER (RUNNER TAKES IT)" : "AT PICKUP"}`
       : paid ? `PAID${order.payment_method === "gateway" ? " ONLINE" : ""} · ${amount}` : `UNPAID · ${amount}`;
     cover.drawRectangle({ x: 48, y: y - 12, width: A4.w - 96, height: 40, borderColor: INK, borderWidth: cashDue ? 2 : 1, color: cashDue ? rgb(0.96, 0.93, 0.85) : rgb(0.97, 0.97, 0.96) });
     text(cover, money, font, 17, 60, y, INK);
@@ -128,10 +128,12 @@ export async function POST(request: Request) {
     // going, in the runner's eye-line, above the shelf it waits on.
     y -= 52;
     if (delivery) {
-      const to = (order.deliver_to ?? {}) as { hostel?: string; room?: string };
-      const dest = [to.hostel, to.room ? `Room ${to.room}` : null].filter(Boolean).join(" - ") || "room not given";
+      // The spot as it stood when the sheet was printed; the student can
+      // move it after (0047), and the runner's phone has the live one.
+      const to = (order.deliver_to ?? {}) as { spot?: string; detail?: string; hostel?: string; room?: string };
+      const dest = [to.spot ?? to.hostel, to.detail ?? to.room].filter(Boolean).join(" - ") || "spot not given";
       cover.drawRectangle({ x: 48, y: y - 14, width: A4.w - 96, height: 44, borderColor: INK, borderWidth: 2, color: rgb(1, 1, 1) });
-      text(cover, "DELIVERY - PRINTIFI'S RUNNER COLLECTS THIS", mono, 9, 60, y + 18, MUTED);
+      text(cover, "DELIVERY - PRINTIFI'S RUNNER COLLECTS THIS - LIVE SPOT ON THE RUNNER'S PHONE", mono, 9, 60, y + 18, MUTED);
       text(cover, dest, font, 18, 60, y - 2, INK, A4.w - 120);
       y -= 58;
     }

@@ -122,7 +122,7 @@ export default async function DeskTermsPage() {
 
       <H2>Delivery by Printifi&apos;s runner</H2>
       <p>
-        Printifi may switch your desk on for delivery: a student can then have a job brought to their room
+        Printifi may switch your desk on for delivery: a student can then have a job brought to a spot on campus
         by Printifi&apos;s own runner. Your part doesn&apos;t change — print it, file it on the shelf under its
         cover sheet (which says where it&apos;s going) — and the runner collects it from there; the card
         says <b>delivery</b>, and <b>with Printifi&apos;s runner</b> once it has gone. A job in the runner&apos;s
@@ -132,7 +132,7 @@ export default async function DeskTermsPage() {
       </p>
       <p>
         <b>The money.</b> Paid through Printifi: your share is the bill less the platform fee less the delivery
-        fee, paid out as usual. Cash: the runner takes it at the door, and <b>Printifi credits you your
+        fee, paid out as usual. Cash: the runner takes it on handover, and <b>Printifi credits you your
         price for the job</b> (bill less fee less delivery fee) against your fee ledger, or in your next
         payout — no fee is charged on it. Paid to you directly by UPI: you were paid the delivery fee too, and
         that part is owed on to Printifi like a fee. Each of these is a named line in Takings. A delivery

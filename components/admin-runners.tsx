@@ -29,6 +29,7 @@ export function AdminRunners() {
   const [policy, setPolicy] = useState<DeliveryPolicy | null>(null);
   const [draft, setDraft] = useState<DeliveryPolicy | null>(null);
   const [areasText, setAreasText] = useState("");
+  const [roundsText, setRoundsText] = useState("");
   const [report, setReport] = useState<DeliveryReport | null>(null);
   const [runners, setRunners] = useState<RunnerRow[] | null>(null);
   const [desks, setDesks] = useState<Operator[]>([]);
@@ -41,10 +42,11 @@ export function AdminRunners() {
   const load = useCallback(async () => {
     try {
       const [s, r, list, ops] = await Promise.all([platformSettings(true), adminDeliveryReport(), adminRunners(), listOperators()]);
-      const p = { enabled: s.delivery_enabled, fee: s.delivery_fee, areas: s.delivery_areas, note: s.delivery_note ?? "" };
+      const p = { enabled: s.delivery_enabled, fee: s.delivery_fee, areas: s.delivery_areas, note: s.delivery_note ?? "", rounds: s.delivery_rounds };
       setPolicy(p);
       setDraft((d) => d ?? p);
       setAreasText((t) => t || p.areas.join(", "));
+      setRoundsText((t) => t || p.rounds.join(", "));
       setReport(r);
       setRunners(list);
       setDesks(ops);
@@ -63,11 +65,19 @@ export function AdminRunners() {
     setError(null);
     setSaved(false);
     try {
-      const next = { ...draft, areas: areasText.split(/[,\n]/).map((a) => a.trim()).filter(Boolean) };
+      const next = {
+        ...draft,
+        areas: areasText.split(/[,\n]/).map((a) => a.trim()).filter(Boolean),
+        rounds: roundsText.split(/[,\n]/).map((r) => r.trim()).filter(Boolean),
+      };
       await setDeliveryPolicy(next);
-      setPolicy(next);
-      setDraft(next);
-      setAreasText(next.areas.join(", "));
+      // Read back what the database kept — rounds come back tidied and sorted.
+      const s = await platformSettings(true);
+      const kept = { ...next, areas: s.delivery_areas, rounds: s.delivery_rounds };
+      setPolicy(kept);
+      setDraft(kept);
+      setAreasText(kept.areas.join(", "));
+      setRoundsText(kept.rounds.join(", "));
       setSaved(true);
       setTimeout(() => setSaved(false), 1800);
       await load();
@@ -92,7 +102,9 @@ export function AdminRunners() {
   }
 
   const dirty =
-    policy && draft && (JSON.stringify({ ...policy, areas: policy.areas.join(", ") }) !== JSON.stringify({ ...draft, areas: areasText }));
+    policy && draft &&
+    JSON.stringify({ ...policy, areas: policy.areas.join(", "), rounds: policy.rounds.join(", ") }) !==
+      JSON.stringify({ ...draft, areas: areasText, rounds: roundsText });
   const requests = (runners ?? []).filter((r) => r.status === "requested");
   const active = (runners ?? []).filter((r) => r.status === "active");
   const removed = (runners ?? []).filter((r) => r.status === "removed");
@@ -105,9 +117,11 @@ export function AdminRunners() {
           Delivery to the door
         </h2>
         <p className="m-0 mt-0.5 text-[12.5px] leading-relaxed text-muted">
-          A student can have the job brought to their hostel room by Printifi&apos;s runner instead of walking to the
-          desk. The desk prints and files it as always; the runner picks it up, and hands it over at the door against
-          the student&apos;s code. The fee is Printifi&apos;s; the desk is paid its price whatever way the student paid.
+          A student can have the job brought to a spot on campus by Printifi&apos;s runner instead of walking to the
+          desk. They pick the spot from your list for the round it&apos;ll come on, and can move it any time until
+          it&apos;s handed over — the runner is told. The desk prints and files it as always; the runner picks it up
+          and hands it over against the student&apos;s code. The fee is Printifi&apos;s; the desk is paid its price
+          whatever way the student paid.
         </p>
 
         {report && (
@@ -115,7 +129,7 @@ export function AdminRunners() {
             <Stat label="Delivered" value={String(report.delivered)} sub={`${report.returned} brought back to a desk`} strong />
             <Stat label="Right now" value={`${report.in_flight} out · ${report.waiting} waiting`} sub={`${report.active_runners} active ${report.active_runners === 1 ? "runner" : "runners"}`} />
             <Stat label="Fees earned" value={money(report.fees_earned)} sub={report.fees_owed_by_desks > 0 ? `${money(report.fees_owed_by_desks)} of it held by desks, owed on` : "on delivered orders"} />
-            <Stat label="Cash taken at doors" value={money(report.cash_in_hand)} sub="held by runners; the desks' price on it is credited" />
+            <Stat label="Cash taken on handover" value={money(report.cash_in_hand)} sub="held by runners; the desks' price on it is credited" />
           </dl>
         )}
 
@@ -129,7 +143,7 @@ export function AdminRunners() {
                 className="size-4 accent-ink"
               />
               <span className="text-[13px] font-semibold">Offer delivery to students</span>
-              <span className="text-[11.5px] text-muted">— only at desks switched on below, only to the hostels listed</span>
+              <span className="text-[11.5px] text-muted">— only at desks switched on below, only to the spots listed</span>
             </label>
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="flex flex-col gap-1">
@@ -149,26 +163,44 @@ export function AdminRunners() {
                 <span className="text-[11px] text-muted">per order, after the desk&apos;s bill; Printifi&apos;s</span>
               </label>
               <label className="flex flex-col gap-1 sm:col-span-2">
-                <span className="text-[11.5px] font-semibold text-ink-soft">Hostels served</span>
+                <span className="text-[11.5px] font-semibold text-ink-soft">Spots on campus</span>
                 <input
                   value={areasText}
                   onChange={(e) => setAreasText(e.target.value)}
-                  placeholder="Ganga, Kaveri, Narmada — leave empty to take any hostel the student names"
+                  placeholder="Ganga hostel, Kaveri hostel, Library entrance, Block A gate, Canteen"
                   className="h-[38px] w-full min-w-0 rounded-xl border border-line bg-surface-sunk px-3 text-[13px] outline-none placeholder:text-faint focus:border-ink"
                 />
-                <span className="text-[11px] text-muted">comma-separated; the student picks from this list</span>
+                <span className="text-[11px] text-muted">
+                  comma-separated; the student picks one and adds a detail (a room number, &ldquo;near the steps&rdquo;). Empty
+                  means they type any spot.
+                </span>
               </label>
             </div>
-            <label className="flex flex-col gap-1">
-              <span className="text-[11.5px] font-semibold text-ink-soft">A line the student reads</span>
-              <input
-                value={draft.note}
-                maxLength={200}
-                onChange={(e) => setDraft({ ...draft, note: e.target.value })}
-                placeholder="e.g. Rounds leave at 1 pm and 7 pm — order before then to get it that round"
-                className="h-[38px] w-full min-w-0 rounded-xl border border-line bg-surface-sunk px-3 text-[13px] outline-none placeholder:text-faint focus:border-ink"
-              />
-            </label>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-[11.5px] font-semibold text-ink-soft">Rounds leave at</span>
+                <input
+                  value={roundsText}
+                  onChange={(e) => setRoundsText(e.target.value)}
+                  placeholder="13:00, 18:00"
+                  className="h-[38px] w-full min-w-0 rounded-xl border border-line bg-surface-sunk px-3 font-mono text-[13px] outline-none placeholder:text-faint focus:border-ink"
+                />
+                <span className="text-[11px] text-muted">
+                  24-hour, IST. The student is asked &ldquo;the 1:00 pm round — where will you be?&rdquo;; empty says
+                  &ldquo;the next round&rdquo;.
+                </span>
+              </label>
+              <label className="flex flex-col gap-1 sm:col-span-2">
+                <span className="text-[11.5px] font-semibold text-ink-soft">A line the student reads</span>
+                <input
+                  value={draft.note}
+                  maxLength={200}
+                  onChange={(e) => setDraft({ ...draft, note: e.target.value })}
+                  placeholder="e.g. Order at least 20 minutes before a round to catch it"
+                  className="h-[38px] w-full min-w-0 rounded-xl border border-line bg-surface-sunk px-3 text-[13px] outline-none placeholder:text-faint focus:border-ink"
+                />
+              </label>
+            </div>
           </div>
         )}
 

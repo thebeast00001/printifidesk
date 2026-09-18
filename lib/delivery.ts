@@ -38,6 +38,54 @@ export async function requestRunner(phone: string): Promise<RunnerStatus> {
   return data === "active" ? "active" : "requested";
 }
 
+/**
+ * The next round after a moment, the way the student reads it ("1:00 pm"),
+ * in the platform's timezone — or null when no rounds are set. A round
+ * leaving this very minute still counts; past the day's last round, the
+ * first of the next. The same rule as next_delivery_round() in SQL, so the
+ * words on the sheet and the words in the push agree.
+ */
+export function nextRound(rounds: string[], tz = "Asia/Kolkata", now: Date = new Date()): string | null {
+  const times = rounds
+    .map((r) => /^(\d{1,2}):(\d{2})$/.exec(r.trim()))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => Number(m[1]) * 60 + Number(m[2]))
+    .filter((m) => m >= 0 && m < 24 * 60)
+    .sort((a, b) => a - b);
+  if (times.length === 0) return null;
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(now);
+  const get = (t: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  const local = (get("hour") % 24) * 60 + get("minute");
+  const next = times.find((t) => t >= local) ?? times[0];
+  return roundLabel(next);
+}
+
+/** "13:00" or 780 → "1:00 pm". */
+export function roundLabel(round: string | number): string {
+  const minutes = typeof round === "number" ? round : (() => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(round.trim());
+    return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+  })();
+  if (!Number.isFinite(minutes)) return String(round);
+  const h24 = Math.floor(minutes / 60) % 24;
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(minutes % 60).padStart(2, "0")} ${h24 < 12 ? "am" : "pm"}`;
+}
+
+/**
+ * Where the student says they'll be, any time until it's handed over.
+ * Before the runner sets off it's a quiet edit; once on its way, the
+ * runner is pushed the new spot at once (the database does both).
+ */
+export async function setDeliverySpot(orderId: string, spot: string, detail: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { error } = await supabase.rpc("set_delivery_spot", { p_order: orderId, p_spot: spot.trim(), p_detail: detail.trim() || null });
+  if (error) throw new Error(explain(error.message));
+  pokeDispatch();
+  changed("orders");
+}
+
 /** One delivery job as the runner sees it: who, where, what's owed. Never the handover secret. */
 export interface RunnerJob {
   id: string;
@@ -48,8 +96,11 @@ export interface RunnerJob {
   campus: string | null;
   student: string | null;
   phone: string | null;
-  hostel: string | null;
-  room: string | null;
+  /** The spot on campus, and the line of detail (a room number, "near the steps"). */
+  spot: string | null;
+  detail: string | null;
+  /** When the student last set the spot — after `picked_up_at` means they moved while it was on its way. */
+  spot_changed_at: string | null;
   pages: number;
   total: number;
   /** What the runner takes in cash at the door; zero when the bill is already paid. */
@@ -84,8 +135,10 @@ export async function runnerOrders(): Promise<RunnerJob[]> {
     campus: (r.campus as string | null) ?? null,
     student: (r.student as string | null) ?? null,
     phone: (r.phone as string | null) ?? null,
-    hostel: (r.hostel as string | null) ?? null,
-    room: (r.room as string | null) ?? null,
+    // 0046's list said hostel and room; a project on it still reads.
+    spot: ((r.spot ?? r.hostel) as string | null) ?? null,
+    detail: ((r.detail ?? r.room) as string | null) ?? null,
+    spot_changed_at: (r.spot_changed_at as string | null) ?? null,
     pages: num(r.pages),
     total: num(r.total),
     cash_due: num(r.cash_due),
@@ -183,10 +236,12 @@ export async function addRunner(email: string): Promise<void> {
 export interface DeliveryPolicy {
   enabled: boolean;
   fee: number;
-  /** Hostels the runner serves; empty means any the student names. */
+  /** Spots on campus the runner delivers to; empty means any the student names. */
   areas: string[];
-  /** A line the student reads next to the choice — round times, mostly. */
+  /** A line the student reads next to the choice. */
   note: string;
+  /** 0047: when rounds leave, "HH:MM" 24-hour in the platform's timezone. */
+  rounds: string[];
 }
 
 export async function setDeliveryPolicy(policy: DeliveryPolicy): Promise<void> {
@@ -197,6 +252,7 @@ export async function setDeliveryPolicy(policy: DeliveryPolicy): Promise<void> {
     p_fee: policy.fee,
     p_areas: policy.areas.map((a) => a.trim()).filter(Boolean),
     p_note: policy.note.trim() || null,
+    p_rounds: policy.rounds.map((r) => r.trim()).filter(Boolean),
   });
   if (error) throw new Error(explain(error.message));
 }
@@ -245,7 +301,7 @@ export async function adminDeliveryReport(): Promise<DeliveryReport | null> {
 function explain(message: string): string {
   const m = message.toLowerCase();
   if (m.includes("does not exist") || m.includes("schema cache") || m.includes("could not find")) {
-    return "This needs migrations 0045 and 0046 — run them in order from supabase/migrations.";
+    return "This needs migrations 0045 to 0047 — run them in order from supabase/migrations.";
   }
   return message;
 }

@@ -30,10 +30,13 @@ export interface PlatformSettings {
   delivery_enabled: boolean;
   /** The platform's fee per delivery, after the desk's bill. */
   delivery_fee: number;
-  /** Hostels served; empty means any the student names. */
+  /** Spots on campus the runner delivers to — hostels, the library, a gate; empty means any the student names (0047). */
   delivery_areas: string[];
-  /** A line the student reads with the choice — round times, mostly. */
+  /** A line the student reads with the choice. */
   delivery_note: string | null;
+  /** 0047: when rounds leave, "HH:MM" in `delivery_tz`, sorted. Empty means "the next round" with no time named. */
+  delivery_rounds: string[];
+  delivery_tz: string;
   updated_at: string;
 }
 
@@ -54,6 +57,8 @@ const EMPTY: PlatformSettings = {
   delivery_fee: 10,
   delivery_areas: [],
   delivery_note: null,
+  delivery_rounds: [],
+  delivery_tz: "Asia/Kolkata",
   updated_at: "",
 };
 
@@ -104,6 +109,8 @@ async function fetchSettings(): Promise<PlatformSettings> {
         delivery_fee: Number(data.delivery_fee ?? 10),
         delivery_areas: Array.isArray(data.delivery_areas) ? (data.delivery_areas as unknown[]).map(String) : [],
         delivery_note: (data.delivery_note as string | null) ?? null,
+        delivery_rounds: Array.isArray(data.delivery_rounds) ? (data.delivery_rounds as unknown[]).map(String) : [],
+        delivery_tz: typeof data.delivery_tz === "string" && data.delivery_tz ? data.delivery_tz : "Asia/Kolkata",
         updated_at: data.updated_at,
       };
   cache = { at: Date.now(), value };

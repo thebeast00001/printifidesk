@@ -8,22 +8,27 @@ import { ensureSession, getSupabase } from "@/lib/supabase/client";
 import { money } from "@/lib/pricing";
 import type { Operator } from "@/lib/orders";
 import { cn, easeIos, spring } from "@/lib/utils";
+import { SpotFields, roundPhrase, spotProblem, type SpotDraft } from "./spot-fields";
 
 /** Where a delivery goes, and the phone the runner calls — what the student fills in. */
-export interface DeliveryDraft {
-  hostel: string;
-  room: string;
+export interface DeliveryDraft extends SpotDraft {
   phone: string;
 }
 
+/** The spot and detail a student chose last time, kept on this device. */
+const LAST_SPOT_KEY = "printify.delivery.last";
+
 /**
- * Delivery to the door (0046), offered under the pickup choice when the
- * platform has it on and this desk is one the runner collects from.
+ * Delivery to where the student will be (0046, reshaped by 0047), offered
+ * under the pickup choice when the platform has it on and this desk is
+ * one the runner collects from.
  *
- * The hostel comes from the admin's list (free text when there is none),
- * the room and phone from the profile, pre-filled and editable here — and
- * saved back to the profile when the order is placed, so the next time
- * they're already there. The fee is the platform's, shown as a line.
+ * The question is framed by the round — "the 1:00 pm round: where will
+ * you be?" — not by where they are now. The spot comes from the admin's
+ * list, the detail is theirs, the phone is the profile's (kept there, since
+ * place_order reads it). The spot can be changed from the status capsule
+ * any time until it's handed over. The fee is the platform's, shown as a
+ * line.
  */
 export function DeliveryPicker({
   operator,
@@ -39,33 +44,37 @@ export function DeliveryPicker({
   disabled?: boolean;
 }) {
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
-  const [profile, setProfile] = useState<{ hostel: string; room: string; phone: string } | null>(null);
+  const [phone, setPhone] = useState<string | null>(null);
 
   useEffect(() => {
     void platformSettings().then(setSettings);
     void (async () => {
       const session = await ensureSession();
-      if (session.status !== "ready") return setProfile({ hostel: "", room: "", phone: "" });
-      const { data } = await getSupabase()!.from("profiles").select("hostel, room, phone").eq("id", session.userId).maybeSingle();
-      const row = (data as { hostel?: string | null; room?: string | null; phone?: string | null } | null) ?? {};
-      setProfile({ hostel: row.hostel ?? "", room: row.room ?? "", phone: row.phone ?? "" });
+      if (session.status !== "ready") return setPhone("");
+      const { data } = await getSupabase()!.from("profiles").select("phone").eq("id", session.userId).maybeSingle();
+      setPhone(((data as { phone?: string | null } | null)?.phone ?? "").trim());
     })();
   }, []);
 
   const offered = Boolean(settings?.delivery_enabled && operator?.delivery);
   if (!settings || !offered) return null;
 
-  const areas = settings.delivery_areas;
   const fee = settings.delivery_fee;
   const cur = operator?.currency ?? "₹";
-  const listed = areas.length > 0;
+  const round = roundPhrase(settings);
 
   function choose(on: boolean) {
     if (!on) return onChange(null);
-    const p = profile ?? { hostel: "", room: "", phone: "" };
-    // A saved hostel that isn't on the list today reads as none chosen.
-    const hostel = listed ? (areas.includes(p.hostel) ? p.hostel : "") : p.hostel;
-    onChange({ hostel, room: p.room, phone: p.phone });
+    // Last time's spot, if it's still on the list; else nothing chosen yet.
+    let last: Partial<SpotDraft> = {};
+    try {
+      last = JSON.parse(localStorage.getItem(LAST_SPOT_KEY) ?? "{}") as Partial<SpotDraft>;
+    } catch {
+      /* no memory of a last spot; fine */
+    }
+    const listed = settings!.delivery_areas.length > 0;
+    const spot = last.spot && (!listed || settings!.delivery_areas.includes(last.spot)) ? last.spot : "";
+    onChange({ spot, detail: spot ? (last.detail ?? "") : "", phone: phone ?? "" });
   }
 
   return (
@@ -77,14 +86,14 @@ export function DeliveryPicker({
           active={value !== null}
           onClick={() => !disabled && choose(true)}
           icon={<Bike size={13} strokeWidth={2.2} />}
-          label={`Delivered to my room · +${money(fee, cur)}`}
+          label={`Brought to me · +${money(fee, cur)}`}
           dim={disabled}
         />
       </div>
       {disabled && value === null && (
         <p className="m-0 mt-2 text-[11.5px] leading-snug text-muted">
           Delivery goes out on the runner&apos;s next round, so it can&apos;t take a booked pickup time — choose
-          &ldquo;as soon as possible&rdquo; above to have it delivered.
+          &ldquo;as soon as possible&rdquo; above to have it brought to you.
         </p>
       )}
 
@@ -97,44 +106,13 @@ export function DeliveryPicker({
             transition={{ duration: 0.28, ease: easeIos }}
             className="overflow-hidden"
           >
-            <div className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2.5 sm:grid-cols-2">
-              <label className="flex flex-col gap-1">
-                <span className="text-[11.5px] font-semibold text-ink-soft">Hostel</span>
-                {listed ? (
-                  <select
-                    value={value.hostel}
-                    onChange={(e) => onChange({ ...value, hostel: e.target.value })}
-                    className="h-11 w-full min-w-0 rounded-xl border border-line bg-surface-sunk px-3 text-[14px] outline-none focus:border-ink"
-                  >
-                    <option value="">Choose your hostel</option>
-                    {areas.map((a) => (
-                      <option key={a} value={a}>
-                        {a}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    value={value.hostel}
-                    maxLength={60}
-                    onChange={(e) => onChange({ ...value, hostel: e.target.value })}
-                    placeholder="e.g. Ganga Hostel"
-                    className="h-11 w-full min-w-0 rounded-xl border border-line bg-surface-sunk px-3 text-[14px] outline-none placeholder:text-faint focus:border-ink"
-                  />
-                )}
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-[11.5px] font-semibold text-ink-soft">Room</span>
-                <input
-                  value={value.room}
-                  maxLength={20}
-                  onChange={(e) => onChange({ ...value, room: e.target.value })}
-                  placeholder="e.g. 213"
-                  className="h-11 w-full min-w-0 rounded-xl border border-line bg-surface-sunk px-3 text-[14px] outline-none placeholder:text-faint focus:border-ink"
-                />
-              </label>
-              <label className="flex flex-col gap-1 sm:col-span-2">
-                <span className="text-[11.5px] font-semibold text-ink-soft">Phone — the runner calls this at the door</span>
+            <div className="mt-3 rounded-[16px] border border-line bg-surface p-3.5">
+              <p className="m-0 mb-3 text-[13px] font-semibold tracking-[-0.01em]">
+                It comes on {round}. Where will you be?
+              </p>
+              <SpotFields settings={settings} value={value} onChange={(next) => onChange({ ...value, ...next })} />
+              <label className="mt-3 flex flex-col gap-1">
+                <span className="text-[11.5px] font-semibold text-ink-soft">Phone — the runner calls this if they can&apos;t see you</span>
                 <input
                   value={value.phone}
                   inputMode="tel"
@@ -144,11 +122,12 @@ export function DeliveryPicker({
                   className="h-11 w-full min-w-0 rounded-xl border border-line bg-surface-sunk px-3 text-[14px] outline-none placeholder:text-faint focus:border-ink"
                 />
               </label>
+              <p className="m-0 mt-3 text-[11.5px] leading-snug text-muted">
+                {settings.delivery_note?.trim() ? `${settings.delivery_note.trim()} ` : ""}
+                Somewhere else by then? Change the spot from your order any time before it&apos;s handed over — the
+                runner is told. Have your token&apos;s QR ready; it&apos;s what they scan.
+              </p>
             </div>
-            <p className="m-0 mt-2 text-[11.5px] leading-snug text-muted">
-              {settings.delivery_note?.trim() || "Goes out on the runner's next round."} Have your token&apos;s QR ready at the door
-              {" — "}it&apos;s what the runner scans to hand it over. Saved to your profile for next time.
-            </p>
           </motion.div>
         )}
       </AnimatePresence>
@@ -156,12 +135,21 @@ export function DeliveryPicker({
   );
 }
 
+/** Remembers the spot for next time — a per-device convenience, nothing more. */
+export function rememberSpot(draft: SpotDraft) {
+  try {
+    localStorage.setItem(LAST_SPOT_KEY, JSON.stringify({ spot: draft.spot.trim(), detail: draft.detail.trim() }));
+  } catch {
+    /* storage blocked; the next order asks again */
+  }
+}
+
 /** Whether a draft is complete enough to send. The database checks it again. */
 export function deliveryProblem(draft: DeliveryDraft | null): string | null {
   if (!draft) return null;
-  if (!draft.hostel.trim()) return "Which hostel should it come to?";
-  if (!draft.room.trim()) return "Which room should it come to?";
-  if (draft.phone.replace(/\D/g, "").length < 8) return "A phone number the runner can call at the door.";
+  const spot = spotProblem(draft);
+  if (spot) return spot;
+  if (draft.phone.replace(/\D/g, "").length < 8) return "A phone number the runner can call.";
   return null;
 }
 

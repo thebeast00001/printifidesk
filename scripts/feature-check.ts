@@ -17,6 +17,8 @@ import { jwtMsRemaining } from "../lib/jwt";
 import { clockLabel } from "../lib/utils";
 import { deskPrefix, parseCoverScan, parseScan } from "../components/operator/scan-sheet";
 import { deliveryProblem } from "../components/delivery-picker";
+import { nextRound, roundLabel } from "../lib/delivery";
+import { whereTo } from "../lib/orders";
 import QRCode from "qrcode";
 import jsQR from "jsqr";
 import { deskPath, hostsFrom, isSingleHost, onDesk, routeFor, sameOriginPath, surfaceFor } from "../lib/surface";
@@ -669,11 +671,26 @@ console.log("\n— delivery to the door (0046) —");
   check("rounding is the desk's, before it", ride.rounding, walk.rounding);
   check("what full colour would have cost carries it too", ride.fullColourTotal, paise(walk.fullColourTotal + 10));
   check("a negative fee is nothing", quoteOrder(lines, card, { deliveryFee: -5 }).delivery, 0);
-  check("a draft needs a hostel", deliveryProblem({ hostel: " ", room: "213", phone: "9876543210" })?.includes("hostel"), true);
-  check("a draft needs a room", deliveryProblem({ hostel: "Ganga", room: "", phone: "9876543210" })?.includes("room"), true);
-  check("a draft needs a phone the runner can call", deliveryProblem({ hostel: "Ganga", room: "213", phone: "12" })?.includes("phone"), true);
-  check("a complete draft has no problem", deliveryProblem({ hostel: "Ganga", room: "213", phone: "98765 43210" }), null);
+  check("a draft needs a spot", deliveryProblem({ spot: " ", detail: "213", phone: "9876543210" })?.includes("Where"), true);
+  check("a spot without a detail is fine", deliveryProblem({ spot: "Library entrance", detail: "", phone: "9876543210" }), null);
+  check("a long detail is refused", deliveryProblem({ spot: "Canteen", detail: "x".repeat(61), phone: "9876543210" })?.includes("short"), true);
+  check("a draft needs a phone the runner can call", deliveryProblem({ spot: "Ganga hostel", detail: "213", phone: "12" })?.includes("phone"), true);
+  check("a complete draft has no problem", deliveryProblem({ spot: "Ganga hostel", detail: "213", phone: "98765 43210" }), null);
   check("no delivery, no problem", deliveryProblem(null), null);
+
+  // The round, as the student reads it — the same rule as next_delivery_round() in SQL.
+  const rounds = ["18:00", "9:05", "13:00"];
+  check("12:30 IST → the 1:00 pm round", nextRound(rounds, "Asia/Kolkata", new Date("2026-09-18T07:00:00Z")), "1:00 pm");
+  check("a round leaving this minute still counts", nextRound(rounds, "Asia/Kolkata", new Date("2026-09-18T07:30:00Z")), "1:00 pm");
+  check("1:30 pm IST → the 6:00 pm round", nextRound(rounds, "Asia/Kolkata", new Date("2026-09-18T08:00:00Z")), "6:00 pm");
+  check("7:30 pm IST → the morning's first round", nextRound(rounds, "Asia/Kolkata", new Date("2026-09-18T14:00:00Z")), "9:05 am");
+  check("no rounds → nothing named", nextRound([], "Asia/Kolkata"), null);
+  check("a broken round is ignored", nextRound(["nope", "13:00"], "Asia/Kolkata", new Date("2026-09-18T07:00:00Z")), "1:00 pm");
+  check("noon reads as 12:00 pm", roundLabel("12:00"), "12:00 pm");
+  check("midnight reads as 12:00 am", roundLabel("00:00"), "12:00 am");
+  check("where a delivery goes, either shape", whereTo({ deliver_to: { hostel: "Kaveri", room: "12" } }), "Kaveri, 12");
+  check("a spot alone", whereTo({ deliver_to: { spot: "Canteen" } }), "Canteen");
+  check("nothing set", whereTo({ deliver_to: null }), "");
 }
 
 console.log("\n— the payout day (0040) —");

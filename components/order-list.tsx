@@ -5,7 +5,7 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import { AlertCircle, Check, ChevronDown, Flag, Loader2, Receipt, X } from "lucide-react";
 import { useOrderHistory } from "@/hooks/use-tracking";
-import { paymentBalance, cancelOrder, getOperator, STATUS_LABEL, type Operator, type OrderRow, type OrderStatus } from "@/lib/orders";
+import { paymentBalance, cancelOrder, getOperator, STATUS_LABEL, whereTo, type Operator, type OrderRow, type OrderStatus } from "@/lib/orders";
 import { awaitPaid } from "@/lib/gateway";
 import { billFor } from "@/lib/bill";
 import { Bill } from "./bill";
@@ -230,7 +230,7 @@ function OrderCard({
             {/* Delivery (0046): where it's going, from the order's own snapshot. */}
             {order.delivery && !["cancelled", "failed"].includes(order.status) && (
               <span className="max-w-full truncate rounded-full border border-line bg-surface-sunk px-2.5 py-1 text-[10.5px] font-semibold whitespace-nowrap text-ink-soft">
-                To {[order.deliver_to?.hostel, order.deliver_to?.room].filter(Boolean).join(" ") || "your room"}
+                To {whereTo(order) || "the spot you chose"}
               </span>
             )}
             {/* The desk's word (or Cashfree's), never the student's own claim. */}
@@ -362,7 +362,7 @@ function PaymentLine({ order }: { order: OrderRow }) {
   const paid = Boolean(order.payment_taken_at);
   const claimed = Boolean(order.payment_claimed_at);
   const method = order.payment_method === "cash"
-    ? (order.delivered_at ? "cash at your door" : "cash at the desk")
+    ? (order.delivered_at ? "cash to the runner" : "cash at the desk")
     : order.payment_method === "upi" ? "UPI" : null;
 
   const balance = paymentBalance(order);
@@ -378,13 +378,13 @@ function PaymentLine({ order }: { order: OrderRow }) {
   } else if (paid && order.payment_method === "gateway") {
     text = `Paid online through Printifi${order.payment_reference ? ` · ref ${order.payment_reference}` : ""}.`;
   } else if (paid && order.delivered_at && order.payment_method === "cash") {
-    text = `Paid in cash to Printifi's runner at the door${order.delivery_proof === "scan" ? " — your code was scanned" : ""}.`;
+    text = `Paid in cash to Printifi's runner when it was handed to you${order.delivery_proof === "scan" ? " — your code was scanned" : ""}.`;
   } else if (paid) {
     text = `Paid${method ? ` by ${method}` : ""}, confirmed by the desk${
       order.payment_reference ? ` · ref ${order.payment_reference}` : ""
     }${order.shortfall_cleared_at ? " · the rest taken in cash" : ""}.`;
   } else if (order.pay_at_pickup && order.delivery && (order.status === "delivering" || order.status === "ready" || order.status === "queued" || order.status === "printing" || order.status === "finishing")) {
-    text = `Pay ${money(Number(order.total))} in cash to the runner at your door.`;
+    text = `Pay ${money(Number(order.total))} in cash to the runner when it's handed to you.`;
   } else if (claimed) {
     text = `You marked this paid${method ? ` by ${method}` : ""}; the desk hasn't confirmed it yet.`;
   } else if (order.status === "unclaimed") {

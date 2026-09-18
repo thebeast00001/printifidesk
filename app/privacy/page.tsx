@@ -113,13 +113,15 @@ export default function PrivacyPage() {
 
       <H2>What the runner sees about you</H2>
       <p>
-        If you choose delivery, the hostel and room you give are kept on your profile (so they&apos;re there
-        next time) and copied onto that order. Printifi&apos;s runner — a person Printifi has approved by
-        name — sees your name, phone number, hostel and room for the jobs waiting on a shelf and the ones in
-        their hands, and for a day afterwards the ones they delivered; never the code in your QR, which is
-        what they scan at your door, and nothing about any other order. Whether a delivery was handed over
-        against your code or on the runner&apos;s word is recorded on the order. The cover sheet on a
-        delivery carries the hostel and room, so the runner can read the pile.
+        If you choose delivery, the spot and detail you give are kept on that order — with the time you last
+        set them — and your phone number on your profile. The spot is remembered on your own device for next
+        time, nowhere else. Printifi&apos;s runner — a person Printifi has approved by name — sees your name,
+        phone number, spot and detail for the jobs waiting on a shelf and the ones in their hands, and for a
+        day afterwards the ones they delivered; never the code in your QR, which is what they scan when they
+        hand it to you, and nothing about any other order. When you move the spot while a job is on its way,
+        the runner is sent the new spot. Whether a delivery was handed over against your code or on the
+        runner&apos;s word is recorded on the order. The cover sheet on a delivery carries the spot as it
+        stood when it was printed, so the runner can read the pile.
       </p>
 
       <H2>Payments</H2>
@@ -128,8 +130,8 @@ export default function PrivacyPage() {
         counter — and Printifi never handles that money. Where a desk takes payment through Printifi,
         Printifi&apos;s payment partner, Cashfree Payments, takes it; Printifi keeps its platform fee and
         pays the desk the rest, and both sides see the same statement. Dues from an uncollected cash order
-        are paid to Printifi the same way, or in cash at any desk. Cash taken at your door by Printifi&apos;s
-        runner is Printifi&apos;s to hold; the desk is credited its price for the job. The price you see
+        are paid to Printifi the same way, or in cash at any desk. Cash taken by Printifi&apos;s runner when a
+        delivery is handed to you is Printifi&apos;s to hold; the desk is credited its price for the job. The price you see
         includes Printifi&apos;s platform fee, where the desk uses one the cover sheet, and — if you chose
         it — the delivery fee as its own line.
       </p>

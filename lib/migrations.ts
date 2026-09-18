@@ -58,7 +58,8 @@ export const MIGRATION_PROBES: MigrationProbe[] = [
   { id: "0043", without: "choosing cash fails on the pay sheet; no cash limits, dues, or cover for a desk's uncollected orders", check: column("orders", "pay_at_pickup") },
   { id: "0044", without: "no cover sheet on printed jobs; the desk opens bare files; no cover line on bills", check: column("orders", "cover_charge") },
   // 0045 is the enum value alone and can't be asked for from here; 0046 can't apply without it.
-  { id: "0045+0046", without: "no delivery to the door: the choice isn't offered, runners can't be granted, Deliveries is empty", check: column("orders", "delivery_fee") },
+  { id: "0045+0046", without: "no delivery: the choice isn't offered, runners can't be granted, Deliveries is empty", check: column("orders", "delivery_fee") },
+  { id: "0047", without: "delivery asks for a hostel and room instead of a spot; the spot can't be moved; no round times; saving the delivery policy errors", check: column("platform_settings", "delivery_rounds") },
 ];
 
 export interface MigrationReport {

@@ -17,7 +17,7 @@ import { Bill } from "./bill";
 import { UploadStep } from "./upload-step";
 import { createOrder, defaultOperatorId } from "@/lib/orders";
 import { PickupPicker } from "./pickup-picker";
-import { DeliveryPicker, deliveryProblem, type DeliveryDraft } from "./delivery-picker";
+import { DeliveryPicker, deliveryProblem, rememberSpot, type DeliveryDraft } from "./delivery-picker";
 import { platformSettings } from "@/lib/platform";
 import { ensureSession, getSupabase } from "@/lib/supabase/client";
 import { useOperatorWait } from "@/hooks/use-tracking";
@@ -540,9 +540,9 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
         throw new Error("No operator is set up yet. Run the migrations in supabase/migrations.");
       }
 
-      // A delivery (0046) needs a room and a phone; they're kept on the
-      // profile so the next order has them, and place_order() reads the
-      // phone from there.
+      // A delivery (0046/0047) needs a spot and a phone. The phone is kept
+      // on the profile — place_order() reads it from there; the spot is
+      // remembered on this device for next time.
       const missing = deliveryProblem(delivery);
       if (missing) throw new Error(missing);
       if (delivery) {
@@ -550,11 +550,9 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
         if (session.status !== "ready") throw new Error("Sign in to place an order.");
         const { error: saveError } = await getSupabase()!
           .from("profiles")
-          .upsert(
-            { id: session.userId, hostel: delivery.hostel.trim(), room: delivery.room.trim(), phone: delivery.phone.trim() },
-            { onConflict: "id" },
-          );
+          .upsert({ id: session.userId, phone: delivery.phone.trim() }, { onConflict: "id" });
         if (saveError) throw new Error(saveError.message);
+        rememberSpot(delivery);
       }
 
       // No price goes with this. The database prices the same lines from the
@@ -564,7 +562,7 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
       await createOrder({
         operatorId,
         pickupAt: delivery ? null : pickupAt,
-        delivery: delivery ? { hostel: delivery.hostel, room: delivery.room } : null,
+        delivery: delivery ? { spot: delivery.spot, detail: delivery.detail } : null,
         items: files.map((f) => ({
           documentId: f.localOnly ? null : f.id,
           name: f.name,
@@ -764,7 +762,7 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
             ? (operator?.status_note?.trim() ??
               "Your files stay here — send them as soon as Printifi opens.")
             : delivery
-              ? `Delivered to ${[delivery.hostel.trim(), delivery.room.trim()].filter(Boolean).join(" ") || "your room"} on the next round. Pay ${money(q.total, card.currency)} online, or in cash at the door.`
+              ? `Brought to ${[delivery.spot.trim(), delivery.detail.trim()].filter(Boolean).join(", ") || "the spot you choose"} on the next round. Pay ${money(q.total, card.currency)} online, or in cash when it's handed to you.`
             : pickupAt
               ? `Ready by ${new Date(pickupAt).toLocaleString([], {
                   weekday: "short",
