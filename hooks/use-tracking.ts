@@ -17,6 +17,7 @@ import {
   myTotals,
   orderEvents,
   queueStatus,
+  rememberedDesk,
   staffOperatorIds,
   type Operator,
   type OperatorWait,
@@ -279,9 +280,13 @@ export function useOperatorWait() {
 
   const load = useCallback(async () => {
     try {
-      const found = await defaultOperator();
+      // The desk this device used last is a guess at which one comes back;
+      // its wait is asked for alongside the desk rather than after it. A
+      // wrong guess costs one public call and the wait is asked for again.
+      const guess = rememberedDesk();
+      const [found, guessed] = await Promise.all([defaultOperator(), guess ? operatorWait(guess) : null]);
       setOperator(found);
-      setWait(found ? await operatorWait(found.id) : null);
+      setWait(found ? (found.id === guess ? guessed : await operatorWait(found.id)) : null);
     } catch {
       setOperator(null);
       setWait(null);

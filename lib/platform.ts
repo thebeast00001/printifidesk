@@ -1,6 +1,6 @@
 "use client";
 
-import { getSupabase } from "./supabase/client";
+import { getPublicSupabase, getSupabase } from "./supabase/client";
 import type { UpiKind } from "./upi";
 
 /**
@@ -82,7 +82,9 @@ export async function platformSettings(force = false): Promise<PlatformSettings>
 }
 
 async function fetchSettings(): Promise<PlatformSettings> {
-  const supabase = getSupabase();
+  // "platform settings are public" (0022): read as nobody, so a quote
+  // doesn't wait for Clerk to say who's asking.
+  const supabase = getPublicSupabase();
   if (!supabase) return EMPTY;
   // `*`, not a column list: a column this project hasn't got yet (0025's
   // grace_days, 0027's payee_kind) must read as its default, not as "no

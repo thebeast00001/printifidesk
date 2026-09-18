@@ -653,6 +653,31 @@ So the number of hops is what the code controls:
 - `vercel.json` pins the functions to **`bom1`** (Mumbai). Without it Vercel
   runs them in `iad1` (Washington), which put every server-rendered page
   a quarter of the way round the world from the people loading it.
+- **Public rows don't wait for Clerk.** Measured on the live site from a
+  phone in India, signed out: the page painted at 0.6 s, and the desk's
+  prices and "no queue right now" landed at 3.5–4.1 s. Every request went
+  through one Supabase client whose token getter is Clerk's `getToken()`,
+  which resolves only once clerk-js (239 KB) has loaded and asked Clerk who
+  this is — 2.7 s in — and the world-readable rows waited behind it with
+  the private ones. `getPublicSupabase()` in `lib/supabase/client.ts` is
+  the same project asked as nobody, and the reads whose policy is
+  `using (true)` — the desks, the platform's settings, `operator_wait()` —
+  go through it and start the moment the page hydrates. Nothing that
+  depends on who's asking ever does. On top: four components asked for
+  the desk and its wait in the same tick, and again on every realtime
+  event, so the same query went out five times and queued itself;
+  `defaultOperator()` and `operatorWait()` share one in-flight request
+  (keyed by the session, so nothing from before Clerk loaded is served
+  after). The desk this device last used is remembered
+  (`printify.desk.last`, a public row's id) so its row and its wait are
+  asked for **together**, at once, when Clerk's own cookie says this is
+  someone signed in; the profile's saved choice replaces it with the
+  session, which, being the same desk, changes nothing on screen. The
+  settings row is fetched alongside every desk read rather than after it,
+  the database origin is preconnected from `<head>`, and `cashStanding()`
+  no longer asks (and is refused) three times per visitor load. In dev,
+  signed out: the desk at 0.76 s and the wait at 1.03 s, before Clerk has
+  answered at all.
 
 The database's own region is the remaining lever, and it's yours — see
 *Marked for you*.

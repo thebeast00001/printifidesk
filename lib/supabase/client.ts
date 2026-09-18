@@ -62,6 +62,36 @@ export function getSupabase(): SupabaseClient | null {
   return cached;
 }
 
+/** Who the data layer thinks is asking, as one string — the key the hooks re-run on. */
+export function sessionKey(): string {
+  return `${clerkLoaded ? "loaded" : "loading"}:${currentUserId ?? "anon"}`;
+}
+
+let publicClient: SupabaseClient | null = null;
+
+/**
+ * The same project, asked as nobody.
+ *
+ * The client above hands Clerk's token to every request, and Clerk's
+ * `getToken()` resolves only once clerk-js has loaded and asked Clerk who
+ * this is — on a phone, the better part of three seconds after the page is
+ * on screen. Rows the world may read (the listed desks, the platform's
+ * settings, a desk's wait) sat behind that wait for no reason: the prices
+ * and "no queue right now" landed at 3.5 s on a page that painted at 0.6 s.
+ * Reads of those go through here and start the moment the page hydrates.
+ * Nothing that depends on who's asking ever does — this client has no token
+ * to give, so RLS would hand it nothing, silently.
+ */
+export function getPublicSupabase(): SupabaseClient | null {
+  if (!isSupabaseConfigured) return null;
+  publicClient ??= createClient(SUPABASE_URL, SUPABASE_KEY, {
+    // Its own storage key, and nothing kept: the two clients must not
+    // share (or warn about sharing) a session slot in localStorage.
+    auth: { storageKey: "printify-public", persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  return publicClient;
+}
+
 export type SessionState =
   | { status: "ready"; userId: string; accessToken: string }
   | { status: "signed-out" }

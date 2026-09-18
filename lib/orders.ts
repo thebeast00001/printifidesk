@@ -1,6 +1,6 @@
 "use client";
 
-import { ensureSession, getSupabase } from "./supabase/client";
+import { ensureSession, getPublicSupabase, getSupabase, sessionKey } from "./supabase/client";
 import { changed } from "./changed";
 import { platformSettings } from "./platform";
 import { pokeDispatch } from "./push";
@@ -315,6 +315,10 @@ let operatorLevel = 0;
 async function operatorQuery<T>(
   run: (select: string) => PromiseLike<{ data: T; error: { code?: string } | null }>,
 ): Promise<{ data: T; error: { code?: string } | null }> {
+  // Every row read here is merged with the platform's settings next; ask for
+  // those now, in the same breath, not once the row is back (cached a
+  // minute, shared while in flight — this costs nothing after the first).
+  void platformSettings();
   // Judge by the level *this* call started at: several run at once on a
   // page load, and one stepping the shared level down mustn't stop the
   // others from retrying.
@@ -455,9 +459,12 @@ async function withFee<T extends Operator | null>(row: T): Promise<T> {
   return { ...row, platform_fee_percent: ps.fee_percent, platform_fee_min: ps.fee_min };
 }
 
-/** Every operator a student can choose between. */
+/**
+ * Every operator a student can choose between. The rows are public
+ * ("operators are public", 0003), so this never waits for a token.
+ */
 export async function listOperators(): Promise<Operator[]> {
-  const supabase = getSupabase();
+  const supabase = getPublicSupabase();
   if (!supabase) return [];
   const { data } = await operatorQuery((select) =>
     supabase.from("operators").select(select).eq("is_listed", true).order("created_at", { ascending: true }),
@@ -471,13 +478,69 @@ export async function listOperators(): Promise<Operator[]> {
 }
 
 /**
+ * The desk this device last printed through, kept so the next load can ask
+ * for its row and its wait before Clerk has said who this is. Only a hint:
+ * the saved choice on the profile is the truth, and replaces it the moment
+ * the session is known. Never a pin, never a person — a public row's id.
+ */
+const LAST_DESK_KEY = "printify.desk.last";
+
+export function rememberedDesk(): string | null {
+  try {
+    return localStorage.getItem(LAST_DESK_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function rememberDesk(id: string | null) {
+  try {
+    if (id) localStorage.setItem(LAST_DESK_KEY, id);
+    else localStorage.removeItem(LAST_DESK_KEY);
+  } catch {
+    /* private mode, or storage full: the next load asks the long way */
+  }
+}
+
+/**
+ * Clerk's own cookie, set on this site: "0" once signed out, a timestamp
+ * while signed in. It's there before clerk-js is, so the first second can
+ * tell a returning student (show the desk they use) from a visitor (show
+ * the first listed one) without a flash from one to the other.
+ */
+function clerkSaysSignedIn(): boolean {
+  if (typeof document === "undefined") return false;
+  const m = /(?:^|;\s*)__client_uat(?:_[\w-]+)?=(\d+)/.exec(document.cookie);
+  return m !== null && m[1] !== "0";
+}
+
+/**
  * The operator a student prints through: their saved choice, else the first
  * listed one. Falling back rather than forcing a choice keeps a first-time
  * visitor from hitting a picker before they've seen a price.
+ *
+ * Four components on the home page ask for this in the same tick — the top
+ * bar, the upload card, the rates, the sheet — and again on every realtime
+ * event. One request serves all of them: callers arriving while one is in
+ * flight for the same session share it. (Keyed by the session, so a call
+ * made once Clerk has loaded never gets the answer from before it had.)
  */
-export async function defaultOperator(): Promise<Operator | null> {
+let defaultPending: { key: string; value: Promise<Operator | null> } | null = null;
+
+export function defaultOperator(): Promise<Operator | null> {
+  const key = sessionKey();
+  if (defaultPending?.key === key) return defaultPending.value;
+  const value = resolveDefaultOperator().finally(() => {
+    if (defaultPending?.value === value) defaultPending = null;
+  });
+  defaultPending = { key, value };
+  return value;
+}
+
+async function resolveDefaultOperator(): Promise<Operator | null> {
   const supabase = getSupabase();
-  if (!supabase) return null;
+  const pub = getPublicSupabase();
+  if (!supabase || !pub) return null;
 
   const session = await ensureSession();
   if (session.status === "ready") {
@@ -492,12 +555,25 @@ export async function defaultOperator(): Promise<Operator | null> {
       // A saved desk that has since been unlisted — or shut by the admin —
       // isn't one they can order from; fall through to the first that is.
       const operator = await getOperator(chosen, true);
+      if (operator?.is_listed) {
+        rememberDesk(operator.id);
+        return operator;
+      }
+    }
+  } else if (session.status === "loading" && clerkSaysSignedIn()) {
+    // Clerk hasn't loaded, but its cookie says this is someone who signed
+    // in: the desk this device last used is almost surely theirs. Its row
+    // is public, so it's on screen in one round trip; the profile's choice
+    // arrives with the session and, when it's the same desk, changes nothing.
+    const last = rememberedDesk();
+    if (last) {
+      const operator = await getOperator(last);
       if (operator?.is_listed) return operator;
     }
   }
 
   const { data } = await operatorQuery((select) =>
-    supabase
+    pub
       .from("operators")
       .select(select)
       .eq("is_listed", true)
@@ -505,7 +581,11 @@ export async function defaultOperator(): Promise<Operator | null> {
       .limit(1)
       .maybeSingle(),
   );
-  return withFee((data as unknown as Operator) ?? null);
+  const first = await withFee((data as unknown as Operator) ?? null);
+  // The session's answer is the one worth keeping; a visitor's isn't asked
+  // for again (the cookie gates it), and "loading" is no answer at all.
+  if (session.status === "ready") rememberDesk(first?.id ?? null);
+  return first;
 }
 
 /** Remembers which operator this student prints through. */
@@ -539,7 +619,9 @@ export function forgetOperator(id?: string) {
 }
 
 export async function getOperator(id: string, fresh = false): Promise<Operator | null> {
-  const supabase = getSupabase();
+  // Public rows: the pay sheet, the cards and the capsule get the desk
+  // without waiting for the token, and so does the desk's own shell.
+  const supabase = getPublicSupabase();
   if (!supabase) return null;
   const hit = operatorCache.get(id);
   if (!fresh && hit && Date.now() - hit.at < OPERATOR_CACHE_MS) return hit.value;
@@ -775,11 +857,26 @@ export async function queueStatus(orderId: string): Promise<QueueStatus | null> 
   return (data?.[0] as QueueStatus) ?? null;
 }
 
-export async function operatorWait(operatorId: string): Promise<OperatorWait | null> {
-  const supabase = getSupabase();
-  if (!supabase) return null;
-  const { data } = await supabase.rpc("operator_wait", { p_operator: operatorId });
-  return (data?.[0] as OperatorWait) ?? null;
+/**
+ * How busy a desk is. `operator_wait()` is security definer and granted to
+ * anon (0004): public, so asked through the public client, and asked once
+ * however many components want it in the same moment.
+ */
+const waitPending = new Map<string, Promise<OperatorWait | null>>();
+
+export function operatorWait(operatorId: string): Promise<OperatorWait | null> {
+  const pending = waitPending.get(operatorId);
+  if (pending) return pending;
+  const value = (async () => {
+    const supabase = getPublicSupabase();
+    if (!supabase) return null;
+    const { data } = await supabase.rpc("operator_wait", { p_operator: operatorId });
+    return (data?.[0] as OperatorWait) ?? null;
+  })().finally(() => {
+    if (waitPending.get(operatorId) === value) waitPending.delete(operatorId);
+  });
+  waitPending.set(operatorId, value);
+  return value;
 }
 
 export async function myTotals(): Promise<Totals | null> {
@@ -914,6 +1011,10 @@ export const cashLegacy = () => cashLegacyMode;
 export async function cashStanding(userId?: string): Promise<CashStanding | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
+  // Granted to authenticated only (0043): asked as nobody it's refused, and
+  // a visitor's home page asked three times per load. The hooks re-ask once
+  // the session is known.
+  if ((await ensureSession()).status !== "ready") return null;
   const { data, error } = await supabase.rpc("cash_standing", userId ? { p_user: userId } : {});
   if (error) {
     if (/could not find|does not exist|schema cache/i.test(error.message)) cashLegacyMode = true;

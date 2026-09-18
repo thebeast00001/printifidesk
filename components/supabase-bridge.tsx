@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
+import { preconnect } from "react-dom";
 import { useAuth, useUser } from "@clerk/nextjs";
-import { registerClerkBridge, syncProfile } from "@/lib/supabase/client";
+import { SUPABASE_URL, registerClerkBridge, syncProfile } from "@/lib/supabase/client";
 import { useProfileSync } from "@/lib/profile-sync";
 import { jwtMsRemaining } from "@/lib/jwt";
 
@@ -44,6 +45,12 @@ export function SupabaseBridge() {
   // Register synchronously too, so the very first render already has a token
   // getter — otherwise the first query races ahead of this effect.
   registerClerkBridge({ getToken: freshToken, userId: userId ?? null, loaded: isLoaded });
+
+  // Rendered into <head> on the server: the browser opens the connection to
+  // the database while it's still parsing, so the first public read (the
+  // desk's prices, its wait) spends its round trip on the query alone, not
+  // on a DNS lookup and a TLS handshake first. Anonymous, as the fetches are.
+  if (SUPABASE_URL) preconnect(SUPABASE_URL, { crossOrigin: "anonymous" });
 
   useEffect(() => {
     registerClerkBridge({ getToken: freshToken, userId: userId ?? null, loaded: isLoaded });
