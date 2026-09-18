@@ -1,14 +1,7 @@
 "use client";
 
 import { BarChart3, Info, Printer, Receipt } from "lucide-react";
-import {
-  Cluster,
-  WidgetAction,
-  WidgetBase,
-  WidgetDivider,
-  WidgetPanel,
-  WidgetShell,
-} from "./widget";
+import { WidgetAction, WidgetBase, WidgetDivider, WidgetPanel, WidgetShell } from "./widget";
 import { Figure } from "./figure";
 import { useTotals } from "@/hooks/use-tracking";
 import { useApp } from "@/lib/store";
@@ -30,7 +23,6 @@ export function WidgetsRow() {
     <section className="grid grid-cols-2 gap-3 lg:gap-4" data-anim="widgets">
       <WidgetShell>
         <WidgetPanel tone="sage">
-          <Cluster items={["P", "A", "G"]} />
           <Figure value={pages} prefix="" className="text-[31px] font-extrabold" />
           <span className="mt-1.5 text-[11.5px] leading-snug font-semibold opacity-75">
             {ready
@@ -54,7 +46,6 @@ export function WidgetsRow() {
 
       <WidgetShell>
         <WidgetPanel tone="clay">
-          <Cluster items={["C", "M", "Y", "K"]} />
           <Figure value={saved} className="text-[31px] font-extrabold" />
           <span className="mt-1.5 text-[11.5px] leading-snug font-semibold opacity-75">
             {ready

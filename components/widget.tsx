@@ -101,20 +101,3 @@ export function WidgetAction({
 export function WidgetDivider() {
   return <span className="my-[13px] w-px bg-shell-line" />;
 }
-
-/** The coin cluster from the reference — overlapping ringed discs. */
-export function Cluster({ items }: { items: string[] }) {
-  return (
-    <span className="mb-2.5 flex">
-      {items.map((c, i) => (
-        <span
-          key={c}
-          style={{ marginLeft: i === 0 ? 0 : -5 }}
-          className="grid size-[19px] place-items-center rounded-full border-[1.5px] border-current bg-current/10 text-[9px] font-bold"
-        >
-          {c}
-        </span>
-      ))}
-    </span>
-  );
-}
