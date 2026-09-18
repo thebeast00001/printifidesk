@@ -48,6 +48,16 @@ export function OnlinePay({
   // A flight is handed over once; a second run of the effect (strict mode
   // in development) must not fetch a fresh session over the outcome.
   const tookFlight = useRef(false);
+  // The sheet passes `onPaid` as a fresh arrow on every render. Read through
+  // a ref so the effect below runs once per order, not once per render:
+  // as a dependency it re-ran on every tick of the sheet — the desk row
+  // arriving, the cash standing, the QR — and each run asked the server
+  // for a session again. Several ran at once, each tried to make the same
+  // Cashfree order, and the button showed whichever answered last: two or
+  // three seconds, and sometimes "order with same id is already present".
+  const paid = useRef(onPaid);
+  // oxlint-disable-next-line react/refs -- the latest-value ref, read by callbacks that outlive this render
+  paid.current = onPaid;
 
   useEffect(() => {
     let alive = true;
@@ -61,7 +71,7 @@ export function OnlinePay({
       tookFlight.current = true;
       setSession(done.session);
       setState(done.outcome ?? "ready");
-      if (done.outcome?.kind === "paid") onPaid();
+      if (done.outcome?.kind === "paid") paid.current();
       return;
     }
     if (tookFlight.current) return;
@@ -75,17 +85,17 @@ export function OnlinePay({
         setState("ready");
       } else {
         setState(r);
-        if (r.kind === "paid") onPaid();
+        if (r.kind === "paid") paid.current();
       }
     });
     return () => {
       alive = false;
     };
-  }, [orderId, onPaid]);
+  }, [orderId]);
 
   function finish(outcome: OnlineOutcome) {
     setState(outcome);
-    if (outcome.kind === "paid") onPaid();
+    if (outcome.kind === "paid") paid.current();
   }
 
   function pay() {
@@ -127,13 +137,13 @@ export function OnlinePay({
         className="flex h-[54px] w-full items-center justify-center gap-2.5 rounded-2xl bg-ink text-[15px] font-semibold text-paper disabled:opacity-60"
       >
         {busy ? <Loader2 size={17} className="animate-spin" /> : <CreditCard size={17} strokeWidth={2.2} />}
-        {state === "opening"
-          ? "Getting ready…"
-          : state === "paying"
-            ? "Opening the checkout…"
-            : state === "checking"
-              ? "Checking…"
-              : `Pay ${money(amount, currency)} · UPI, card`}
+        {/* The amount is known before the session is: the button reads as
+            itself from the first frame, and the spinner says it isn't live yet. */}
+        {state === "paying"
+          ? "Opening the checkout…"
+          : state === "checking"
+            ? "Checking…"
+            : `Pay ${money(amount, currency)} · UPI, card`}
       </button>
       <p className="m-0 mt-2 text-[11px] leading-relaxed text-muted">
         Through Printifi&apos;s payment partner. Any UPI app, card or netbanking, amount filled in — confirmed the moment it

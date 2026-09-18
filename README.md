@@ -1347,6 +1347,22 @@ How the pieces sit:
   sheet, whose pane takes the flight (`takeFlight`, once) and starts with
   that outcome and the still-live session in hand. Paid needs no sheet;
   the row says so.
+- **One session, asked for once.** The sheet passes the pane its
+  `onPaid` as a fresh arrow every render, and the pane's effect listed it
+  as a dependency — so every tick of the sheet (the desk row arriving,
+  the cash standing, the QR) re-ran the effect and asked the server for a
+  session again. Several ran at once, each read "no Cashfree order yet",
+  each tried to make the same `PF…` order, and the button showed whichever
+  answered last: two or three seconds of *Getting ready…*, and sometimes
+  Cashfree's *order with same id is already present*. Now: the pane reads
+  `onPaid` through a ref and runs once per order; `openSession()` shares
+  one request per order while it's in flight; the route reads the desk
+  and the profile in one round trip instead of two; and when two requests
+  do reach Cashfree together, the loser catches `order_already_exists`,
+  reads the order the winner made (the id is deterministic on both sides)
+  and hands out *its* session — so a race converges instead of failing.
+  The button reads *Pay ₹x · UPI, card* with a spinner from the first
+  frame; the amount was never in doubt, only the session.
 - **Heard on both sides (`0037`).** `gateway_paid()` moves the order from
   *placed* to *queued* itself — the money is in, there is nothing for the
   desk to check — and it used to do that in silence: the desk's push fires

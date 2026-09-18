@@ -8,11 +8,15 @@ import {
   gatewayOrderId,
   getOrder,
   vendorShare,
+  type CashfreeOrder,
 } from "@/lib/server/cashfree";
 import { reconcileOrder } from "../reconcile";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** Cashfree's refusal of a second order with an id it already has: `order_already_exists`, "order with same id is already present". */
+const isAlreadyExists = (e: CashfreeError) => e.code === "order_already_exists" || /already (present|exists)/i.test(e.message);
 
 /**
  * "I want to pay this order through Printifi."
@@ -48,11 +52,16 @@ export async function POST(request: Request) {
   // The desk corrected the bill (0039): the student answers that before any money moves.
   if (order.requote_status === "proposed") return fail("The desk corrected this bill — accept the new price on your order first.");
 
-  const { data: operator } = await supabase
-    .from("operators")
-    .select("id, name, short_name, gateway_vendor_id, gateway_status, shut_at, gateway_paused")
-    .eq("id", order.operator_id)
-    .maybeSingle();
+  // The desk and the student don't depend on each other: one round trip to
+  // Tokyo, not two, on the path between the tap and the checkout.
+  const [{ data: operator }, { data: profile }] = await Promise.all([
+    supabase
+      .from("operators")
+      .select("id, name, short_name, gateway_vendor_id, gateway_status, shut_at, gateway_paused")
+      .eq("id", order.operator_id)
+      .maybeSingle(),
+    supabase.from("profiles").select("name, email, phone").eq("id", userId).maybeSingle(),
+  ]);
   if (!operator || operator.shut_at) return fail("This desk can't take payments right now.");
   // 'active' is a split to the desk's vendor; 'collect' is Printifi collecting
   // and paying the desk out. Anything else: not offered.
@@ -63,11 +72,6 @@ export async function POST(request: Request) {
   // 0040: the owner paused it. Students pay the desk directly meanwhile.
   if (operator.gateway_paused) return fail("This desk has paused payments through Printifi for now — pay the desk directly.");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("name, email, phone")
-    .eq("id", userId)
-    .maybeSingle();
   const phone = (profile?.phone ?? "").replace(/\D/g, "").replace(/^91(?=\d{10}$)/, "");
   if (!/^\d{10}$/.test(phone)) {
     // Cashfree needs a phone number on every order; a made-up one would be
@@ -99,16 +103,38 @@ export async function POST(request: Request) {
 
     const attempt = order.gateway_order_id ? Number(/-(\d+)$/.exec(order.gateway_order_id)?.[1] ?? 1) + 1 : 1;
     const cfOrderId = gatewayOrderId(order.id, attempt);
-    const created = await createOrder({
-      orderId: cfOrderId,
-      amount: total,
-      customer: { id: userId.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 50), phone, email: profile?.email, name: profile?.name },
-      note: `Printifi ${order.token ?? ""} at ${operator.short_name || operator.name}`.slice(0, 200),
-      returnUrl: `${origin}/orders?paid=${order.id}`,
-      notifyUrl: `${origin}/api/payments/webhook`,
-      split,
-      tags: { printify_order: order.id, token: order.token ?? "" },
-    });
+    let created: CashfreeOrder;
+    try {
+      created = await createOrder({
+        orderId: cfOrderId,
+        amount: total,
+        customer: { id: userId.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 50), phone, email: profile?.email, name: profile?.name },
+        note: `Printifi ${order.token ?? ""} at ${operator.short_name || operator.name}`.slice(0, 200),
+        returnUrl: `${origin}/orders?paid=${order.id}`,
+        notifyUrl: `${origin}/api/payments/webhook`,
+        split,
+        tags: { printify_order: order.id, token: order.token ?? "" },
+      });
+    } catch (e) {
+      // Two requests for the same order in the same moment — a sheet that
+      // asked twice, a double tap, a retry after a dropped response — both
+      // read "no Cashfree order yet" and both tried to make this one; the
+      // second is told "order with same id is already present". The id is
+      // the same on both sides by design, so the order the first made is
+      // the order this one wanted: read it and hand out its session.
+      if (!(e instanceof CashfreeError && isAlreadyExists(e))) throw e;
+      const existing = await getOrder(cfOrderId);
+      if (existing.order_status === "PAID") {
+        await reconcileOrder(supabase, order.id, cfOrderId);
+        return Response.json({ ok: true, paid: true });
+      }
+      if (existing.order_status !== "ACTIVE" || !existing.payment_session_id || Math.abs(Number(existing.order_amount) - total) >= 0.005) {
+        return fail("The payment is being set up — try again in a moment.", 409);
+      }
+      created = existing;
+    }
+    // Stamping the same id twice is the same stamp: the second request
+    // records what the first did.
     const { error } = await supabase.rpc("gateway_begin", { p_order: order.id, p_gateway_order_id: created.order_id, p_split: splitting });
     if (error) return fail(error.message, 500);
     return Response.json({ ok: true, paymentSessionId: created.payment_session_id, mode: cashfreeEnv() });

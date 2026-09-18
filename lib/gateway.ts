@@ -93,11 +93,27 @@ export interface OnlineSession {
 
 export type SessionOutcome = { kind: "session"; session: OnlineSession } | OnlineOutcome;
 
+const sessionPending = new Map<string, Promise<SessionOutcome>>();
+
 /**
  * The Cashfree order for this Printifi order, from the server. Reused
- * while it's live, so opening the sheet twice makes one order, not two.
+ * while it's live, so opening the sheet twice makes one order, not two —
+ * and asked for once however many times the sheet asks while the first
+ * answer is still on its way (a remount, strict mode, a double tap): two
+ * requests in flight at once both tried to make the same Cashfree order,
+ * and the second was told it already existed.
  */
-export async function openSession(orderId: string): Promise<SessionOutcome> {
+export function openSession(orderId: string): Promise<SessionOutcome> {
+  const pending = sessionPending.get(orderId);
+  if (pending) return pending;
+  const value = requestSession(orderId).finally(() => {
+    if (sessionPending.get(orderId) === value) sessionPending.delete(orderId);
+  });
+  sessionPending.set(orderId, value);
+  return value;
+}
+
+async function requestSession(orderId: string): Promise<SessionOutcome> {
   const mode = gatewayMode();
   if (!mode) return { kind: "error", message: "Online payment isn't set up here." };
   const res = await fetch("/api/payments/session", {
