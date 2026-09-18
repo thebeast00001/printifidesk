@@ -276,7 +276,7 @@ There is no demo loop. An order moves because a person at the operator moved it.
 ```
 student                          database                        operator
 ──────────────────────────────────────────────────────────────────────────
-Send to operator ─insert─▶ orders (status: placed)
+Place your order ─insert─▶ orders (status: placed)
                              ├─ trigger assigns token  A01, A02…
                              └─ trigger writes an order_events row
                                        │

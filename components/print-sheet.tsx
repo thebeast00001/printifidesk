@@ -751,7 +751,7 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
             </>
           ) : (
             <>
-              Send to operator
+              Place your order
               <ArrowRight size={17} strokeWidth={2.2} />
             </>
           )}
