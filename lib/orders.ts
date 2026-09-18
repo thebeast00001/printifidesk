@@ -116,7 +116,7 @@ export interface OrderRow {
    * placing and movable by the student until it's handed over. Orders from
    * 0046 carry `hostel`/`room` instead; `whereTo()` reads both.
    */
-  deliver_to?: { spot?: string; detail?: string; changed_at?: string; hostel?: string; room?: string } | null;
+  deliver_to?: { spot?: string; detail?: string; changed_at?: string; hostel?: string; room?: string; lat?: number; lng?: number; acc?: number } | null;
   /** The runner carrying it (their account id), while it's out. */
   runner_id?: string | null;
   picked_up_at?: string | null;
@@ -607,8 +607,8 @@ export interface NewOrderInput {
   /** `pickup_at` must be set when scheduled, and null when not — the database
       enforces the pairing. */
   pickupAt: string | null;
-  /** 0046/0047: to a spot on campus instead of the counter. Null for a pickup; can't go with a pickup time. */
-  delivery?: { spot: string; detail: string } | null;
+  /** 0046/0047: to a spot on campus instead of the counter, with a pin on the map if they dropped one (0050). Null for a pickup; can't go with a pickup time. */
+  delivery?: { spot: string; detail: string; pin?: { lat: number; lng: number; acc: number } | null } | null;
   items: {
     documentId: string | null;
     name: string;
@@ -658,7 +658,9 @@ export async function createOrder(input: NewOrderInput): Promise<OrderRow> {
     p_operator: input.operatorId,
     p_items: items,
     p_pickup_at: input.pickupAt,
-    ...(input.delivery ? { p_delivery: { spot: input.delivery.spot.trim(), detail: input.delivery.detail.trim() || null } } : {}),
+    ...(input.delivery
+      ? { p_delivery: { spot: input.delivery.spot.trim(), detail: input.delivery.detail.trim() || null, pin: input.delivery.pin ?? null } }
+      : {}),
   });
 
   if (error) throw new Error(friendly(error.message));

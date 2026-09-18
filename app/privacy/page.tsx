@@ -123,6 +123,15 @@ export default function PrivacyPage() {
         runner&apos;s word is recorded on the order. The cover sheet on a delivery carries the spot as it
         stood when it was printed, so the runner can read the pile.
       </p>
+      <p>
+        <b>A pin on the map</b> is optional. If you tap <i>Pin my location</i>, your browser asks you once
+        for your location, and the point it gives — with how accurate the phone said it was — goes on that
+        order only, so the runner can open a route to it and see how far it is. It is never watched live,
+        never kept on your profile, and is deleted from the order the moment the job ends. The runner&apos;s
+        own location, if they use it for distances, stays on their phone and is never sent to Printifi.
+        The map tiles come from OpenStreetMap, which sees the map area your browser asks for and nothing
+        about you.
+      </p>
 
       <H2>Payments</H2>
       <p>
@@ -140,7 +149,8 @@ export default function PrivacyPage() {
       <p>
         <b>Clerk</b> for sign-in. <b>Supabase</b> for the database and file storage. <b>Vercel</b> for
         hosting. <b>Google</b> for student sign-in. <b>Cashfree Payments</b> only when you pay through
-        Printifi. A document converter Printifi hosts itself, for Word, PowerPoint and Excel files. Your
+        Printifi. <b>OpenStreetMap</b> for the map, only if you open it to drop a pin. A document converter
+        Printifi hosts itself, for Word, PowerPoint and Excel files. Your
         browser&apos;s vendor (Google, Apple, Mozilla) for delivering push notifications. <b>WhatsApp</b>
         only if you turn WhatsApp updates on, and only for the messages you asked for. Each of these
         processes data on Printifi&apos;s behalf to provide the service, and for nothing else.

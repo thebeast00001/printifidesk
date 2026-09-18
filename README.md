@@ -761,6 +761,56 @@ reshapes *where*: a student isn't a fixed point.
   enum would refuse; `createOrder` sends `p_delivery` only when there is
   one, so the three-argument `place_order` still matches.
 
+### The runner's hours, and a pin on the map (`0050`)
+
+Two things a delivery still couldn't say: *when* it comes, when there's
+one runner who isn't on all day; and *where*, more precisely than words,
+on a campus where "near the canteen" is a hundred metres wide.
+
+- **The runner says when they're on.** `runners.on_from / on_until`, set
+  by the runner alone with `set_runner_window(from, until)` from the top
+  of their Deliveries page (two time inputs; *Done for today* clears it).
+  Held to sense: until after from, until after now, at most sixteen hours
+  long, and no further out than a day — a window is for today, not a
+  roster. Setting one tells every student with a printed delivery waiting
+  on a shelf: *"Printifi's runner is on today 12:00 pm–3:00 pm — order A02
+  comes to Ganga hostel, 213 then."* `delivery_window()` (anon-callable)
+  is the union of the active runners' windows still open; the delivery
+  sheet's headline reads it — *Runner's on today 12:00 pm–3:00 pm* — and
+  falls back to the round (0047), then to *when the runner is next on*.
+  The "printed" and "brought back" pushes say the same. No slot booking
+  on the student's side: with one runner, the window is the honest
+  answer, and a "not before" time is deliberately left for later.
+- **A pin where the student will be.** The spot fields gain *Pin my
+  location on the map*: a Leaflet map on OpenStreetMap tiles (no account,
+  no key — `leaflet` and `public/leaflet.css`, a copy of its stylesheet
+  attached to the page the first time a map opens, since most orders
+  never open one). The phone's location lands the pin with a circle the
+  size of its own doubt, shown in words (*within about 14 m*; indoors
+  it's rough and says so); the student drags it, or taps the map, if it's
+  off; *Deliver here* hands it back as `{lat, lng, acc}`. The pin rides
+  in `deliver_to` beside the spot and detail — `clean_pin()` rounds it to
+  six places and drops anything the phone was more than 5 km unsure of —
+  through `place_order` (`p_delivery.pin`) and `set_delivery_spot(order,
+  spot, detail, pin)`; either words or a pin is enough. The runner's card
+  shows **340 m away (±12 m)** once they've tapped *Show distances from
+  where you are* (their own location, on a tap, never in the background)
+  and a **Navigate** link that opens Google Maps walking directions —
+  a link, nothing loaded. The runner's "moved" push says *(pinned)*.
+- **Wiped when the job ends.** `orders_scrub_pin` (a BEFORE UPDATE
+  trigger on status) strips `lat/lng/acc` the moment an order is
+  collected, cancelled, failed or unclaimed: the words stay for the
+  receipt, the coordinates don't. A pin is never remembered on the
+  device — the spot is, the pin isn't — and the privacy page says all of
+  this. `proxy.ts` lets `img-src` fetch tiles from
+  `tile.openstreetmap.org` and nothing else new; `next.config.ts` opens
+  `geolocation=(self)` in the Permissions-Policy (it was off).
+- **Where a phone won't say** — location blocked, or no fix — the map
+  says so in words and a tap places the pin by hand (`acc` 0, shown as
+  *set by hand*). `check:features` holds `distanceLabel` and
+  `navigateUrl` to their contracts; the SQL harness runs the window and
+  the pin end to end as the runner, the student and the desk.
+
 ### Every job comes out labelled (`0044`)
 
 The desks' other objection: fifty printed piles look alike, and the
@@ -1445,6 +1495,7 @@ components/
   print-sheet.tsx       upload step → options step → place order
   delivery-picker.tsx   to the desk, or brought to you — the spot for the round, a detail, a phone
   spot-fields.tsx, spot-sheet.tsx   the spot and detail, on the sheet and moved from the capsule
+  spot-map.tsx          the pin: a Leaflet map on OpenStreetMap tiles, opened only on a tap
   upload-step.tsx       dropzone, per-file progress
   pay-sheet.tsx         UPI, cash, or Printifi's hosted checkout
   feed.tsx              your stored documents
@@ -1457,7 +1508,7 @@ hooks/
   use-uploader.ts       validate → analyse → upload (→ convert) → record
 lib/
   orders.ts             order reads/writes and the status machine
-  delivery.ts           the runner's three actions and the admin's runner/delivery knobs
+  delivery.ts           the runner's three actions and hours, the spot and pin, distances, the admin's knobs
   analysis.ts           page count + per-page colour; which files are taken
   pricing.ts            pure quote engine — same code client and server
   hours.ts              the desk's week, the Open switch, and which one decides
@@ -1465,7 +1516,7 @@ lib/
   seo.ts                the site's name, address and public pages, once
   surface.ts            the two-site routing table
   supabase/client.ts    browser client, tokens bridged from Clerk
-supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0049)
+supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0050)
 scripts/                the checks: pricing parity, features, the SQL harness, RLS
 ```
 
@@ -1527,7 +1578,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0049** in the SQL editor, pasted from the files, **in
+2. **Run 0022 → 0050** in the SQL editor, pasted from the files, **in
    number order** — a later migration can name a column an earlier one
    adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
    student update on an order failed and the X on /orders did nothing).
@@ -1546,14 +1597,19 @@ Things the code can't do on its own, in the order they bite:
    the admin's fee rows errors quietly; until 0034, a too-late cancel is
    refused by the policy alone (silently) rather than by the guard (in words);
    until 0035, online payment can't be turned on for a desk.
-   **Then 0045 → 0049 — 0045 on its own** — delivery
+   **Then 0045 → 0050 — 0045 on its own** — delivery
    (see *Delivery to the door*). 0045 is one line, the `'delivering'`
    status, and must be its own paste: an enum value can't be used in the
    transaction that adds it, and 0046 names it. Until they run, delivery
    isn't offered, *Runners* on `/admin` errors, and a runner-only account
    sees the join screen; until 0047, saving the delivery policy errors and
    the spot can't be moved; until 0048, a spot off the quick-pick list is
-   refused; until 0049, the runner's page moves on its poll, not at once.
+   refused; until 0049, the runner's page moves on its poll, not at once;
+   until 0050, the runner can't set their hours, a pin on the map isn't
+   kept, and moving a spot errors (the app calls the four-argument
+   `set_delivery_spot`). Each paste must keep its first line's two
+   dashes — a copy that drops one fails at once with `syntax error at or
+   near "-"` and runs nothing.
    After them: `/admin` → *Runners* — switch
    delivery on, set the fee (₹10), the spots and the round times, switch
    on the desks the runner collects from, and grant yourself by email.
@@ -1615,7 +1671,7 @@ Things the code can't do on its own, in the order they bite:
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
    project, so: create a new project in **Mumbai (`ap-south-1`)**, run
-   `0001 → 0049` in its SQL editor, create the private `documents` bucket,
+   `0001 → 0050` in its SQL editor, create the private `documents` bucket,
    add both Clerk domains under Authentication → Third-Party Auth, then
    swap `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    and `SUPABASE_SERVICE_ROLE_KEY` on both Vercel projects and in

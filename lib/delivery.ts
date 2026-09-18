@@ -72,18 +72,96 @@ export function roundLabel(round: string | number): string {
   return `${h12}:${String(minutes % 60).padStart(2, "0")} ${h24 < 12 ? "am" : "pm"}`;
 }
 
+/** A pin on the map (0050): where the phone said the student was, and how sure it was, in metres. */
+export interface Pin {
+  lat: number;
+  lng: number;
+  acc: number;
+}
+
 /**
  * Where the student says they'll be, any time until it's handed over.
  * Before the runner sets off it's a quiet edit; once on its way, the
- * runner is pushed the new spot at once (the database does both).
+ * runner is pushed the new spot at once (the database does both). A move
+ * without a pin drops the old pin — a pin from the library is wrong at
+ * the canteen.
  */
-export async function setDeliverySpot(orderId: string, spot: string, detail: string): Promise<void> {
+export async function setDeliverySpot(orderId: string, spot: string, detail: string, pin: Pin | null = null): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) throw new Error("No database connection.");
-  const { error } = await supabase.rpc("set_delivery_spot", { p_order: orderId, p_spot: spot.trim(), p_detail: detail.trim() || null });
+  const { error } = await supabase.rpc("set_delivery_spot", {
+    p_order: orderId,
+    p_spot: spot.trim() || null,
+    p_detail: detail.trim() || null,
+    p_pin: pin ? { lat: pin.lat, lng: pin.lng, acc: pin.acc } : null,
+  });
   if (error) throw new Error(explain(error.message));
   pokeDispatch();
   changed("orders");
+}
+
+/**
+ * Metres between two pins, on a sphere — the runner's "340 m away". Good
+ * to a metre or two over a campus, which is all it's for.
+ */
+export function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6_371_000;
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(h)));
+}
+
+/** "340 m" / "1.2 km". */
+export function distanceLabel(meters: number): string {
+  return meters < 950 ? `${Math.max(0, Math.round(meters / 10) * 10)} m` : `${(meters / 1000).toFixed(1)} km`;
+}
+
+/** Turn-by-turn in the phone's own maps app — a plain link, no key. */
+export function navigateUrl(pin: { lat: number; lng: number }): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}&travelmode=walking`;
+}
+
+/* ---------- the runner's window (0050) ---------- */
+
+export interface DeliveryWindow {
+  from: string;
+  until: string;
+  /** "today 12:00 pm–3:00 pm", as the database words it. */
+  words: string;
+}
+
+/** When a runner has said they're on. Null when nobody has. Readable signed out — the sheet shows it before ordering. */
+export async function deliveryWindow(): Promise<DeliveryWindow | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("delivery_window");
+  if (error || !data?.[0]) return null;
+  const r = data[0] as { on_from: string; on_until: string; words: string };
+  return { from: r.on_from, until: r.on_until, words: r.words };
+}
+
+/** The runner's own window: from–until, or both null to close it. Waiting students are told when it opens. */
+export async function setRunnerWindow(from: Date | null, until: Date | null): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("No database connection.");
+  const { error } = await supabase.rpc("set_runner_window", { p_from: from?.toISOString() ?? null, p_until: until?.toISOString() ?? null });
+  if (error) throw new Error(explain(error.message));
+  pokeDispatch();
+}
+
+/** The caller's own window, from their runner row. */
+export async function myRunnerWindow(): Promise<{ from: string; until: string } | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const session = await ensureSession();
+  if (session.status !== "ready") return null;
+  const { data } = await supabase.from("runners").select("on_from, on_until").eq("user_id", session.userId).maybeSingle();
+  const r = data as { on_from?: string | null; on_until?: string | null } | null;
+  if (!r?.on_from || !r.on_until) return null;
+  if (new Date(r.on_until).getTime() <= Date.now()) return null;
+  return { from: r.on_from, until: r.on_until };
 }
 
 /** One delivery job as the runner sees it: who, where, what's owed. Never the handover secret. */
@@ -101,6 +179,8 @@ export interface RunnerJob {
   detail: string | null;
   /** When the student last set the spot — after `picked_up_at` means they moved while it was on its way. */
   spot_changed_at: string | null;
+  /** The pin, when the student dropped one (0050); wiped when the job ends. */
+  pin: Pin | null;
   pages: number;
   total: number;
   /** What the runner takes in cash at the door; zero when the bill is already paid. */
@@ -139,6 +219,9 @@ export async function runnerOrders(): Promise<RunnerJob[]> {
     spot: ((r.spot ?? r.hostel) as string | null) ?? null,
     detail: ((r.detail ?? r.room) as string | null) ?? null,
     spot_changed_at: (r.spot_changed_at as string | null) ?? null,
+    pin: r.lat !== null && r.lat !== undefined && r.lng !== null && r.lng !== undefined
+      ? { lat: Number(r.lat), lng: Number(r.lng), acc: num(r.acc) }
+      : null,
     pages: num(r.pages),
     total: num(r.total),
     cash_due: num(r.cash_due),

@@ -14,10 +14,12 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   // Never leak the page URL (which can carry an order id) to other origins.
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  // The camera is used for scanning; nothing here needs the rest.
+  // The camera is used for scanning; location (0050) for a student's pin
+  // and a runner's distances, on a tap, never in the background. Nothing
+  // here needs the rest.
   {
     key: "Permissions-Policy",
-    value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
+    value: "camera=(self), microphone=(), geolocation=(self), payment=(), usb=(), interest-cohort=()",
   },
   // Once a browser has seen this over HTTPS it refuses plain HTTP for a year.
   // Only sent in production: on localhost it would pin the dev port to TLS.

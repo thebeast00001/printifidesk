@@ -9,6 +9,13 @@ import { deliverySpot, type OrderRow } from "@/lib/orders";
 import { SpotFields, roundPhrase, spotProblem, type SpotDraft } from "./spot-fields";
 import { rememberSpot } from "./delivery-picker";
 
+/** The order's spot, detail and pin (0050), as a draft to edit. */
+function draftOf(order: OrderRow): SpotDraft {
+  const to = order.deliver_to ?? {};
+  const pin = typeof to.lat === "number" && typeof to.lng === "number" ? { lat: to.lat, lng: to.lng, acc: Number(to.acc ?? 0) } : null;
+  return { ...deliverySpot(order), pin };
+}
+
 /**
  * "Where will you be?" — the student moves a live delivery (0047). Before
  * the runner sets off it's a quiet edit; once it's on its way the runner is
@@ -26,28 +33,29 @@ export function SpotSheet({
   onChanged: () => void;
 }) {
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
-  const [draft, setDraft] = useState<SpotDraft>(() => deliverySpot(order));
+  const [draft, setDraft] = useState<SpotDraft>(() => draftOf(order));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    setDraft(deliverySpot(order));
+    setDraft(draftOf(order));
     setError(null);
     void platformSettings().then(setSettings);
   }, [open, order]);
 
   const onItsWay = order.status === "delivering";
-  // Opening this sheet is saying where you are: something has to be said.
-  const problem = spotProblem(draft) ?? (!draft.spot.trim() && !draft.detail.trim() ? "Say where you'll be — a place, or a landmark." : null);
-  const unchanged = JSON.stringify(draft) === JSON.stringify(deliverySpot(order));
+  // Opening this sheet is saying where you are: something has to be said —
+  // words, or a pin.
+  const problem = spotProblem(draft) ?? (!draft.spot.trim() && !draft.detail.trim() && !draft.pin ? "Say where you'll be — a place, a landmark, or a pin." : null);
+  const unchanged = JSON.stringify(draft) === JSON.stringify(draftOf(order));
 
   async function save() {
     if (busy || problem || unchanged) return;
     setBusy(true);
     setError(null);
     try {
-      await setDeliverySpot(order.id, draft.spot, draft.detail);
+      await setDeliverySpot(order.id, draft.spot, draft.detail, draft.pin ?? null);
       rememberSpot(draft);
       onChanged();
       onOpenChange(false);

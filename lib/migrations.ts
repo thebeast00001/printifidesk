@@ -63,6 +63,7 @@ export const MIGRATION_PROBES: MigrationProbe[] = [
   // 0048 changes only what place_order accepts (any spot, or none) and can't be told apart from here.
   // 0049 adds notifications to the realtime publication, which can't be asked for from here either; without it
   // the runner's page moves on its fifteen-second poll instead of at once.
+  { id: "0050", without: "the runner can't set their hours; a pin on the map isn't kept; moving a spot errors", check: fn("delivery_window") },
 ];
 
 export interface MigrationReport {

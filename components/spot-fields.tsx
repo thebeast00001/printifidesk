@@ -1,14 +1,18 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "motion/react";
-import { nextRound } from "@/lib/delivery";
+import { MapPin, X } from "lucide-react";
+import { nextRound, type Pin } from "@/lib/delivery";
 import type { PlatformSettings } from "@/lib/platform";
 import { cn, spring } from "@/lib/utils";
+import { SpotMap } from "./spot-map";
 
-/** Where a delivery goes: a spot on campus, and a line of detail. */
+/** Where a delivery goes: a spot on campus, a line of detail, and a pin on the map if they dropped one (0050). */
 export interface SpotDraft {
   spot: string;
   detail: string;
+  pin?: Pin | null;
 }
 
 /**
@@ -33,8 +37,46 @@ export function SpotFields({
   autoFocus?: boolean;
 }) {
   const picks = settings.delivery_areas;
+  const [mapOpen, setMapOpen] = useState(false);
+  const pin = value.pin ?? null;
   return (
     <div className="flex flex-col gap-3">
+      {/* The pin: one tap, the phone answers, the runner gets a route. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setMapOpen(true)}
+          className={cn(
+            "flex h-10 items-center gap-2 rounded-xl border px-3.5 text-[12.5px] font-semibold transition-colors",
+            pin ? "border-ink bg-ink text-paper" : "border-line bg-surface text-ink",
+          )}
+        >
+          <MapPin size={14} strokeWidth={2.2} />
+          {pin ? "Pinned on the map" : "Pin my location on the map"}
+        </button>
+        {pin && (
+          <>
+            <span className="text-[11.5px] text-muted">{pin.acc > 0 ? `±${pin.acc} m` : "set by hand"}</span>
+            <button
+              type="button"
+              onClick={() => onChange({ ...value, pin: null })}
+              aria-label="Remove the pin"
+              className="grid size-8 place-items-center rounded-lg text-muted hover:text-ink"
+            >
+              <X size={14} strokeWidth={2.4} />
+            </button>
+          </>
+        )}
+      </div>
+      <SpotMap
+        open={mapOpen}
+        onOpenChange={setMapOpen}
+        initial={pin}
+        onPick={(p) => {
+          onChange({ ...value, pin: p });
+          setMapOpen(false);
+        }}
+      />
       <div>
         <p className="m-0 mb-2 text-[11.5px] font-semibold text-ink-soft">
           Spot <span className="font-normal text-faint">— a hostel, a block, the library, the canteen</span>

@@ -17,7 +17,7 @@ import { jwtMsRemaining } from "../lib/jwt";
 import { clockLabel } from "../lib/utils";
 import { deskPrefix, parseCoverScan, parseScan } from "../components/operator/scan-sheet";
 import { deliveryProblem } from "../components/delivery-picker";
-import { nextRound, roundLabel } from "../lib/delivery";
+import { distanceLabel, distanceMeters, navigateUrl, nextRound, roundLabel } from "../lib/delivery";
 import { whereTo } from "../lib/orders";
 import QRCode from "qrcode";
 import jsQR from "jsqr";
@@ -693,6 +693,15 @@ console.log("\n— delivery to the door (0046) —");
   check("where a delivery goes, either shape", whereTo({ deliver_to: { hostel: "Kaveri", room: "12" } }), "Kaveri, 12");
   check("a spot alone", whereTo({ deliver_to: { spot: "Canteen" } }), "Canteen");
   check("nothing set", whereTo({ deliver_to: null }), "");
+
+  // The pin (0050): a route link with no key, and a distance the runner reads.
+  const desk = { lat: 28.5450, lng: 77.2730 };
+  check("the same point is 0 m", distanceMeters(desk, desk), 0);
+  // 0.001° of latitude is about 111 m anywhere on Earth.
+  check("a thousandth of a degree north is ~111 m", Math.abs(distanceMeters(desk, { lat: 28.5460, lng: 77.2730 }) - 111) <= 2, true);
+  check("metres read as tens of metres", distanceLabel(342), "340 m");
+  check("past a kilometre, a decimal", distanceLabel(1240), "1.2 km");
+  check("the route opens the phone's maps, walking", navigateUrl({ lat: 28.5451, lng: 77.2731 }), "https://www.google.com/maps/dir/?api=1&destination=28.5451,77.2731&travelmode=walking");
 }
 
 console.log("\n— the payout day (0040) —");

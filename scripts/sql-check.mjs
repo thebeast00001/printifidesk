@@ -3111,7 +3111,7 @@ await scenario("a runner is granted by the admin, picks up, delivers against the
   const { rows: back } = await db.query(`select status, runner_id, returned_at, delivery_returns, ready_at > now() - interval '1 minute' as fresh from public.orders where id = $1;`, [A]);
   if (back[0].status !== "ready" || back[0].runner_id !== null || !back[0].returned_at || back[0].delivery_returns !== 1 || !back[0].fresh) throw new Error(`after return: ${JSON.stringify(back[0])}`);
   const { rows: backMsg } = await db.query(`select body from public.notifications where order_id = $1 and channel = 'push' and audience = 'student' order by id desc limit 1;`, [A]);
-  if (!/couldn't deliver order/.test(backMsg[0]?.body ?? "") || !/nobody answered the door/.test(backMsg[0].body) || !/next round/.test(backMsg[0].body)) throw new Error(`returned message: ${backMsg[0]?.body}`);
+  if (!/couldn't deliver order/.test(backMsg[0]?.body ?? "") || !/nobody answered the door/.test(backMsg[0].body) || !/runner is next on/.test(backMsg[0].body)) throw new Error(`returned message: ${backMsg[0]?.body}`);
   const { rows: noSpam } = await db.query(`select count(*)::int as n from public.notifications where order_id = $1 and audience = 'desk' and body like 'Delivery ready%' and user_id = $2;`, [A, RUNNER]);
   if (noSpam[0].n !== 1) throw new Error("the returning runner was told about their own return");
   await actingAs(null);
@@ -3369,6 +3369,108 @@ await scenario("a delivery goes to a spot the student can move until it's handed
   return "rounds tidy to sorted HH:MM, a bad one refused; next_delivery_round rolls 12:30→1:00 pm, 1:30→6:00 pm, 7:30 pm→9:05 am; the spot moves quietly before pickup and pushes the runner after it, to any spot in the student's words; nowhere, another student, a pickup order and a delivered order are refused; 0046's {hostel, room} still reads";
 });
 
+/* ---------- 0050: the runner's window, and a pin on the map ---------- */
+
+await scenario("the runner says when they're on; a pin rides with the spot, reaches the runner, and is wiped when the job ends", async () => {
+  await actingAs(null);
+  await db.query(`update public.operators set gateway_status = 'off', accepts_cash = true, delivery = true where id = $1;`, [OPERATOR]);
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`update public.profiles set dues = 0, cash_collected = 0, cash_strikes = 0, cash_blocked_until = null, phone = '9876543210' where id = $1;`, [DELIV]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+  await actingAs("admin_test");
+  await db.query(`select public.set_delivery_policy(true, 10, '{"Ganga hostel"}', null, '{}');`);
+  await db.query(`select public.admin_add_runner('one@printifi.test');`);
+
+  // Nobody has said anything: no window, and the "printed" message says so.
+  const { rows: none } = await db.query(`select * from public.delivery_window();`);
+  if (none.length !== 0) throw new Error(`a window with nobody on: ${JSON.stringify(none)}`);
+
+  // A pin is cleaned, not trusted: nonsense is dropped, numbers are rounded, a wild accuracy is dropped.
+  const { rows: pins } = await db.query(`select public.clean_pin('{"lat":"28.5450001","lng":77.2730009,"acc":"12.6"}') as ok,
+                                                public.clean_pin('{"lat":"north","lng":1}') as junk,
+                                                public.clean_pin('{"lat":91,"lng":0}') as off,
+                                                public.clean_pin('{"lat":28.5,"lng":77.2,"acc":99999}') as wild,
+                                                public.clean_pin('[1,2]') as shape;`);
+  if (JSON.stringify(pins[0].ok) !== JSON.stringify({ acc: 13, lat: 28.545, lng: 77.273001 }) || pins[0].junk !== null || pins[0].off !== null || pins[0].shape !== null) throw new Error(`clean_pin: ${JSON.stringify(pins[0])}`);
+  if (pins[0].wild === null || "acc" in pins[0].wild) throw new Error(`wild accuracy kept: ${JSON.stringify(pins[0].wild)}`);
+
+  // Placed with a pin.
+  await actingAs(DELIV);
+  const P = (await db.query(`select public.place_order($1, $2::jsonb, null, $3::jsonb) as id;`, [
+    OPERATOR,
+    JSON.stringify([{ name: "pin.pdf", pages: 2, colour_pages: 0, config: { copies: 1 } }]),
+    JSON.stringify({ spot: "Main ground", detail: "", pin: { lat: 28.5451, lng: 77.2731, acc: 9 } }),
+  ])).rows[0].id;
+  const placed = (await db.query(`select deliver_to from public.orders where id = $1;`, [P])).rows[0].deliver_to;
+  if (placed.spot !== "Main ground" || placed.lat !== 28.5451 || placed.lng !== 77.2731 || placed.acc !== 9 || !placed.changed_at) throw new Error(`placed with a pin: ${JSON.stringify(placed)}`);
+  // A move without a pin drops the old one; a pin alone is a move.
+  await db.query(`select public.set_delivery_spot($1, 'Canteen', null, null);`, [P]);
+  const moved = (await db.query(`select deliver_to from public.orders where id = $1;`, [P])).rows[0].deliver_to;
+  if (moved.spot !== "Canteen" || "lat" in moved) throw new Error(`a move kept a stale pin: ${JSON.stringify(moved)}`);
+  await db.query(`select public.set_delivery_spot($1, null, null, '{"lat":28.5460,"lng":77.2740,"acc":20}');`, [P]);
+  const pinned = (await db.query(`select deliver_to, public.delivery_place(o) as place from public.orders o where id = $1;`, [P])).rows[0];
+  if (pinned.place !== null || pinned.deliver_to.lat !== 28.546 || pinned.deliver_to.acc !== 20) throw new Error(`a pin alone: ${JSON.stringify(pinned)}`);
+
+  // The runner opens a window: students with printed deliveries hear it; the sheet sees it, signed out too.
+  await db.query(`select public.choose_cash($1);`, [P]);
+  await actingAs("op_test");
+  for (const to of ["printing", "ready"]) await db.query(`update public.orders set status = $2, note = $3 where id = $1;`, [P, to, to]);
+  await actingAs(RUNNER);
+  let backwards = "";
+  try { await db.query(`select public.set_runner_window(now() + interval '3 hours', now() + interval '1 hour');`); } catch (error) { backwards = String(error?.message ?? error); }
+  if (!/ends before it starts/.test(backwards)) throw new Error(`a backwards window: ${backwards || "allowed"}`);
+  let tooLong = "";
+  try { await db.query(`select public.set_runner_window(now(), now() + interval '20 hours');`); } catch (error) { tooLong = String(error?.message ?? error); }
+  if (!/sixteen hours/.test(tooLong)) throw new Error(`a 20-hour window: ${tooLong || "allowed"}`);
+  await db.query(`select public.set_runner_window(now() - interval '10 minutes', now() + interval '3 hours');`);
+  const { rows: win } = await db.query(`select on_from, on_until, words from public.delivery_window();`);
+  if (win.length !== 1 || !/^today \d{1,2}:\d{2} [ap]m–\d{1,2}:\d{2} [ap]m$/.test(win[0].words)) throw new Error(`window: ${JSON.stringify(win)}`);
+  const anonWin = await (async () => { await asRole("anon", null); try { return (await db.query(`select words from public.delivery_window();`)).rows.length; } finally { await asRoot(); } })();
+  if (anonWin !== 1) throw new Error("the sheet can't read the window signed out");
+  await actingAs(RUNNER);
+  const { rows: told } = await db.query(`select body from public.notifications where order_id = $1 and channel = 'push' and audience = 'student' order by id desc limit 1;`, [P]);
+  if (!/runner is on today/.test(told[0]?.body ?? "") || !/comes to you then/.test(told[0].body) || !/in cash ready/.test(told[0].body)) throw new Error(`window message: ${told[0]?.body}`);
+  // The runner's list carries the pin; another printed delivery's message names the window.
+  const job = (await db.query(`select lat, lng, acc from public.runner_orders() where id = $1;`, [P])).rows[0];
+  if (!job) {
+    const dbg = (await db.query(`select o.status, o.delivery, public.is_runner() as runner, public.clerk_id() as me, (select status from public.runners where user_id = $2) as rstatus from public.orders o where id = $1;`, [P, RUNNER])).rows[0];
+    throw new Error(`runner's list misses the job: ${JSON.stringify(dbg)}`);
+  }
+  if (Number(job.lat) !== 28.546 || Number(job.lng) !== 77.274 || Number(job.acc) !== 20) throw new Error(`runner's pin: ${JSON.stringify(job)}`);
+  await actingAs("op_test");
+  await db.query(`update public.orders set status = 'printing', note = 'printing' where id = $1;`, [P]);
+  await db.query(`update public.orders set status = 'ready', note = 'ready' where id = $1;`, [P]);
+  const { rows: ready } = await db.query(`select body from public.notifications where order_id = $1 and channel = 'push' and audience = 'student' order by id desc limit 1;`, [P]);
+  if (!/comes to you today \d{1,2}:\d{2} [ap]m–/.test(ready[0]?.body ?? "")) throw new Error(`ready message with a window: ${ready[0]?.body}`);
+  // Handed over: the pin is gone from the row.
+  await actingAs(RUNNER);
+  await db.query(`select public.runner_pickup($1);`, [P]);
+  await db.query(`select public.runner_deliver($1, null);`, [P]);
+  const done = (await db.query(`select deliver_to from public.orders where id = $1;`, [P])).rows[0].deliver_to;
+  if ("lat" in done || "lng" in done || "acc" in done) throw new Error(`a pin outlived the job: ${JSON.stringify(done)}`);
+  // Closing the window.
+  await db.query(`select public.set_runner_window(null, null);`);
+  const { rows: closed } = await db.query(`select * from public.delivery_window();`);
+  if (closed.length !== 0) throw new Error("the window didn't close");
+  let notRunner = "";
+  await actingAs("op_test");
+  try { await db.query(`select public.set_runner_window(now(), now() + interval '1 hour');`); } catch (error) { notRunner = String(error?.message ?? error); }
+  if (!/not a runner/.test(notRunner)) throw new Error(`the desk set a window: ${notRunner || "allowed"}`);
+
+  await actingAs(null);
+  await db.query(`delete from public.desk_credits where order_id = $1;`, [P]);
+  await db.query(`delete from public.orders where id = $1;`, [P]);
+  await db.query(`delete from public.runners where user_id = $1;`, [RUNNER]);
+  await db.query(`update public.operators set delivery = false where id = $1;`, [OPERATOR]);
+  await db.query(`select set_config('printify.gateway', '1', false);`);
+  await db.query(`update public.profiles set dues = 0, cash_strikes = 0, cash_blocked_until = null, cash_collected = 0 where id = $1;`, [DELIV]);
+  await db.query(`select set_config('printify.gateway', '', false);`);
+  await actingAs("admin_test");
+  await db.query(`select public.set_delivery_policy(false, 10, '{}', null, '{}');`);
+  await actingAs(null);
+  return "no window until a runner says; clean_pin drops junk and rounds; a pin is placed, dropped by a move without one, set alone; a backwards or 20-hour window refused; a window is readable signed out, tells waiting students, names itself in the printed message; the pin is wiped on handover; only a runner sets a window";
+});
+
 const GRANTS = {
   // Policies evaluate these as the asking role.
   "clerk_id()": ["anon", "authenticated"],
@@ -3453,8 +3555,10 @@ const GRANTS = {
   "set_delivery_policy(boolean,numeric,text[],text,text[])": ["authenticated"],
   "set_desk_delivery(uuid,boolean)": ["authenticated"],
   "admin_delivery_report()": ["authenticated"],
-  // 0047: the spot moves with the student.
-  "set_delivery_spot(uuid,text,text)": ["authenticated"],
+  // 0047: the spot moves with the student; 0050: with a pin, and the runner's window.
+  "set_delivery_spot(uuid,text,text,jsonb)": ["authenticated"],
+  "set_runner_window(timestamp with time zone,timestamp with time zone)": ["authenticated"],
+  "delivery_window()": ["anon", "authenticated"],
   // The server's.
   "sweep_all_orders()": [],
   "claim_notifications(integer)": [],
@@ -3481,6 +3585,8 @@ const GRANTS = {
   "delivery_detail(orders)": [],
   "delivery_place(orders)": [],
   "next_delivery_round(timestamp with time zone)": [],
+  "window_words(timestamp with time zone,timestamp with time zone,text)": [],
+  "clean_pin(jsonb)": [],
   "notify_student(text,uuid,text)": [],
   "operator_open_at(operators,timestamp with time zone)": [],
   "operator_last_boundary(operators,timestamp with time zone)": [],

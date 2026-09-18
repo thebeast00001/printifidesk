@@ -107,7 +107,9 @@ export default clerkMiddleware(
         // next/font serves every face from this origin.
         "font-src": ["'self'"],
         // Thumbnails are object URLs from pdf.js; the UPI QR is a data URL.
-        "img-src": ["'self'", "blob:", "data:", "https://img.clerk.com"],
+        // The map's tiles (0050) come from OpenStreetMap, only when a
+        // student opens it to drop a pin.
+        "img-src": ["'self'", "blob:", "data:", "https://img.clerk.com", "https://tile.openstreetmap.org"],
         // pdf.js runs as a module worker from /pdf.worker.min.mjs.
         "worker-src": ["'self'", "blob:"],
         "style-src": ["'self'", "'unsafe-inline'"],

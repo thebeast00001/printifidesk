@@ -9,9 +9,12 @@ import {
   Bike,
   Camera,
   Check,
+  Clock,
+  Crosshair,
   Loader2,
   LogOut,
   MapPin,
+  Navigation,
   Package,
   PackageCheck,
   Phone,
@@ -22,7 +25,18 @@ import {
   X,
 } from "lucide-react";
 import { useChanged } from "@/lib/changed";
-import { runnerDeliver, runnerOrders, runnerPickup, runnerReturn, type RunnerJob } from "@/lib/delivery";
+import {
+  distanceLabel,
+  distanceMeters,
+  myRunnerWindow,
+  navigateUrl,
+  runnerDeliver,
+  runnerOrders,
+  runnerPickup,
+  runnerReturn,
+  setRunnerWindow,
+  type RunnerJob,
+} from "@/lib/delivery";
 import { subscribeTable } from "@/lib/realtime";
 import { money } from "@/lib/pricing";
 import { cn, easeIos, spring } from "@/lib/utils";
@@ -67,6 +81,22 @@ export function Deliveries({ standalone = false }: { standalone?: boolean }) {
   const [scan, setScan] = useState<{ mode: "pickup" } | { mode: "deliver"; job: RunnerJob } | null>(null);
   const [returning, setReturning] = useState<RunnerJob | null>(null);
   const version = useChanged("orders");
+  // 0050: where the runner stands, for "340 m away" on cards with a pin.
+  // Asked for once, on a tap; never sent anywhere.
+  const [here, setHere] = useState<{ lat: number; lng: number } | null>(null);
+  const [locating, setLocating] = useState(false);
+  function locate() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setHere({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setLocating(false);
+      },
+      () => setLocating(false),
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 30_000 },
+    );
+  }
 
   const load = useCallback(async () => {
     try {
@@ -181,8 +211,28 @@ export function Deliveries({ standalone = false }: { standalone?: boolean }) {
 
       {standalone && <InstallNudge why="Full screen on a round, and a delivery filed on a shelf buzzes the phone in a pocket." />}
 
+      {/* When you're on (0050): students see it before they order, and the
+          ones already waiting are told the moment you set it. */}
+      <RunnerWindow />
+
       {error && (
         <p className="m-0 rounded-[14px] bg-clay px-4 py-3 text-[12.5px] font-semibold text-clay-ink">{error}</p>
+      )}
+
+      {(jobs ?? []).some((j) => j.pin && j.status !== "collected") && !here && (
+        <button
+          onClick={locate}
+          disabled={locating}
+          className="flex w-full items-center gap-3 rounded-[16px] border border-line bg-surface px-4 py-3 text-left shadow-card transition-colors hover:bg-surface-sunk disabled:opacity-60"
+        >
+          <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-surface-sunk">
+            {locating ? <Loader2 size={16} className="animate-spin" /> : <Crosshair size={16} strokeWidth={2.2} />}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13.5px] font-semibold tracking-[-0.01em]">Show distances from where you are</span>
+            <span className="mt-0.5 block text-[12px] text-muted">Some of these have a pin. Your location stays on this phone.</span>
+          </span>
+        </button>
       )}
 
       {jobs === null ? (
@@ -200,7 +250,7 @@ export function Deliveries({ standalone = false }: { standalone?: boolean }) {
             hint={cashInHand > 0 ? `${money(cashInHand)} cash to hand in to Printifi` : undefined}
           >
             {mine.map((job) => (
-              <JobCard key={job.id} job={job} busy={busy === job.id}>
+              <JobCard key={job.id} job={job} busy={busy === job.id} here={here}>
                 {/* The one thing to do at the spot, big: scan the phone they
                     hold up. The two ways round it sit under it, smaller. */}
                 <button
@@ -247,7 +297,7 @@ export function Deliveries({ standalone = false }: { standalone?: boolean }) {
                   {list[0]?.campus ? ` · ${list[0].campus}` : ""}
                 </p>
                 {list.map((job) => (
-                  <JobCard key={job.id} job={job} busy={busy === job.id}>
+                  <JobCard key={job.id} job={job} busy={busy === job.id} here={here}>
                     <button
                       disabled={busy === job.id}
                       onClick={() => void act(job.id, () => runnerPickup(job.id))}
@@ -265,7 +315,7 @@ export function Deliveries({ standalone = false }: { standalone?: boolean }) {
           {others.length > 0 && (
             <Section title="With another runner" count={others.length} empty="">
               {others.map((job) => (
-                <JobCard key={job.id} job={job} busy={false} quiet />
+                <JobCard key={job.id} job={job} busy={false} here={here} quiet />
               ))}
             </Section>
           )}
@@ -273,7 +323,7 @@ export function Deliveries({ standalone = false }: { standalone?: boolean }) {
           {done.length > 0 && (
             <Section title="Delivered today" count={done.length} empty="">
               {done.map((job) => (
-                <JobCard key={job.id} job={job} busy={false} quiet />
+                <JobCard key={job.id} job={job} busy={false} here={here} quiet />
               ))}
             </Section>
           )}
@@ -358,10 +408,24 @@ function Section({
   );
 }
 
-/** One job: the token big, the person, the spot, the phone, the cash. */
-function JobCard({ job, busy, quiet, children }: { job: RunnerJob; busy: boolean; quiet?: boolean; children?: React.ReactNode }) {
+/** One job: the token big, the person, the spot, the phone, the cash — and a route when there's a pin. */
+function JobCard({
+  job,
+  busy,
+  quiet,
+  here,
+  children,
+}: {
+  job: RunnerJob;
+  busy: boolean;
+  quiet?: boolean;
+  /** Where the runner stands, if they've said; for the distance. */
+  here?: { lat: number; lng: number } | null;
+  children?: React.ReactNode;
+}) {
   const where = [job.spot, job.detail].filter(Boolean).join(" · ");
   const firstName = (job.student ?? "").trim().split(/\s+/)[0] || "Student";
+  const away = job.pin && here ? distanceLabel(distanceMeters(here, job.pin)) : null;
   // The student moved after this left the shelf: the spot on the card is
   // newer than the pickup, and says so.
   const moved =
@@ -384,19 +448,43 @@ function JobCard({ job, busy, quiet, children }: { job: RunnerJob; busy: boolean
             )}
           </p>
           <p className="m-0 mt-0.5 text-[12px] text-muted">
+            {job.pin && job.status !== "collected" ? (
+              <span className="font-semibold text-ink">
+                {away ? `${away} away` : "pinned on the map"}
+                {job.pin.acc > 0 ? ` (±${job.pin.acc} m)` : ""}
+                {" · "}
+              </span>
+            ) : null}
             {job.pages} {job.pages === 1 ? "page" : "pages"} · {job.desk}
             {job.shelf_slot && job.status === "ready" ? ` · shelf ${job.shelf_slot}` : ""}
             {job.delivery_returns > 0 && job.status !== "collected" ? ` · brought back ${job.delivery_returns === 1 ? "once" : `${job.delivery_returns} times`}` : ""}
           </p>
         </div>
-        {job.phone && job.status !== "collected" && (
-          <a
-            href={`tel:${job.phone}`}
-            className="grid size-11 shrink-0 place-items-center rounded-xl border border-line bg-surface text-ink"
-            aria-label={`Call ${firstName}`}
-          >
-            <Phone size={16} strokeWidth={2.2} />
-          </a>
+        {job.status !== "collected" && (
+          <div className="flex shrink-0 flex-col gap-1.5">
+            {job.phone && (
+              <a
+                href={`tel:${job.phone}`}
+                className="grid size-11 place-items-center rounded-xl border border-line bg-surface text-ink"
+                aria-label={`Call ${firstName}`}
+              >
+                <Phone size={16} strokeWidth={2.2} />
+              </a>
+            )}
+            {/* A pin (0050): the phone's own maps app, walking, to it. */}
+            {job.pin && (
+              <a
+                href={navigateUrl(job.pin)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="grid size-11 place-items-center rounded-xl bg-ink text-paper"
+                aria-label="Navigate to the pin"
+                title={`Pinned by the student${job.pin.acc > 0 ? ` (±${job.pin.acc} m)` : ""}`}
+              >
+                <Navigation size={16} strokeWidth={2.2} />
+              </a>
+            )}
+          </div>
         )}
       </div>
 
@@ -786,4 +874,137 @@ function Shell({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
+}
+
+/**
+ * "I'm delivering today 12:00–15:00" (0050). The runner's own window,
+ * from–until, today; closed with one tap. Students see it before they
+ * order, and every student with a printed delivery waiting is told the
+ * moment it's set. Two time inputs and a button — nothing to configure.
+ */
+function RunnerWindow() {
+  const [current, setCurrent] = useState<{ from: string; until: string } | null | undefined>(undefined);
+  const [from, setFrom] = useState(() => hhmm(new Date()));
+  const [until, setUntil] = useState(() => hhmm(new Date(Date.now() + 3 * 3600_000)));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    void myRunnerWindow().then(setCurrent);
+  }, []);
+
+  async function save(next: { from: Date; until: Date } | null) {
+    setBusy(true);
+    setError(null);
+    try {
+      await setRunnerWindow(next?.from ?? null, next?.until ?? null);
+      setCurrent(next ? { from: next.from.toISOString(), until: next.until.toISOString() } : null);
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't set that.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Today's date at that time; a window that ends before it starts is
+  // taken as ending tomorrow (an evening into the night).
+  function at(time: string, after?: Date): Date {
+    const [h, m] = time.split(":").map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    if (after && d <= after) d.setDate(d.getDate() + 1);
+    return d;
+  }
+
+  if (current === undefined) return null;
+
+  if (current && !editing) {
+    const f = new Date(current.from), u = new Date(current.until);
+    const t = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-ink bg-surface px-4 py-3 shadow-card">
+        <span className="flex min-w-0 items-center gap-2.5">
+          <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-ink text-paper">
+            <Clock size={16} strokeWidth={2.2} />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[13.5px] font-semibold tracking-[-0.01em]">
+              You&apos;re on {t(f)} – {t(u)}
+            </span>
+            <span className="mt-0.5 block text-[12px] text-muted">Students see this when they order.</span>
+          </span>
+        </span>
+        <span className="flex items-center gap-2">
+          <button onClick={() => setEditing(true)} className="h-9 rounded-full border border-line bg-surface px-3.5 text-[12px] font-semibold text-ink-soft">
+            Change
+          </button>
+          <button
+            disabled={busy}
+            onClick={() => void save(null)}
+            className="h-9 rounded-full border border-line bg-surface px-3.5 text-[12px] font-semibold text-muted disabled:opacity-60"
+          >
+            {busy ? <Loader2 size={12} className="animate-spin" /> : "Done for today"}
+          </button>
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[16px] border border-line bg-surface p-4 shadow-card">
+      <p className="m-0 flex items-center gap-2 text-[13.5px] font-semibold tracking-[-0.01em]">
+        <Clock size={15} strokeWidth={2.2} />
+        When are you delivering today?
+      </p>
+      <p className="m-0 mt-0.5 text-[12px] leading-relaxed text-muted">
+        Students see &ldquo;Runner&apos;s on today 12:00–3:00 pm&rdquo; when they order, and the ones already waiting
+        are told the moment you set it.
+      </p>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const f = at(from);
+          void save({ from: f, until: at(until, f) });
+        }}
+        className="mt-3 flex flex-wrap items-center gap-2"
+      >
+        <input
+          type="time"
+          value={from}
+          onChange={(e) => setFrom(e.target.value)}
+          aria-label="From"
+          className="h-10 rounded-xl border border-line bg-surface-sunk px-3 font-mono text-[14px] outline-none focus:border-ink"
+        />
+        <span className="text-[12.5px] text-muted">to</span>
+        <input
+          type="time"
+          value={until}
+          onChange={(e) => setUntil(e.target.value)}
+          aria-label="Until"
+          className="h-10 rounded-xl border border-line bg-surface-sunk px-3 font-mono text-[14px] outline-none focus:border-ink"
+        />
+        <button
+          type="submit"
+          disabled={busy || !from || !until}
+          className="flex h-10 items-center gap-1.5 rounded-xl bg-ink px-4 text-[13px] font-semibold text-paper disabled:opacity-50"
+        >
+          {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={2.6} />}
+          I&apos;m on
+        </button>
+        {editing && (
+          <button type="button" onClick={() => setEditing(false)} className="h-10 px-2 text-[12.5px] font-semibold text-muted">
+            Cancel
+          </button>
+        )}
+      </form>
+      {error && <p className="m-0 mt-2 text-[12px] text-clay-ink dark:text-clay">{error}</p>}
+    </div>
+  );
+}
+
+/** "13:05" for a time input. */
+function hhmm(d: Date): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }

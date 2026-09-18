@@ -233,9 +233,12 @@ function LiveOrder({
               <span className="block text-[11px] font-semibold tracking-[0.04em] text-shell-faint uppercase">
                 {order.status === "delivering" ? "Coming to" : "Where you'll be"}
               </span>
-              <span className="block truncate text-[13.5px] font-semibold">{whereTo(order) || "Not set — the runner will call you"}</span>
+              <span className="block truncate text-[13.5px] font-semibold">
+                {whereTo(order) || (typeof order.deliver_to?.lat === "number" ? "Pinned on the map" : "Not set — the runner will call you")}
+                {whereTo(order) && typeof order.deliver_to?.lat === "number" ? " · pinned" : ""}
+              </span>
             </span>
-            <span className="shrink-0 text-[12.5px] font-semibold text-shell-faint">{whereTo(order) ? "Change" : "Set"}</span>
+            <span className="shrink-0 text-[12.5px] font-semibold text-shell-faint">{whereTo(order) || typeof order.deliver_to?.lat === "number" ? "Change" : "Set"}</span>
           </button>
           <SpotSheet order={order} open={movingSpot} onOpenChange={setMovingSpot} onChanged={onChanged} />
         </>

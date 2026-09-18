@@ -89,13 +89,15 @@ export default function TermsPage() {
       <H2>Delivery to where you are</H2>
       <p>
         Where Printifi offers it and the desk is one Printifi&apos;s runner collects from, you can have the
-        job brought to you instead of collecting it. Deliveries go out in <b>rounds</b> at the times the app
-        shows; when you order you say where you&apos;ll be — a <b>spot</b> anywhere on campus, in your own words
-        or from Printifi&apos;s quick picks, with a line of detail (a room number, &ldquo;near the steps&rdquo;) if
-        it helps, or nothing at all, in which case the runner calls you — and give a phone number the runner
-        can call. A <b>delivery fee</b> — shown as its own line on the bill, ₹10 unless the app shows otherwise
-        — is added after the desk&apos;s bill. The fee is Printifi&apos;s, not the desk&apos;s. A delivery
-        can&apos;t take a booked pickup time.
+        job brought to you instead of collecting it. Deliveries go out when Printifi&apos;s runner is on —
+        the app shows the runner&apos;s hours for the day when they&apos;ve set them, or the next round
+        otherwise; a job printed outside those hours waits on the desk&apos;s shelf, where you can also
+        collect it. When you order you say where you&apos;ll be — a <b>spot</b> anywhere on campus, in your own
+        words or from Printifi&apos;s quick picks, with a line of detail (a room number, &ldquo;near the
+        steps&rdquo;) if it helps, a <b>pin on the map</b> from your phone if you like, or nothing at all, in
+        which case the runner calls you — and give a phone number the runner can call. A <b>delivery fee</b> —
+        shown as its own line on the bill, ₹10 unless the app shows otherwise — is added after the desk&apos;s
+        bill. The fee is Printifi&apos;s, not the desk&apos;s. A delivery can&apos;t take a booked pickup time.
       </p>
       <p>
         <b>You can move the spot</b> any time until the job is handed over, from your order in the app. Before

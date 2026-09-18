@@ -562,7 +562,7 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
       await createOrder({
         operatorId,
         pickupAt: delivery ? null : pickupAt,
-        delivery: delivery ? { spot: delivery.spot, detail: delivery.detail } : null,
+        delivery: delivery ? { spot: delivery.spot, detail: delivery.detail, pin: delivery.pin ?? null } : null,
         items: files.map((f) => ({
           documentId: f.localOnly ? null : f.id,
           name: f.name,

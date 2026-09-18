@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Bike, Footprints } from "lucide-react";
 import { platformSettings, type PlatformSettings } from "@/lib/platform";
 import { ensureSession, getSupabase } from "@/lib/supabase/client";
+import { deliveryWindow, type DeliveryWindow } from "@/lib/delivery";
 import { money } from "@/lib/pricing";
 import type { Operator } from "@/lib/orders";
 import { cn, easeIos, spring } from "@/lib/utils";
@@ -45,9 +46,12 @@ export function DeliveryPicker({
 }) {
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
   const [phone, setPhone] = useState<string | null>(null);
+  // 0050: when the runner has said they're on, that's the frame; else the round.
+  const [window, setWindow] = useState<DeliveryWindow | null>(null);
 
   useEffect(() => {
     void platformSettings().then(setSettings);
+    void deliveryWindow().then(setWindow);
     void (async () => {
       const session = await ensureSession();
       if (session.status !== "ready") return setPhone("");
@@ -61,7 +65,7 @@ export function DeliveryPicker({
 
   const fee = settings.delivery_fee;
   const cur = operator?.currency ?? "₹";
-  const round = roundPhrase(settings);
+  const when = window ? `Runner's on ${window.words}.` : `It comes on ${roundPhrase(settings)}.`;
 
   function choose(on: boolean) {
     if (!on) return onChange(null);
@@ -72,7 +76,8 @@ export function DeliveryPicker({
     } catch {
       /* no memory of a last spot; fine */
     }
-    onChange({ spot: last.spot ?? "", detail: last.detail ?? "", phone: phone ?? "" });
+    // Never a remembered pin: where they were last time isn't where they are.
+    onChange({ spot: last.spot ?? "", detail: last.detail ?? "", pin: null, phone: phone ?? "" });
   }
 
   return (
@@ -106,7 +111,7 @@ export function DeliveryPicker({
           >
             <div className="mt-3 rounded-[16px] border border-line bg-surface p-3.5">
               <p className="m-0 mb-3 text-[13px] font-semibold tracking-[-0.01em]">
-                It comes on {round}. Where will you be?
+                {when} Where will you be?
               </p>
               <SpotFields settings={settings} value={value} onChange={(next) => onChange({ ...value, ...next })} />
               <label className="mt-3 flex flex-col gap-1">
