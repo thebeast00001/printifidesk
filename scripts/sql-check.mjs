@@ -3054,8 +3054,12 @@ await scenario("a runner is granted by the admin, picks up, delivers against the
   for (const to of ["printing", "ready"]) await db.query(`update public.orders set status = $2, note = $3 where id = $1;`, [A, to, to === "ready" ? "Printed, ready" : "Start printing"]);
   const { rows: readyMsg } = await db.query(`select body from public.notifications where order_id = $1 and channel = 'push' and audience = 'student' order by id desc limit 1;`, [A]);
   if (!/comes to Ganga hostel, 213/.test(readyMsg[0]?.body ?? "") || !/Change the spot/.test(readyMsg[0].body) || !/in cash ready/.test(readyMsg[0].body)) throw new Error(`ready message: ${readyMsg[0]?.body}`);
-  const { rows: runnerMsg } = await db.query(`select user_id, body from public.notifications where order_id = $1 and audience = 'desk' and body like 'Delivery ready%';`, [A]);
-  if (runnerMsg.length !== 1 || runnerMsg[0].user_id !== RUNNER || !/Ganga hostel, 213/.test(runnerMsg[0].body) || !/cash on handover/.test(runnerMsg[0].body)) throw new Error(`runner rows: ${JSON.stringify(runnerMsg)}`);
+  // Every active runner gets the row (0049: the row is what moves their list); only the one with a desk device gets it pushed.
+  const { rows: runnerMsg } = await db.query(`select user_id, body, status, detail from public.notifications where order_id = $1 and audience = 'desk' and body like 'Delivery ready%' order by user_id;`, [A]);
+  if (runnerMsg.length !== 2) throw new Error(`runner rows: ${JSON.stringify(runnerMsg)}`);
+  const pushed = runnerMsg.find((r) => r.user_id === RUNNER), silent = runnerMsg.find((r) => r.user_id === RUNNER_TWO);
+  if (!pushed || pushed.status !== "queued" || !/Ganga hostel, 213/.test(pushed.body) || !/cash on handover/.test(pushed.body)) throw new Error(`pushed runner row: ${JSON.stringify(pushed)}`);
+  if (!silent || silent.status !== "skipped" || !/No desk device/.test(silent.detail ?? "")) throw new Error(`device-less runner row: ${JSON.stringify(silent)}`);
   await actingAs(null);
   await db.query(`select set_config('printify.gateway', '1', false);`);
   await db.query(`update public.orders set ready_at = now() - interval '10 hours' where id = $1;`, [A]);
@@ -3108,7 +3112,7 @@ await scenario("a runner is granted by the admin, picks up, delivers against the
   if (back[0].status !== "ready" || back[0].runner_id !== null || !back[0].returned_at || back[0].delivery_returns !== 1 || !back[0].fresh) throw new Error(`after return: ${JSON.stringify(back[0])}`);
   const { rows: backMsg } = await db.query(`select body from public.notifications where order_id = $1 and channel = 'push' and audience = 'student' order by id desc limit 1;`, [A]);
   if (!/couldn't deliver order/.test(backMsg[0]?.body ?? "") || !/nobody answered the door/.test(backMsg[0].body) || !/next round/.test(backMsg[0].body)) throw new Error(`returned message: ${backMsg[0]?.body}`);
-  const { rows: noSpam } = await db.query(`select count(*)::int as n from public.notifications where order_id = $1 and audience = 'desk' and body like 'Delivery ready%';`, [A]);
+  const { rows: noSpam } = await db.query(`select count(*)::int as n from public.notifications where order_id = $1 and audience = 'desk' and body like 'Delivery ready%' and user_id = $2;`, [A, RUNNER]);
   if (noSpam[0].n !== 1) throw new Error("the returning runner was told about their own return");
   await actingAs(null);
   await db.query(`select set_config('printify.gateway', '1', false);`);

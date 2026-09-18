@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useClerk, useUser } from "@clerk/nextjs";
+import { useAuth, useClerk, useUser } from "@clerk/nextjs";
 import { AnimatePresence, motion } from "motion/react";
 import { Drawer } from "vaul";
 import {
@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useChanged } from "@/lib/changed";
 import { runnerDeliver, runnerOrders, runnerPickup, runnerReturn, type RunnerJob } from "@/lib/delivery";
+import { subscribeTable } from "@/lib/realtime";
 import { money } from "@/lib/pricing";
 import { cn, easeIos, spring } from "@/lib/utils";
 import { decodePixels, deskPrefix, nativeDetector, parseCoverScan, parseScan } from "../operator/scan-sheet";
@@ -40,10 +41,14 @@ import { SupportLine } from "../support-line";
  * phone to call and what to take in cash; every
  * action is one of the three functions in the database — picked up,
  * delivered, couldn't deliver — which check that this account is a runner
- * and that this job is theirs. The list is read again every fifteen
- * seconds while the page is in front, and at once after anything is done:
- * a runner's list is a handful of rows, and a socket wouldn't reach it
- * anyway (a runner isn't the owner or the desk of any of these orders).
+ * and that this job is theirs.
+ *
+ * The list moves the moment something happens (0049): a runner isn't the
+ * owner or the desk of any order, so the orders socket says nothing to
+ * them — but every event they should act on writes them a notification
+ * row (a delivery filed on a shelf, a student who moved), and the page
+ * listens for its own rows. The fifteen-second poll stays as the floor,
+ * for a socket that's down and for what other runners do.
  *
  * `standalone` is the whole site for an account that only delivers: its
  * own header, alerts, install and sign-out. On a desk it sits under the
@@ -53,6 +58,7 @@ const POLL_MS = 15_000;
 
 export function Deliveries({ standalone = false }: { standalone?: boolean }) {
   const { user } = useUser();
+  const { userId } = useAuth();
   const clerk = useClerk();
   const { surface } = useSurface();
   const [jobs, setJobs] = useState<RunnerJob[] | null>(null);
@@ -88,6 +94,20 @@ export function Deliveries({ standalone = false }: { standalone?: boolean }) {
       document.removeEventListener("visibilitychange", tick);
     };
   }, [load]);
+
+  // The instant path: a notification row written for this account — a job
+  // filed on a shelf, a student who moved — is the signal to read the list
+  // again. The row lands in the same transaction as the change it reports.
+  useEffect(() => {
+    if (!userId) return;
+    return subscribeTable({
+      table: "notifications",
+      filter: `user_id=eq.${userId}`,
+      onChange: (change) => {
+        if (change.eventType === "INSERT") void load();
+      },
+    });
+  }, [userId, load]);
 
   const act = useCallback(
     async (id: string, work: () => Promise<void>) => {
@@ -181,31 +201,35 @@ export function Deliveries({ standalone = false }: { standalone?: boolean }) {
           >
             {mine.map((job) => (
               <JobCard key={job.id} job={job} busy={busy === job.id}>
+                {/* The one thing to do at the spot, big: scan the phone they
+                    hold up. The two ways round it sit under it, smaller. */}
                 <button
                   disabled={busy === job.id}
                   onClick={() => setScan({ mode: "deliver", job })}
-                  className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-ink px-3 text-[13px] font-semibold text-paper disabled:opacity-60"
+                  className="flex h-[52px] w-full items-center justify-center gap-2.5 rounded-2xl bg-ink px-4 text-[15px] font-semibold text-paper disabled:opacity-60"
                 >
-                  <ScanLine size={14} strokeWidth={2.2} />
-                  Handed over · scan their code
+                  <ScanLine size={18} strokeWidth={2.2} />
+                  Scan their QR to hand over
                 </button>
-                <button
-                  disabled={busy === job.id}
-                  onClick={() => void act(job.id, () => runnerDeliver(job.id, null))}
-                  title="No scan possible — the row says it was on your word."
-                  className="flex h-11 items-center justify-center gap-2 rounded-xl border border-line bg-surface px-3 text-[12.5px] font-semibold disabled:opacity-60"
-                >
-                  <PackageCheck size={14} strokeWidth={2.2} />
-                  Handed over, no scan
-                </button>
-                <button
-                  disabled={busy === job.id}
-                  onClick={() => setReturning(job)}
-                  className="flex h-11 items-center justify-center gap-2 rounded-xl border border-line bg-surface px-3 text-[12.5px] font-semibold text-muted disabled:opacity-60"
-                >
-                  <Undo2 size={14} strokeWidth={2.2} />
-                  Couldn&apos;t deliver
-                </button>
+                <div className="grid w-full grid-cols-2 gap-2">
+                  <button
+                    disabled={busy === job.id}
+                    onClick={() => void act(job.id, () => runnerDeliver(job.id, null))}
+                    title="No scan possible — the row says it was on your word."
+                    className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-line bg-surface px-2 text-[12px] font-semibold text-ink-soft disabled:opacity-60"
+                  >
+                    <PackageCheck size={13} strokeWidth={2.2} />
+                    Handed over, no scan
+                  </button>
+                  <button
+                    disabled={busy === job.id}
+                    onClick={() => setReturning(job)}
+                    className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-line bg-surface px-2 text-[12px] font-semibold text-muted disabled:opacity-60"
+                  >
+                    <Undo2 size={13} strokeWidth={2.2} />
+                    Couldn&apos;t deliver
+                  </button>
+                </div>
               </JobCard>
             ))}
           </Section>
@@ -227,10 +251,10 @@ export function Deliveries({ standalone = false }: { standalone?: boolean }) {
                     <button
                       disabled={busy === job.id}
                       onClick={() => void act(job.id, () => runnerPickup(job.id))}
-                      className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-ink px-3 text-[13px] font-semibold text-paper disabled:opacity-60"
+                      className="flex h-[52px] w-full items-center justify-center gap-2.5 rounded-2xl bg-ink px-4 text-[15px] font-semibold text-paper disabled:opacity-60"
                     >
-                      {busy === job.id ? <Loader2 size={14} className="animate-spin" /> : <Package size={14} strokeWidth={2.2} />}
-                      Picked up
+                      <Package size={18} strokeWidth={2.2} />
+                      Picked up from the shelf
                     </button>
                   </JobCard>
                 ))}
@@ -401,7 +425,17 @@ function JobCard({ job, busy, quiet, children }: { job: RunnerJob; busy: boolean
         )}
       </div>
 
-      {children && <div className="mt-3 flex flex-wrap gap-2">{busy ? <Loader2 size={16} className="animate-spin text-muted" /> : children}</div>}
+      {children && (
+        <div className="mt-3 flex flex-col gap-2">
+          {busy ? (
+            <span className="flex h-[52px] items-center justify-center rounded-2xl bg-surface-sunk">
+              <Loader2 size={18} className="animate-spin text-muted" />
+            </span>
+          ) : (
+            children
+          )}
+        </div>
+      )}
     </article>
   );
 }

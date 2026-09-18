@@ -84,7 +84,7 @@ export function DeliveryPicker({
           active={value !== null}
           onClick={() => !disabled && choose(true)}
           icon={<Bike size={13} strokeWidth={2.2} />}
-          label={`Brought to me · +${money(fee, cur)}`}
+          label="Brought to me"
           dim={disabled}
         />
       </div>
@@ -121,6 +121,7 @@ export function DeliveryPicker({
                 />
               </label>
               <p className="m-0 mt-3 text-[11.5px] leading-snug text-muted">
+                {fee > 0 ? `Delivery is ${money(fee, cur)}, on the bill. ` : ""}
                 {settings.delivery_note?.trim() ? `${settings.delivery_note.trim()} ` : ""}
                 Not sure yet? Leave the spot blank and the runner will call — or set it from your order any time
                 before it&apos;s handed over; the runner is told. Have your token&apos;s QR ready; it&apos;s what they scan.

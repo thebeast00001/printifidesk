@@ -86,8 +86,8 @@ export function Bill({
             line, after everything the desk's card decides. */}
         {quote.delivery > 0 && (
           <Row
-            label="Delivery to your room"
-            hint="by Printifi's runner"
+            label="Delivery"
+            hint="brought to you by Printifi's runner"
             value={`+${money(quote.delivery, cur)}`}
             muted={muted}
           />

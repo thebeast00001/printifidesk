@@ -717,9 +717,14 @@ reshapes *where*: a student isn't a fixed point.
   `runner_return(order, reason)` (→ `ready`, `returned_at`, the reason in
   the student's message; the desk's uncollected clock starts then). The
   desk can't move a job that's `delivering`; it comes back or ends at the
-  door. The runner's page polls every 15 s while in front — a socket
-  wouldn't reach it — and reads the cover sheet's QR at a shelf, the
-  student's QR at a door (same decoders as the scan sheet).
+  spot. The runner's page moves the moment something happens (`0049`):
+  the orders socket says nothing to a runner, but every event they should
+  act on writes them a notification row — a delivery filed on a shelf, a
+  student who moved — so `notifications` joined the realtime publication
+  and the page listens for its own rows (the row is written 'skipped'
+  rather than not at all when there's no device to push to). A 15 s poll
+  stays as the floor. It reads the cover sheet's QR at a shelf, the
+  student's QR at the spot (same decoders as the scan sheet).
 - **Priced honestly.** `platform_settings.delivery_enabled / delivery_fee
   (₹10) / delivery_areas / delivery_note` and `operators.delivery` (the
   admin's switch, like online payment — the owner is refused). `place_order`
@@ -1460,7 +1465,7 @@ lib/
   seo.ts                the site's name, address and public pages, once
   surface.ts            the two-site routing table
   supabase/client.ts    browser client, tokens bridged from Clerk
-supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0048)
+supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0049)
 scripts/                the checks: pricing parity, features, the SQL harness, RLS
 ```
 
@@ -1522,7 +1527,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0048** in the SQL editor, pasted from the files, **in
+2. **Run 0022 → 0049** in the SQL editor, pasted from the files, **in
    number order** — a later migration can name a column an earlier one
    adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
    student update on an order failed and the X on /orders did nothing).
@@ -1541,14 +1546,15 @@ Things the code can't do on its own, in the order they bite:
    the admin's fee rows errors quietly; until 0034, a too-late cancel is
    refused by the policy alone (silently) rather than by the guard (in words);
    until 0035, online payment can't be turned on for a desk.
-   **Then 0045, then 0046, then 0047, then 0048 — 0045 on its own** — delivery
+   **Then 0045 → 0049 — 0045 on its own** — delivery
    (see *Delivery to the door*). 0045 is one line, the `'delivering'`
    status, and must be its own paste: an enum value can't be used in the
    transaction that adds it, and 0046 names it. Until they run, delivery
    isn't offered, *Runners* on `/admin` errors, and a runner-only account
    sees the join screen; until 0047, saving the delivery policy errors and
    the spot can't be moved; until 0048, a spot off the quick-pick list is
-   refused. After them: `/admin` → *Runners* — switch
+   refused; until 0049, the runner's page moves on its poll, not at once.
+   After them: `/admin` → *Runners* — switch
    delivery on, set the fee (₹10), the spots and the round times, switch
    on the desks the runner collects from, and grant yourself by email.
    **Then 0044** — the cover sheet (see *Every job comes out labelled*).
@@ -1609,7 +1615,7 @@ Things the code can't do on its own, in the order they bite:
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
    project, so: create a new project in **Mumbai (`ap-south-1`)**, run
-   `0001 → 0048` in its SQL editor, create the private `documents` bucket,
+   `0001 → 0049` in its SQL editor, create the private `documents` bucket,
    add both Clerk domains under Authentication → Third-Party Auth, then
    swap `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    and `SUPABASE_SERVICE_ROLE_KEY` on both Vercel projects and in

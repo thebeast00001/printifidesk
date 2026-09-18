@@ -61,6 +61,8 @@ export const MIGRATION_PROBES: MigrationProbe[] = [
   { id: "0045+0046", without: "no delivery: the choice isn't offered, runners can't be granted, Deliveries is empty", check: column("orders", "delivery_fee") },
   { id: "0047", without: "delivery asks for a hostel and room instead of a spot; the spot can't be moved; no round times; saving the delivery policy errors", check: column("platform_settings", "delivery_rounds") },
   // 0048 changes only what place_order accepts (any spot, or none) and can't be told apart from here.
+  // 0049 adds notifications to the realtime publication, which can't be asked for from here either; without it
+  // the runner's page moves on its fifteen-second poll instead of at once.
 ];
 
 export interface MigrationReport {
