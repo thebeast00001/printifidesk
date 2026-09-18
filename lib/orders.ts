@@ -611,11 +611,23 @@ export async function chooseOperator(operatorId: string): Promise<void> {
  * callers that react to a realtime change on the desk itself.
  */
 const OPERATOR_CACHE_MS = 30_000;
-const operatorCache = new Map<string, { at: number; value: Promise<Operator | null> }>();
+const operatorCache = new Map<string, { at: number; value: Promise<Operator | null>; row?: Operator | null }>();
 
 export function forgetOperator(id?: string) {
   if (id) operatorCache.delete(id);
   else operatorCache.clear();
+}
+
+/**
+ * The desk's row if it's already here and fresh — synchronously, for a
+ * first render that shouldn't wait a tick for what's already known. The
+ * pay sheet opens over the capsule that warmed it; read this way it opens
+ * whole, instead of as a "Loading…" panel that turns into the sheet while
+ * it's still sliding up.
+ */
+export function peekOperator(id: string): Operator | null {
+  const hit = operatorCache.get(id);
+  return hit && hit.row !== undefined && Date.now() - hit.at < OPERATOR_CACHE_MS ? hit.row : null;
 }
 
 export async function getOperator(id: string, fresh = false): Promise<Operator | null> {
@@ -625,17 +637,19 @@ export async function getOperator(id: string, fresh = false): Promise<Operator |
   if (!supabase) return null;
   const hit = operatorCache.get(id);
   if (!fresh && hit && Date.now() - hit.at < OPERATOR_CACHE_MS) return hit.value;
-  const value = (async () => {
+  const entry: { at: number; value: Promise<Operator | null>; row?: Operator | null } = { at: Date.now(), value: Promise.resolve(null) };
+  entry.value = (async () => {
     const { data } = await operatorQuery((select) =>
       supabase.from("operators").select(select).eq("id", id).maybeSingle(),
     );
     const row = await withFee((data as unknown as Operator) ?? null);
     // A miss isn't worth remembering; the next caller asks again.
     if (!row) operatorCache.delete(id);
+    else if (operatorCache.get(id) === entry) entry.row = row;
     return row;
   })();
-  operatorCache.set(id, { at: Date.now(), value });
-  return value;
+  operatorCache.set(id, entry);
+  return entry.value;
 }
 
 /** Names for a handful of desks — the switcher for someone on more than one. */
@@ -898,6 +912,8 @@ export async function cancelOrder(orderId: string): Promise<void> {
   // RLS hides a row the student may no longer cancel (already printing) and
   // reports nothing; say so rather than reload into the same screen.
   if (!data || data.length === 0) throw new Error("Too late — the desk has already started on it. Ask at the counter.");
+  // A cancelled cash order no longer holds the standing's one open slot.
+  forgetCashStanding();
   changed("orders");
 }
 
@@ -1008,7 +1024,46 @@ export interface CashStanding {
 let cashLegacyMode = false;
 export const cashLegacy = () => cashLegacyMode;
 
-export async function cashStanding(userId?: string): Promise<CashStanding | null> {
+/**
+ * The caller's own standing: always asked for afresh (the dues notice must
+ * clear the moment a desk takes the cash), but asked for once when several
+ * ask in the same moment, and the last answer kept so the pay sheet can
+ * open with the cash button's real label (`peekCashStanding`) and refresh
+ * behind it — instead of "Checking your cash limit…" becoming the label
+ * while the sheet is still sliding up. The writes that change a standing
+ * forget the kept answer; a kept answer older than a few minutes isn't
+ * offered at all.
+ */
+const STANDING_KEEP_MS = 5 * 60_000;
+let standingLast: { at: number; value: CashStanding; key: string } | null = null;
+let standingPending: { key: string; value: Promise<CashStanding | null> } | null = null;
+
+export function forgetCashStanding() {
+  standingLast = null;
+}
+
+export function peekCashStanding(): CashStanding | null {
+  return standingLast && standingLast.key === sessionKey() && Date.now() - standingLast.at < STANDING_KEEP_MS ? standingLast.value : null;
+}
+
+export function cashStanding(userId?: string): Promise<CashStanding | null> {
+  // The desk asking about a student (0043's dues code): never kept.
+  if (userId) return fetchCashStanding(userId);
+  const key = sessionKey();
+  if (standingPending?.key === key) return standingPending.value;
+  const value = fetchCashStanding()
+    .then((st) => {
+      if (st) standingLast = { at: Date.now(), value: st, key };
+      return st;
+    })
+    .finally(() => {
+      if (standingPending?.value === value) standingPending = null;
+    });
+  standingPending = { key, value };
+  return value;
+}
+
+async function fetchCashStanding(userId?: string): Promise<CashStanding | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
   // Granted to authenticated only (0043): asked as nobody it's refused, and
@@ -1052,6 +1107,8 @@ export async function chooseCash(orderId: string): Promise<"queued" | "signal" |
     }
     throw new Error(friendly(error.message));
   }
+  // An open cash order is now part of the standing.
+  forgetCashStanding();
   changed("orders");
   return data === "signal" ? "signal" : "queued";
 }

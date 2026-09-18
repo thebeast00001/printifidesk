@@ -1363,6 +1363,19 @@ How the pieces sit:
   and hands out *its* session — so a race converges instead of failing.
   The button reads *Pay ₹x · UPI, card* with a spinner from the first
   frame; the amount was never in doubt, only the session.
+- **The sheet opens whole.** It's mounted, closed, under the capsule from
+  the moment there's an order — so everything it will show is asked for
+  then and read synchronously at open: the desk's row (`peekOperator`,
+  from the cache the capsule warmed), the cash standing
+  (`peekCashStanding`, the last answer, refreshed behind the open without
+  blanking the button), the QR (drawn once per link and kept, and only
+  where the direct route is shown), and Cashfree's script and ping
+  (`warmCheckout`, no longer under the slide). Before this every open
+  started from nothing — a *Loading…* panel that turned into the sheet a
+  tick later, *Checking your cash limit…* that became the real label a
+  round trip later, the QR after that — and each answer re-laid the sheet
+  out while it was still sliding up, which read as a laggy animation. Now
+  the open is one paint and a slide.
 - **Heard on both sides (`0037`).** `gateway_paid()` moves the order from
   *placed* to *queued* itself — the money is in, there is nothing for the
   desk to check — and it used to do that in silence: the desk's push fires

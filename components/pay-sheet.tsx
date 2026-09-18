@@ -5,15 +5,39 @@ import { Drawer } from "vaul";
 import { motion } from "motion/react";
 import QRCode from "qrcode";
 import { AlertCircle, Banknote, Check, Copy, Loader2, Smartphone } from "lucide-react";
-import { cashLegacy, cashStanding, chooseCash, getOperator, type CashStanding, type Operator, type OrderRow } from "@/lib/orders";
+import {
+  cashLegacy,
+  cashStanding,
+  chooseCash,
+  getOperator,
+  peekCashStanding,
+  peekOperator,
+  type CashStanding,
+  type Operator,
+  type OrderRow,
+} from "@/lib/orders";
 import { getSupabase } from "@/lib/supabase/client";
 import { UPI_APPS, appLink, isQrOnlyMerchant, isValidVpa, upiLink, type UpiRequest } from "@/lib/upi";
 import { useInstall } from "@/lib/install";
-import { canPayOnline } from "@/lib/gateway";
+import { canPayOnline, gatewayMode, warmCheckout } from "@/lib/gateway";
 import { changed } from "@/lib/changed";
 import { OnlinePay } from "./online-pay";
 import { money } from "@/lib/pricing";
 import { cn, spring } from "@/lib/utils";
+
+/** A QR, drawn once per text and kept: the same link opens the same sheet many times in a day. */
+const qrCache = new Map<string, Promise<string>>();
+function qrFor(source: string): Promise<string> {
+  let hit = qrCache.get(source);
+  if (!hit) {
+    hit = QRCode.toDataURL(source, { margin: 1, width: 480, errorCorrectionLevel: "M" });
+    hit.catch(() => qrCache.delete(source));
+    qrCache.set(source, hit);
+    // A handful of links is plenty; the map mustn't grow with a day's orders.
+    if (qrCache.size > 12) qrCache.delete(qrCache.keys().next().value!);
+  }
+  return hit;
+}
 
 /**
  * Paying for an order.
@@ -43,26 +67,61 @@ export function PaySheet({
   onOpenChange: (open: boolean) => void;
   onClaimed: () => void;
 }) {
-  const [operator, setOperator] = useState<Operator | null>(null);
-  const [qr, setQr] = useState<string | null>(null);
+  /*
+   * Whole from the first frame. This sheet is mounted, closed, under the
+   * capsule from the moment there's an order — so everything it will show
+   * is asked for then, and read synchronously at open: the desk's row
+   * (warmed by the capsule; `peekOperator`), the cash standing (kept from
+   * the last answer; `peekCashStanding`), the QR (drawn once per link,
+   * kept). Before this, every open started from nothing — the row a tick
+   * later, "Checking your cash limit…" becoming the real label a round trip
+   * later, the QR after that — and each answer re-laid the sheet out while
+   * it was still sliding up. Now the open is one paint and a slide, and the
+   * standing refreshes behind it without blanking what's on screen.
+   */
+  const [operator, setOperator] = useState<Operator | null>(() => (order ? peekOperator(order.operator_id) : null));
   const [busy, setBusy] = useState<"upi" | "cash" | null>(null);
   // 0043: cash is a credit line — the database says whether, and how much.
-  const [standing, setStanding] = useState<CashStanding | null>(null);
-  const [legacy, setLegacy] = useState(false);
+  const [standing, setStanding] = useState<CashStanding | null>(() => peekCashStanding());
+  const [legacy, setLegacy] = useState(() => cashLegacy());
   // What their app's success screen showed. Pre-filled with the bill; a
   // different number is a warning now instead of a surprise at the counter.
-  const [sent, setSent] = useState("");
+  const [sent, setSent] = useState(() => (order ? Number(order.total).toFixed(2) : ""));
   const [error, setError] = useState<string | null>(null);
+
+  // While closed: have the desk's row and the standing in hand for the tap.
+  const orderId = order?.id ?? null;
+  const operatorId = order?.operator_id ?? null;
   useEffect(() => {
-    if (!open || !order) return;
-    setError(null);
-    setSent(Number(order.total).toFixed(2));
-    setStanding(null);
-    void getOperator(order.operator_id).then(setOperator);
+    if (!operatorId) return;
+    let alive = true;
+    setOperator(peekOperator(operatorId));
+    void getOperator(operatorId).then((op) => alive && setOperator(op));
     void cashStanding().then((st) => {
-      setStanding(st);
+      if (!alive) return;
+      if (st) setStanding(st);
       setLegacy(cashLegacy());
     });
+    return () => {
+      alive = false;
+    };
+  }, [orderId, operatorId]);
+
+  // At open: a clean slate for what the student types, and the standing
+  // asked for again — kept on screen as it was until the answer differs.
+  useEffect(() => {
+    if (!open || !order) return;
+    let alive = true;
+    setError(null);
+    setSent(Number(order.total).toFixed(2));
+    void cashStanding().then((st) => {
+      if (!alive) return;
+      if (st) setStanding(st);
+      setLegacy(cashLegacy());
+    });
+    return () => {
+      alive = false;
+    };
   }, [open, order]);
 
   // The row is live. When the money is confirmed — Cashfree's webhook, or
@@ -111,15 +170,31 @@ export function PaySheet({
     setTimeout(() => setCopiedWhat(null), 1600);
   }
 
+  // Drawn while the sheet is still closed (the desk's row is known then),
+  // and only where it's shown: where Printifi collects, the direct route
+  // isn't offered and the work — tens of milliseconds on the main thread —
+  // would land in the middle of the slide for nothing.
+  const gatewayDesk = canPayOnline(operator);
+  // Cashfree's script and its ping iframe, loaded while the sheet is still
+  // closed — at open they were loading under the slide.
   useEffect(() => {
-    const source = shopQr ?? link;
+    const mode = gatewayMode();
+    if (gatewayDesk && mode) warmCheckout(mode);
+  }, [gatewayDesk]);
+  const [qr, setQr] = useState<string | null>(null);
+  useEffect(() => {
+    const source = gatewayDesk ? null : (shopQr ?? link);
     if (!source) return setQr(null);
+    let alive = true;
     // Rendered locally — the payment link never leaves the device. The shop's
     // own QR is redrawn from its exact text, signature included.
-    void QRCode.toDataURL(source, { margin: 1, width: 480, errorCorrectionLevel: "M" })
-      .then(setQr)
-      .catch(() => setQr(null));
-  }, [link, shopQr]);
+    void qrFor(source)
+      .then((url) => alive && setQr(url))
+      .catch(() => alive && setQr(null));
+    return () => {
+      alive = false;
+    };
+  }, [link, shopQr, gatewayDesk]);
 
   // Cash: the platform checks the student's standing and decides whether
   // the desk prints now (within the limit) or when they set off (above it).
@@ -204,7 +279,7 @@ export function PaySheet({
   // itself — it would be a second, slower way to do the same thing, and
   // the one the desk has to check by hand. Everywhere else the direct
   // route is the online route.
-  const gateway = canPayOnline(operator);
+  const gateway = gatewayDesk;
   const direct = Boolean(operator) && !gateway;
 
   return (
