@@ -230,7 +230,7 @@ function OrderCard({
             {/* Delivery (0046): where it's going, from the order's own snapshot. */}
             {order.delivery && !["cancelled", "failed"].includes(order.status) && (
               <span className="max-w-full truncate rounded-full border border-line bg-surface-sunk px-2.5 py-1 text-[10.5px] font-semibold whitespace-nowrap text-ink-soft">
-                To {whereTo(order) || "the spot you chose"}
+                {whereTo(order) ? `To ${whereTo(order)}` : "Brought to you"}
               </span>
             )}
             {/* The desk's word (or Cashfree's), never the student's own claim. */}

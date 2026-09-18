@@ -821,7 +821,7 @@ function OrderCard({
                   ? "with Printifi's runner"
                   : order.status === "collected" && order.delivered_at
                     ? "delivered by Printifi"
-                    : `delivery · ${whereTo(order) || "spot to come"}`}
+                    : `delivery · ${whereTo(order) || "runner calls the student"}`}
                 {order.status === "ready" && order.returned_at ? " · brought back" : ""}
               </span>
             )}

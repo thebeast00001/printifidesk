@@ -131,7 +131,7 @@ export async function POST(request: Request) {
       // The spot as it stood when the sheet was printed; the student can
       // move it after (0047), and the runner's phone has the live one.
       const to = (order.deliver_to ?? {}) as { spot?: string; detail?: string; hostel?: string; room?: string };
-      const dest = [to.spot ?? to.hostel, to.detail ?? to.room].filter(Boolean).join(" - ") || "spot not given";
+      const dest = [to.spot ?? to.hostel, to.detail ?? to.room].filter(Boolean).join(" - ") || "no spot given - the runner calls";
       cover.drawRectangle({ x: 48, y: y - 14, width: A4.w - 96, height: 44, borderColor: INK, borderWidth: 2, color: rgb(1, 1, 1) });
       text(cover, "DELIVERY - PRINTIFI'S RUNNER COLLECTS THIS - LIVE SPOT ON THE RUNNER'S PHONE", mono, 9, 60, y + 18, MUTED);
       text(cover, dest, font, 18, 60, y - 2, INK, A4.w - 120);

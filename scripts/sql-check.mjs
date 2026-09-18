@@ -2931,20 +2931,24 @@ await scenario("delivery is the admin's to switch on, priced as a line after the
   await actingAs("admin_test");
   await db.query(`select public.set_desk_delivery($1, true);`, [OPERATOR]);
 
-  // Only to a listed hostel, only with a room, only with a phone.
+  // Any spot in the student's words (0048: the list is quick picks, not a
+  // fence); a blank one too — the runner calls. A phone, always.
   await actingAs(DELIV);
-  let mars = "";
-  try { await mkDelivery("mars.pdf", 2, { spot: "Mars", detail: "1" }); } catch (error) { mars = String(error?.message ?? error); }
-  if (!/doesn't deliver to Mars/.test(mars)) throw new Error(`off-list spot: ${mars || "allowed"}`);
-  let noSpot = "";
-  try { await mkDelivery("nospot.pdf", 2, { spot: "  ", detail: "213" }); } catch (error) { noSpot = String(error?.message ?? error); }
-  if (!/Where should it come to/.test(noSpot)) throw new Error(`no spot: ${noSpot || "allowed"}`);
+  const mars = await mkDelivery("mars.pdf", 2, { spot: "Block C, second floor", detail: "outside lab 2" });
+  const marsRow = (await db.query(`select deliver_to, public.delivery_place(o) as place from public.orders o where id = $1;`, [mars])).rows[0];
+  if (marsRow.deliver_to.spot !== "Block C, second floor" || marsRow.place !== "Block C, second floor, outside lab 2") throw new Error(`off-list spot: ${JSON.stringify(marsRow)}`);
+  const blank = await mkDelivery("blank.pdf", 2, { spot: "  ", detail: "" });
+  const blankRow = (await db.query(`select delivery, deliver_to, public.delivery_place(o) as place from public.orders o where id = $1;`, [blank])).rows[0];
+  if (!blankRow.delivery || "spot" in blankRow.deliver_to || blankRow.place !== null || !blankRow.deliver_to.changed_at) throw new Error(`blank spot: ${JSON.stringify(blankRow)}`);
+  let tooLong = "";
+  try { await mkDelivery("long.pdf", 2, { spot: "x".repeat(61) }); } catch (error) { tooLong = String(error?.message ?? error); }
+  if (!/Keep the spot short/.test(tooLong)) throw new Error(`a 61-char spot: ${tooLong || "allowed"}`);
   // A spot without a detail is fine — "Library entrance" needs no room number.
   const bare = await mkDelivery("bare.pdf", 2, { spot: "Library entrance" });
   const bareRow = (await db.query(`select deliver_to, public.delivery_place(o) as place from public.orders o where id = $1;`, [bare])).rows[0];
   if (bareRow.deliver_to.spot !== "Library entrance" || "detail" in bareRow.deliver_to || bareRow.place !== "Library entrance" || !bareRow.deliver_to.changed_at) throw new Error(`bare spot: ${JSON.stringify(bareRow)}`);
   await actingAs(null);
-  await db.query(`delete from public.orders where id = $1;`, [bare]);
+  await db.query(`delete from public.orders where id in ($1, $2, $3);`, [mars, blank, bare]);
   await actingAs(DELIV);
   await actingAs(null);
   await db.query(`update public.profiles set phone = null where id = $1;`, [DELIV]);
@@ -2985,7 +2989,7 @@ await scenario("delivery is the admin's to switch on, priced as a line after the
 
   await actingAs(null);
   await db.query(`delete from public.orders where id in ($1, $2);`, [A, B]);
-  return "off by default; the policy and the desk switch are admin-only (owner refused on both); off-list spot, no spot, no phone all refused; a spot without a detail is fine; ₹10 after the desk's bill in SQL and TS alike, fee untouched by it; a pickup unchanged; a correction keeps it; pinned against the student";
+  return "off by default; the policy and the desk switch are admin-only (owner refused on both); any spot in the student's words, blank too; a long one and no phone refused; ₹10 after the desk's bill in SQL and TS alike, fee untouched by it; a pickup unchanged; a correction keeps it; pinned against the student";
 });
 
 await scenario("a runner is granted by the admin, picks up, delivers against the student's code, and the desk is credited the cash taken at the door", async () => {
@@ -3292,9 +3296,12 @@ await scenario("a delivery goes to a spot the student can move until it's handed
   await db.query(`select public.set_delivery_spot($1, 'Canteen', null);`, [D]);
   const moved = (await db.query(`select deliver_to, public.delivery_place(o) as place from public.orders o where id = $1;`, [D])).rows[0];
   if (moved.deliver_to.spot !== "Canteen" || "detail" in moved.deliver_to || moved.place !== "Canteen" || !(new Date(moved.deliver_to.changed_at) > new Date(first.changed_at))) throw new Error(`moved: ${JSON.stringify(moved)}`);
-  let offList = "";
-  try { await db.query(`select public.set_delivery_spot($1, 'Mars', '1');`, [D]); } catch (error) { offList = String(error?.message ?? error); }
-  if (!/doesn't deliver to Mars/.test(offList)) throw new Error(`off-list move: ${offList || "allowed"}`);
+  let nothing = "";
+  try { await db.query(`select public.set_delivery_spot($1, '  ', '');`, [D]); } catch (error) { nothing = String(error?.message ?? error); }
+  if (!/Say where/.test(nothing)) throw new Error(`a move to nowhere: ${nothing || "allowed"}`);
+  await db.query(`select public.set_delivery_spot($1, 'Block C', 'lab 2');`, [D]);
+  if ((await db.query(`select public.delivery_place(o) as p from public.orders o where id = $1;`, [D])).rows[0].p !== "Block C, lab 2") throw new Error("a spot off the list was refused on a move");
+  await db.query(`select public.set_delivery_spot($1, 'Canteen', null);`, [D]);
   const P = (await db.query(`select public.place_order($1, $2::jsonb) as id;`, [OPERATOR, JSON.stringify([{ name: "walk.pdf", pages: 1, colour_pages: 0, config: { copies: 1 } }])])).rows[0].id;
   let notDelivery = "";
   try { await db.query(`select public.set_delivery_spot($1, 'Canteen', null);`, [P]); } catch (error) { notDelivery = String(error?.message ?? error); }
@@ -3355,7 +3362,7 @@ await scenario("a delivery goes to a spot the student can move until it's handed
   const { rows: cleared } = await db.query(`select delivery_rounds from public.platform_settings where id;`);
   if (cleared[0].delivery_rounds.length !== 0) throw new Error("rounds didn't clear");
   await actingAs(null);
-  return "rounds tidy to sorted HH:MM, a bad one refused; next_delivery_round rolls 12:30→1:00 pm, 1:30→6:00 pm, 7:30 pm→9:05 am; the spot moves quietly before pickup and pushes the runner after it; off-list, another student, a pickup order and a delivered order are refused; 0046's {hostel, room} still reads";
+  return "rounds tidy to sorted HH:MM, a bad one refused; next_delivery_round rolls 12:30→1:00 pm, 1:30→6:00 pm, 7:30 pm→9:05 am; the spot moves quietly before pickup and pushes the runner after it, to any spot in the student's words; nowhere, another student, a pickup order and a delivered order are refused; 0046's {hostel, room} still reads";
 });
 
 const GRANTS = {

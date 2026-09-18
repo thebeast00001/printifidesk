@@ -233,9 +233,9 @@ function LiveOrder({
               <span className="block text-[11px] font-semibold tracking-[0.04em] text-shell-faint uppercase">
                 {order.status === "delivering" ? "Coming to" : "Where you'll be"}
               </span>
-              <span className="block truncate text-[13.5px] font-semibold">{whereTo(order) || "Not set"}</span>
+              <span className="block truncate text-[13.5px] font-semibold">{whereTo(order) || "Not set — the runner will call you"}</span>
             </span>
-            <span className="shrink-0 text-[12.5px] font-semibold text-shell-faint">Change</span>
+            <span className="shrink-0 text-[12.5px] font-semibold text-shell-faint">{whereTo(order) ? "Change" : "Set"}</span>
           </button>
           <SpotSheet order={order} open={movingSpot} onOpenChange={setMovingSpot} onChanged={onChanged} />
         </>
@@ -380,11 +380,11 @@ function detail(order: OrderRow, queue: QueueStatus | null): string {
     if (order.status === "ready") {
       return order.returned_at
         ? (order.note ?? "Couldn't be delivered — collect it at the desk with your token, or wait for the next round")
-        : lead(`comes to ${whereTo(order) || "the spot you chose"} on the next round`);
+        : lead(whereTo(order) ? `comes to ${whereTo(order)} on the next round` : "comes to you on the next round — set a spot, or the runner calls");
     }
     if (order.status === "delivering") {
       return [
-        `with Printifi's runner, coming to ${whereTo(order) || "you"}`,
+        whereTo(order) ? `with Printifi's runner, coming to ${whereTo(order)}` : "with Printifi's runner — they'll call you",
         "have your QR ready",
         cashDue ? `pay ${money(Number(order.total))} in cash` : null,
       ]
@@ -392,7 +392,7 @@ function detail(order: OrderRow, queue: QueueStatus | null): string {
         .join(" · ")
         .replace(/^with/, "With");
     }
-    if (order.status === "collected" && order.delivered_at) return `${sheets} · delivered at ${whereTo(order) || "the spot you chose"}`;
+    if (order.status === "collected" && order.delivered_at) return `${sheets} · delivered${whereTo(order) ? ` at ${whereTo(order)}` : " to you"}`;
   }
 
   switch (order.status) {

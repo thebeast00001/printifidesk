@@ -38,7 +38,8 @@ export function SpotSheet({
   }, [open, order]);
 
   const onItsWay = order.status === "delivering";
-  const problem = spotProblem(draft);
+  // Opening this sheet is saying where you are: something has to be said.
+  const problem = spotProblem(draft) ?? (!draft.spot.trim() && !draft.detail.trim() ? "Say where you'll be — a place, or a landmark." : null);
   const unchanged = JSON.stringify(draft) === JSON.stringify(deliverySpot(order));
 
   async function save() {

@@ -666,12 +666,17 @@ under its cover — and a **runner** carries it from there. `0045` adds the
 transaction that adds it — same as `0038`); `0046` is the rest; `0047`
 reshapes *where*: a student isn't a fixed point.
 
-- **A spot, not a room (`0047`).** The admin's list is a list of **spots**
-  on campus — hostels, the library entrance, a block's gate, the canteen;
-  the student picks one and adds a **detail** (a room number, "near the
-  steps"). `deliver_to` is `{spot, detail, changed_at}`; rows from 0046
-  carry `{hostel, room}` and `delivery_spot()/delivery_detail()/whereTo()`
-  read both.
+- **A spot, not a room (`0047`, `0048`).** The student says where they'll
+  be, **in their own words** — a hostel, a block, the library, the canteen
+  — with a **detail** (a room number, "near the steps") if it helps, or
+  nothing at all, in which case the runner calls the phone (a delivery
+  always has one). The admin's list is **quick picks** that fill the line,
+  not a fence (0047 fenced it; with one hostel listed a student in a
+  lecture block couldn't order — 0048 opened it). `deliver_to` is
+  `{spot, detail, changed_at}`, either of the first two absent; rows from
+  0046 carry `{hostel, room}` and `delivery_spot()/delivery_detail()/whereTo()`
+  read both. Every message and card has words for "no spot given — the
+  runner calls".
 - **Framed by the round.** `platform_settings.delivery_rounds` (HH:MM,
   IST) and `next_delivery_round()` / `nextRound()` — the same rule in SQL
   and TS, `check:features` holds them to the same four instants — so the
@@ -1455,7 +1460,7 @@ lib/
   seo.ts                the site's name, address and public pages, once
   surface.ts            the two-site routing table
   supabase/client.ts    browser client, tokens bridged from Clerk
-supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0047)
+supabase/migrations/    schema, RLS, triggers, queue functions (0001 → 0048)
 scripts/                the checks: pricing parity, features, the SQL harness, RLS
 ```
 
@@ -1517,7 +1522,7 @@ Things the code can't do on its own, in the order they bite:
 1. **Supabase Pro (or keep it busy).** A free project pauses after about a
    week idle, and a paused project is the whole app gone. Nothing in the
    code protects against this.
-2. **Run 0022 → 0047** in the SQL editor, pasted from the files, **in
+2. **Run 0022 → 0048** in the SQL editor, pasted from the files, **in
    number order** — a later migration can name a column an earlier one
    adds (0032's guard names 0030's `shelf_slot`; with 0030 skipped, every
    student update on an order failed and the X on /orders did nothing).
@@ -1536,13 +1541,14 @@ Things the code can't do on its own, in the order they bite:
    the admin's fee rows errors quietly; until 0034, a too-late cancel is
    refused by the policy alone (silently) rather than by the guard (in words);
    until 0035, online payment can't be turned on for a desk.
-   **Then 0045, then 0046, then 0047 — 0045 on its own** — delivery
+   **Then 0045, then 0046, then 0047, then 0048 — 0045 on its own** — delivery
    (see *Delivery to the door*). 0045 is one line, the `'delivering'`
    status, and must be its own paste: an enum value can't be used in the
    transaction that adds it, and 0046 names it. Until they run, delivery
    isn't offered, *Runners* on `/admin` errors, and a runner-only account
    sees the join screen; until 0047, saving the delivery policy errors and
-   the spot can't be moved. After them: `/admin` → *Runners* — switch
+   the spot can't be moved; until 0048, a spot off the quick-pick list is
+   refused. After them: `/admin` → *Runners* — switch
    delivery on, set the fee (₹10), the spots and the round times, switch
    on the desks the runner collects from, and grant yourself by email.
    **Then 0044** — the cover sheet (see *Every job comes out labelled*).
@@ -1603,7 +1609,7 @@ Things the code can't do on its own, in the order they bite:
    (`ap-northeast-1`); from India every query is ~500 ms and the capsule,
    the pay sheet and the desk's queue all feel it. Supabase can't move a
    project, so: create a new project in **Mumbai (`ap-south-1`)**, run
-   `0001 → 0047` in its SQL editor, create the private `documents` bucket,
+   `0001 → 0048` in its SQL editor, create the private `documents` bucket,
    add both Clerk domains under Authentication → Third-Party Auth, then
    swap `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    and `SUPABASE_SERVICE_ROLE_KEY` on both Vercel projects and in

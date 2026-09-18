@@ -117,9 +117,10 @@ export function AdminRunners() {
           Delivery to the door
         </h2>
         <p className="m-0 mt-0.5 text-[12.5px] leading-relaxed text-muted">
-          A student can have the job brought to a spot on campus by Printifi&apos;s runner instead of walking to the
-          desk. They pick the spot from your list for the round it&apos;ll come on, and can move it any time until
-          it&apos;s handed over — the runner is told. The desk prints and files it as always; the runner picks it up
+          A student can have the job brought to them anywhere on campus by Printifi&apos;s runner instead of walking
+          to the desk. They say where they&apos;ll be for the round it&apos;ll come on — your quick picks, or their own
+          words, or nothing and the runner calls — and can move it any time until it&apos;s handed over; the runner
+          is told. The desk prints and files it as always; the runner picks it up
           and hands it over against the student&apos;s code. The fee is Printifi&apos;s; the desk is paid its price
           whatever way the student paid.
         </p>
@@ -143,7 +144,7 @@ export function AdminRunners() {
                 className="size-4 accent-ink"
               />
               <span className="text-[13px] font-semibold">Offer delivery to students</span>
-              <span className="text-[11.5px] text-muted">— only at desks switched on below, only to the spots listed</span>
+              <span className="text-[11.5px] text-muted">— only at desks switched on below</span>
             </label>
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="flex flex-col gap-1">
@@ -163,7 +164,7 @@ export function AdminRunners() {
                 <span className="text-[11px] text-muted">per order, after the desk&apos;s bill; Printifi&apos;s</span>
               </label>
               <label className="flex flex-col gap-1 sm:col-span-2">
-                <span className="text-[11.5px] font-semibold text-ink-soft">Spots on campus</span>
+                <span className="text-[11.5px] font-semibold text-ink-soft">Quick-pick spots</span>
                 <input
                   value={areasText}
                   onChange={(e) => setAreasText(e.target.value)}
@@ -171,8 +172,8 @@ export function AdminRunners() {
                   className="h-[38px] w-full min-w-0 rounded-xl border border-line bg-surface-sunk px-3 text-[13px] outline-none placeholder:text-faint focus:border-ink"
                 />
                 <span className="text-[11px] text-muted">
-                  comma-separated; the student picks one and adds a detail (a room number, &ldquo;near the steps&rdquo;). Empty
-                  means they type any spot.
+                  comma-separated chips the student can tap. They can always type any other spot on campus, add a
+                  detail (a room number, &ldquo;near the steps&rdquo;), or leave it blank — then the runner calls them.
                 </span>
               </label>
             </div>

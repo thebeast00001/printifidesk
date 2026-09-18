@@ -65,16 +65,14 @@ export function DeliveryPicker({
 
   function choose(on: boolean) {
     if (!on) return onChange(null);
-    // Last time's spot, if it's still on the list; else nothing chosen yet.
+    // Last time's spot, whatever it was — the student's own words.
     let last: Partial<SpotDraft> = {};
     try {
       last = JSON.parse(localStorage.getItem(LAST_SPOT_KEY) ?? "{}") as Partial<SpotDraft>;
     } catch {
       /* no memory of a last spot; fine */
     }
-    const listed = settings!.delivery_areas.length > 0;
-    const spot = last.spot && (!listed || settings!.delivery_areas.includes(last.spot)) ? last.spot : "";
-    onChange({ spot, detail: spot ? (last.detail ?? "") : "", phone: phone ?? "" });
+    onChange({ spot: last.spot ?? "", detail: last.detail ?? "", phone: phone ?? "" });
   }
 
   return (
@@ -112,7 +110,7 @@ export function DeliveryPicker({
               </p>
               <SpotFields settings={settings} value={value} onChange={(next) => onChange({ ...value, ...next })} />
               <label className="mt-3 flex flex-col gap-1">
-                <span className="text-[11.5px] font-semibold text-ink-soft">Phone — the runner calls this if they can&apos;t see you</span>
+                <span className="text-[11.5px] font-semibold text-ink-soft">Phone — the runner calls this to find you</span>
                 <input
                   value={value.phone}
                   inputMode="tel"
@@ -124,8 +122,8 @@ export function DeliveryPicker({
               </label>
               <p className="m-0 mt-3 text-[11.5px] leading-snug text-muted">
                 {settings.delivery_note?.trim() ? `${settings.delivery_note.trim()} ` : ""}
-                Somewhere else by then? Change the spot from your order any time before it&apos;s handed over — the
-                runner is told. Have your token&apos;s QR ready; it&apos;s what they scan.
+                Not sure yet? Leave the spot blank and the runner will call — or set it from your order any time
+                before it&apos;s handed over; the runner is told. Have your token&apos;s QR ready; it&apos;s what they scan.
               </p>
             </div>
           </motion.div>

@@ -352,7 +352,7 @@ function JobCard({ job, busy, quiet, children }: { job: RunnerJob; busy: boolean
           <p className="m-0 text-[15px] font-semibold tracking-[-0.01em]">{job.student ?? firstName}</p>
           <p className={cn("m-0 mt-0.5 flex items-center gap-1.5 text-[12.5px]", moved ? "font-semibold text-ink" : "text-ink-soft")}>
             <MapPin size={12} strokeWidth={2.2} className="shrink-0" />
-            <span className="min-w-0 [overflow-wrap:anywhere]">{where || "No spot given"}</span>
+            <span className="min-w-0 [overflow-wrap:anywhere]">{where || "No spot given — call them"}</span>
             {moved && (
               <span className="shrink-0 rounded-full bg-clay px-2 py-0.5 text-[10px] font-semibold text-clay-ink">
                 moved {new Date(job.spot_changed_at!).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}

@@ -762,7 +762,7 @@ function OptionsPane({ files, onBack }: { files: UploadFile[]; onBack: () => voi
             ? (operator?.status_note?.trim() ??
               "Your files stay here — send them as soon as Printifi opens.")
             : delivery
-              ? `Brought to ${[delivery.spot.trim(), delivery.detail.trim()].filter(Boolean).join(", ") || "the spot you choose"} on the next round. Pay ${money(q.total, card.currency)} online, or in cash when it's handed to you.`
+              ? `Brought to ${[delivery.spot.trim(), delivery.detail.trim()].filter(Boolean).join(", ") || "you (the runner will call)"} on the next round. Pay ${money(q.total, card.currency)} online, or in cash when it's handed to you.`
             : pickupAt
               ? `Ready by ${new Date(pickupAt).toLocaleString([], {
                   weekday: "short",

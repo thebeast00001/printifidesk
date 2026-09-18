@@ -90,11 +90,12 @@ export default function TermsPage() {
       <p>
         Where Printifi offers it and the desk is one Printifi&apos;s runner collects from, you can have the
         job brought to you instead of collecting it. Deliveries go out in <b>rounds</b> at the times the app
-        shows; when you order you pick a <b>spot</b> from Printifi&apos;s list — a hostel, the library entrance, a
-        gate, the canteen — add a line of detail (a room number, &ldquo;near the steps&rdquo;) and a phone number
-        the runner can call, and a <b>delivery fee</b> — shown as its own line on the bill, ₹10 unless the app
-        shows otherwise — is added after the desk&apos;s bill. The fee is Printifi&apos;s, not the desk&apos;s.
-        A delivery can&apos;t take a booked pickup time.
+        shows; when you order you say where you&apos;ll be — a <b>spot</b> anywhere on campus, in your own words
+        or from Printifi&apos;s quick picks, with a line of detail (a room number, &ldquo;near the steps&rdquo;) if
+        it helps, or nothing at all, in which case the runner calls you — and give a phone number the runner
+        can call. A <b>delivery fee</b> — shown as its own line on the bill, ₹10 unless the app shows otherwise
+        — is added after the desk&apos;s bill. The fee is Printifi&apos;s, not the desk&apos;s. A delivery
+        can&apos;t take a booked pickup time.
       </p>
       <p>
         <b>You can move the spot</b> any time until the job is handed over, from your order in the app. Before
